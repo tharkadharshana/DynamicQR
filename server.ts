@@ -8,6 +8,7 @@ import { getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc, updateD
 import crypto from 'crypto';
 import { customAlphabet } from 'nanoid';
 import QRCode from 'qrcode';
+import logger from "./logger";
 import fs from 'fs';
 
 // Load Firebase config
@@ -40,7 +41,7 @@ async function startServer() {
       (req as any).user = decoded;
       next();
     } catch (error) {
-      console.error('Auth error:', error);
+      logger.error('Auth error:', error);
       res.status(401).send('Unauthorized');
     }
   };
@@ -60,7 +61,7 @@ async function startServer() {
       
       next();
     } catch (error) {
-      console.error('Ownership check error:', error);
+      logger.error('Ownership check error:', error);
       res.status(500).send('Internal Server Error');
     }
   };
@@ -91,7 +92,7 @@ async function startServer() {
       
       const plans: Record<string, any> = {
         free: { qr_codes: 3, analytics_days: 7, custom_domain: false, logo: false },
-        pro: { qr_codes: 50, analytics_days: 30, custom_domain: true, logo: true },
+        pro: { qr_codes: Infinity, analytics_days: 30, custom_domain: true, logo: true },
         team: { qr_codes: Infinity, analytics_days: 365, custom_domain: true, logo: true }
       };
       
@@ -104,7 +105,7 @@ async function startServer() {
         remaining_qr
       });
     } catch (error) {
-      console.error('Plan fetch error:', error);
+      logger.error('Plan fetch error:', error);
       res.status(500).json({ error: 'Failed to fetch plan' });
     }
   });
@@ -133,7 +134,7 @@ async function startServer() {
       const merchant_secret = process.env.PAYHERE_SECRET;
       
       if (!merchant_id || !merchant_secret) {
-        console.error('Missing PayHere credentials');
+        logger.error('Missing PayHere credentials');
         return res.status(500).json({ error: 'Billing configuration error' });
       }
       const order_id = `ORDER_${uid}_${Date.now()}`;
@@ -173,7 +174,7 @@ async function startServer() {
 
       res.json(checkoutData);
     } catch (error) {
-      console.error('Checkout error:', error);
+      logger.error('Checkout error:', error);
       res.status(500).json({ error: 'Failed to generate checkout' });
     }
   });
@@ -204,23 +205,23 @@ async function startServer() {
       const localSig = crypto.createHash('md5').update(hashString).digest('hex').toUpperCase();
 
       if (localSig !== md5sig) {
-        console.error('PayHere Signature Mismatch');
+        logger.error('PayHere Signature Mismatch');
         return res.status(401).send('Invalid Signature');
       }
 
       if (status_code === '2') {
         // Success - Upgrade Plan
         await setDoc(doc(db, 'users', uid), { plan }, { merge: true });
-        console.log(`User ${uid} upgraded to ${plan}`);
+        logger.info(`User ${uid} upgraded to ${plan}`);
       } else if (status_code === '0') {
-        console.log(`Payment pending for user ${uid}`);
+        logger.info(`Payment pending for user ${uid}`);
       } else {
-        console.log(`Payment failed for user ${uid} (Status ${status_code})`);
+        logger.warn(`Payment failed for user ${uid} (Status ${status_code})`);
       }
 
       res.send('OK');
     } catch (error) {
-      console.error('Billing Notify Error:', error);
+      logger.error('Billing Notify Error:', error);
       res.status(500).send('Error');
     }
   });
@@ -243,7 +244,7 @@ async function startServer() {
       const token = authHeader.split('Bearer ')[1];
       const decoded = await admin.auth().verifyIdToken(token);
       
-      const { destination_url, title, style, rate_limit, is_dynamic, qr_type, content_data } = req.body;
+      const { destination_url, title, style, rate_limit, is_dynamic, qr_type, content_data, expiry_date, password } = req.body;
       const uid = decoded.uid;
 
       // Plan Limit Enforcement
@@ -251,7 +252,7 @@ async function startServer() {
       const plan = userDoc.exists() ? userDoc.data()?.plan || 'free' : 'free';
       const plans: Record<string, any> = {
         free: { qr_codes: 3 },
-        pro: { qr_codes: 50 },
+        pro: { qr_codes: Infinity },
         team: { qr_codes: Infinity }
       };
       const limits = plans[plan] || plans.free;
@@ -290,6 +291,11 @@ async function startServer() {
         margin: 1
       });
 
+      let passwordHash = null;
+      if (password) {
+        passwordHash = crypto.createHash('sha256').update(password).digest('hex');
+      }
+
       // EXACT SCHEMA for /qr_codes/{slug}
       const qrDoc = {
         slug,
@@ -303,6 +309,8 @@ async function startServer() {
         qr_svg: qrSvg,
         style: activeStyle,
         rate_limit: rate_limit || { enabled: false, max_scans: 100, period: 'total' },
+        expiry_date: expiry_date || null,
+        password_hash: passwordHash,
         created_at: serverTimestamp()
       };
 
@@ -328,7 +336,7 @@ async function startServer() {
 
       res.status(201).json(qrDoc);
     } catch (error) {
-      console.error('QR creation error:', error);
+      logger.error('QR creation error:', error);
       res.status(500).json({ error: 'Failed' });
     }
   });
@@ -341,7 +349,7 @@ async function startServer() {
       const qrs = qrSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       res.json(qrs);
     } catch (error) {
-      console.error('QR list error:', error);
+      logger.error('QR list error:', error);
       res.status(500).json({ error: 'Failed to list QR codes' });
     }
   });
@@ -353,16 +361,28 @@ async function startServer() {
       const qrDoc = await getDoc(doc(db, 'qr_codes', slug));
       res.json(qrDoc.data());
     } catch (error) {
-      console.error('QR fetch error:', error);
+      logger.error('QR fetch error:', error);
       res.status(500).json({ error: 'Failed to fetch QR code' });
     }
   });
 
   // Update QR code
-  app.put('/api/qr/:slug', authenticate, requireOwnership, async (req, res) => {
+  app.put('/api/qr/:slug', async (req, res, next) => {
+    const internalSecret = req.headers['x-internal-secret'];
+    if (internalSecret && internalSecret === process.env.INTERNAL_SECRET) {
+      return next();
+    }
+    authenticate(req, res, next);
+  }, async (req, res, next) => {
+    const internalSecret = req.headers['x-internal-secret'];
+    if (internalSecret && internalSecret === process.env.INTERNAL_SECRET) {
+      return next();
+    }
+    requireOwnership(req, res, next);
+  }, async (req, res) => {
     try {
       const { slug } = req.params;
-      const { destination_url, title, style, is_active } = req.body;
+      const { destination_url, title, style, is_active, options } = req.body;
       const updateData: any = {};
       
       if (destination_url !== undefined) updateData.destination_url = destination_url;
@@ -370,10 +390,27 @@ async function startServer() {
       if (style !== undefined) updateData.style = style;
       if (is_active !== undefined) updateData.is_active = is_active;
       
+      if (options) {
+        if (options.expiry_date_enabled !== undefined) {
+          updateData.expiry_date = options.expiry_date_enabled ? options.expiry_date : null;
+        }
+        if (options.scan_limit_enabled !== undefined) {
+          updateData['rate_limit.enabled'] = options.scan_limit_enabled;
+          updateData['rate_limit.max_scans'] = options.scan_limit;
+        }
+        if (options.password_protect !== undefined) {
+          if (options.password_protect && options.password) {
+            updateData.password_hash = crypto.createHash('sha256').update(options.password).digest('hex');
+          } else if (!options.password_protect) {
+            updateData.password_hash = null;
+          }
+        }
+      }
+      
       await updateDoc(doc(db, 'qr_codes', slug), updateData);
       res.json({ success: true, slug });
     } catch (error) {
-      console.error('QR update error:', error);
+      logger.error('QR update error:', error);
       res.status(500).json({ error: 'Failed to update QR code' });
     }
   });
@@ -386,7 +423,7 @@ async function startServer() {
       await updateDoc(doc(db, 'qr_codes', slug), { is_active: false });
       res.json({ success: true, message: 'QR deleted' });
     } catch (error) {
-      console.error('QR delete error:', error);
+      logger.error('QR delete error:', error);
       res.status(500).json({ error: 'Failed to delete QR code' });
     }
   });
@@ -423,7 +460,7 @@ async function startServer() {
         last_scan
       });
     } catch (error) {
-      console.error('Analytics error:', error);
+      logger.error('Analytics error:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
@@ -457,7 +494,7 @@ async function startServer() {
 
       res.json(Object.values(dailyStats));
     } catch (error) {
-      console.error('Analytics error:', error);
+      logger.error('Analytics error:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
@@ -488,7 +525,7 @@ async function startServer() {
 
       res.json(result);
     } catch (error) {
-      console.error('Analytics error:', error);
+      logger.error('Analytics error:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
@@ -511,7 +548,7 @@ async function startServer() {
 
       res.json(result);
     } catch (error) {
-      console.error('Analytics error:', error);
+      logger.error('Analytics error:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
@@ -536,7 +573,7 @@ async function startServer() {
 
       res.json(result);
     } catch (error) {
-      console.error('Analytics error:', error);
+      logger.error('Analytics error:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
@@ -561,7 +598,7 @@ async function startServer() {
 
       res.json(result);
     } catch (error) {
-      console.error('Analytics error:', error);
+      logger.error('Analytics error:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
@@ -586,7 +623,7 @@ async function startServer() {
 
       res.json(result);
     } catch (error) {
-      console.error('Analytics error:', error);
+      logger.error('Analytics error:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
@@ -614,7 +651,7 @@ async function startServer() {
 
       res.json(recent);
     } catch (error) {
-      console.error('Analytics error:', error);
+      logger.error('Analytics error:', error);
       res.status(500).json({ error: 'Failed to fetch recent scans' });
     }
   });
@@ -658,7 +695,7 @@ async function startServer() {
         eu_scans: data.eu_scans || 0
       });
     } catch (error) {
-      console.error('Analytics error:', error);
+      logger.error('Analytics error:', error);
       res.status(500).json({ error: 'Failed to fetch advanced analytics' });
     }
   });
@@ -704,7 +741,7 @@ async function startServer() {
         active_qrs
       });
     } catch (error) {
-      console.error('Account analytics error:', error);
+      logger.error('Account analytics error:', error);
       res.status(500).json({ error: 'Failed to fetch account analytics' });
     }
   });
@@ -753,7 +790,7 @@ async function startServer() {
 
       res.json(Object.values(dailyStats));
     } catch (error) {
-      console.error('Account timeseries error:', error);
+      logger.error('Account timeseries error:', error);
       res.status(500).json({ error: 'Failed to fetch account timeseries' });
     }
   });
@@ -798,7 +835,7 @@ async function startServer() {
 
       res.json(result);
     } catch (error) {
-      console.error('Account devices error:', error);
+      logger.error('Account devices error:', error);
       res.status(500).json({ error: 'Failed to fetch account devices' });
     }
   });
@@ -842,7 +879,7 @@ async function startServer() {
 
       res.json(result);
     } catch (error) {
-      console.error('Account countries error:', error);
+      logger.error('Account countries error:', error);
       res.status(500).json({ error: 'Failed to fetch account countries' });
     }
   });
@@ -894,7 +931,7 @@ async function startServer() {
         return rest;
       }));
     } catch (error) {
-      console.error('Account recent scans error:', error);
+      logger.error('Account recent scans error:', error);
       res.status(500).json({ error: 'Failed to fetch account recent scans' });
     }
   });
@@ -929,7 +966,7 @@ async function startServer() {
       
       res.json(performanceData);
     } catch (error) {
-      console.error('Account performance error:', error);
+      logger.error('Account performance error:', error);
       res.status(500).json({ error: 'Failed to fetch account performance' });
     }
   });
@@ -937,46 +974,50 @@ async function startServer() {
   // Internal endpoint for Cloudflare Worker to send rich CF payload
   app.post('/internal/scan', async (req, res) => {
     try {
-      const internalSecret = process.env.INTERNAL_SECRET;
-      if (!internalSecret) {
-        console.error('INTERNAL_SECRET not set');
-        return res.status(500).send('Configuration Error');
-      }
-
-      const authHeader = req.headers.authorization;
-      if (authHeader !== `Bearer ${internalSecret}`) {
+      const secret = req.headers['x-internal-secret'];
+      if (!secret || secret !== process.env.INTERNAL_SECRET) {
         return res.status(401).send('Unauthorized');
       }
-
       await captureAnalyticsFromPayload(req.body);
-      res.json({ success: true });
+      res.send('OK');
     } catch (error) {
-      console.error('Scan capture failed:', error);
+      logger.error('Internal scan error:', error);
       res.status(500).json({ error: 'Failed' });
     }
   });
   // Internal endpoint for Worker KV-miss fallback
   app.get('/internal/slug/:slug', async (req, res) => {
     try {
-      const internalSecret = process.env.INTERNAL_SECRET;
-      if (!internalSecret) return res.status(500).send('Config missing');
-
-      const authHeader = req.headers.authorization;
-      if (authHeader !== `Bearer ${internalSecret}`) {
+      const secret = req.headers['x-internal-secret'];
+      if (!secret || secret !== process.env.INTERNAL_SECRET) {
         return res.status(401).send('Unauthorized');
       }
 
       const { slug } = req.params;
-      const qrDoc = await getDoc(doc(db, 'qr_codes', slug));
-      
+      const [qrDoc, statsDoc] = await Promise.all([
+        getDoc(doc(db, 'qr_codes', slug)),
+        getDoc(doc(db, 'qr_stats', slug))
+      ]);
+
       if (!qrDoc.exists()) {
-        return res.status(404).send('Not found');
+        return res.status(404).send('Not Found');
       }
 
-      res.json(qrDoc.data());
+      const qr = qrDoc.data();
+      const stats = statsDoc.exists() ? statsDoc.data() : { total_scans: 0 };
+
+      // Return compact gate config for Worker
+      res.json({
+        destination_url: qr.destination_url,
+        is_active: qr.is_active,
+        expiry_date: qr.expiry_date || null,
+        password_hash: qr.password_hash || null,
+        scan_limit: qr.rate_limit?.enabled ? qr.rate_limit.max_scans : null,
+        total_scans: stats.total_scans || 0
+      });
     } catch (error) {
-      console.error('Internal slug fetch failed:', error);
-      res.status(500).send('Error');
+      logger.error('Internal fetch error:', error);
+      res.status(500).json({ error: 'Failed' });
     }
   });
 

@@ -56,10 +56,21 @@ export default function CreateQR() {
   useEffect(() => {
     if (id) {
       const fetchQR = async () => {
-        const docRef = doc(db, 'qr_codes', id);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data() as any;
+        try {
+          const token = await auth.currentUser?.getIdToken();
+          const res = await fetch(`/api/qr/${id}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          
+          if (res.status === 403 || res.status === 401) {
+            alert("You don't have permission to edit this QR code.");
+            navigate('/');
+            return;
+          }
+          
+          if (!res.ok) throw new Error('Failed to fetch');
+          
+          const data = await res.json();
           setQrType(data.qr_type || 'url');
           setIsDynamic(data.is_dynamic !== false);
           setFormData({
@@ -78,20 +89,23 @@ export default function CreateQR() {
               output_size: data.style?.output_size || 400,
               logo_url: data.style?.logo_url || ''
             },
-            options: data.options || {
-              password_protect: false,
+            options: {
+              password_protect: !!data.password_hash,
               password: '',
-              expiry_date_enabled: false,
-              expiry_date: '',
-              scan_limit_enabled: false,
-              scan_limit: 100
+              expiry_date_enabled: !!data.expiry_date,
+              expiry_date: data.expiry_date || '',
+              scan_limit_enabled: data.rate_limit?.enabled || false,
+              scan_limit: data.rate_limit?.max_scans || 100
             }
           });
+        } catch (err) {
+          console.error("Error fetching QR", err);
+          navigate('/');
         }
       };
       fetchQR();
     }
-  }, [id]);
+  }, [id, navigate]);
 
   useEffect(() => {
     if (qrType === 'wifi') {
@@ -194,45 +208,24 @@ export default function CreateQR() {
     setLoading(true);
 
     try {
+      const token = await auth.currentUser.getIdToken();
       if (id) {
-        // Update
-        const docRef = doc(db, 'qr_codes', id);
-        
-        let content = '';
-        if (isDynamic) {
-          content = `${window.location.origin}/${formData.slug}`;
-        } else {
-          if (qrType === 'url') {
-            content = formData.destination_url || 'https://scnr.app';
-          } else if (qrType === 'vcard') {
-            content = `BEGIN:VCARD\nVERSION:3.0\nN:${formData.content_data?.last_name || ''};${formData.content_data?.first_name || ''}\nFN:${formData.content_data?.first_name || ''} ${formData.content_data?.last_name || ''}\nTEL:${formData.content_data?.phone || ''}\nEMAIL:${formData.content_data?.email || ''}\nORG:${formData.content_data?.company || ''}\nURL:${formData.content_data?.website || ''}\nEND:VCARD`;
-          } else if (qrType === 'wifi') {
-            content = `WIFI:S:${formData.content_data?.ssid || ''};T:${formData.content_data?.encryption || 'WPA'};P:${formData.content_data?.password || ''};;`;
-          } else if (qrType === 'text') {
-            content = formData.content_data?.text || '';
-          } else if (qrType === 'email') {
-            content = `mailto:${formData.content_data?.email || ''}?subject=${encodeURIComponent(formData.content_data?.subject || '')}&body=${encodeURIComponent(formData.content_data?.body || '')}`;
-          }
-        }
-
-        let qrSvg = '';
-        if (qrCodeRef.current) {
-          const rawSvg = await qrCodeRef.current.getRawData('svg');
-          if (rawSvg) {
-            qrSvg = await (rawSvg as Blob).text();
-          }
-        }
-
-        await updateDoc(docRef, {
-          ...formData,
-          qr_type: qrType,
-          is_dynamic: isDynamic,
-          qr_svg: qrSvg,
-          updated_at: serverTimestamp(),
+        // Update via API
+        const res = await fetch(`/api/qr/${id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            ...formData,
+            is_dynamic: isDynamic
+          })
         });
+        
+        if (!res.ok) throw new Error('Failed to update');
       } else {
         // Create via exact schema backend API
-        const token = await auth.currentUser.getIdToken();
         const res = await fetch('/api/qr', {
           method: 'POST',
           headers: {

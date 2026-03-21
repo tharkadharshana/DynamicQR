@@ -18,57 +18,45 @@ export default function Dashboard() {
   useEffect(() => {
     if (!auth.currentUser) return;
 
-    const q = query(
-      collection(db, 'qr_codes'),
-      where('user_uid', '==', auth.currentUser.uid),
-      orderBy('created_at', 'desc')
-    );
-
-    const unsubscribe = onSnapshot(q, async (snapshot) => {
-      const codes: any[] = snapshot.docs.map(d => ({
-        id: d.id,
-        ...d.data()
-      }));
-      setQrCodes(codes);
-      
-      // Fetch stats for each QR code
-      const newStats: Record<string, any> = {};
-      for (const qr of codes) {
-        try {
-          const statsDoc = await getDoc(doc(db, 'qr_stats', qr.slug));
-          if (statsDoc.exists()) {
-            newStats[qr.id] = statsDoc.data();
-          }
-        } catch (err) {
-          console.error("Error fetching stats for", qr.slug, err);
-        }
-      }
-      setStats(newStats);
-      
-      // Fetch account level data
+    const fetchData = async () => {
       try {
+        const token = await auth.currentUser?.getIdToken();
+        const headers = { 'Authorization': `Bearer ${token}` };
+
+        // Fetch QR Codes (now includes stats from server-side join)
+        const qrRes = await fetch('/api/qr', { headers });
+        if (!qrRes.ok) throw new Error('Failed to fetch QR codes');
+        const codes = await qrRes.json();
+        setQrCodes(codes);
+        
+        // Map stats from the response
+        const newStats: Record<string, any> = {};
+        codes.forEach((qr: any) => {
+          if (qr.stats) newStats[qr.id] = qr.stats;
+        });
+        setStats(newStats);
+
+        // Fetch account level data
         const [tsRes, devRes, countryRes, recentRes] = await Promise.all([
-          fetch(`/api/analytics/account/${auth.currentUser?.uid}/timeseries?days=30`),
-          fetch(`/api/analytics/account/${auth.currentUser?.uid}/devices`),
-          fetch(`/api/analytics/account/${auth.currentUser?.uid}/countries`),
-          fetch(`/api/analytics/account/${auth.currentUser?.uid}/recent`)
+          fetch(`/api/analytics/account/${auth.currentUser?.uid}/timeseries?days=30`, { headers }),
+          fetch(`/api/analytics/account/${auth.currentUser?.uid}/devices`, { headers }),
+          fetch(`/api/analytics/account/${auth.currentUser?.uid}/countries`, { headers }),
+          fetch(`/api/analytics/account/${auth.currentUser?.uid}/recent`, { headers })
         ]);
         
         if (tsRes.ok) setTimeseries(await tsRes.json());
         if (devRes.ok) setDevices(await devRes.json());
         if (countryRes.ok) setCountries(await countryRes.json());
         if (recentRes.ok) setRecentScans(await recentRes.json());
+
+        setLoading(false);
       } catch (err) {
-        console.error("Error fetching account analytics", err);
+        console.error("Dashboard data fetch error", err);
+        setLoading(false);
       }
+    };
 
-      setLoading(false);
-    }, (error) => {
-      console.error("Error fetching QR codes:", error);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    fetchData();
   }, [auth.currentUser]);
 
   useEffect(() => {
