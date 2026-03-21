@@ -25,32 +25,31 @@ async function startServer() {
   app.get('/api/analytics/:slug/summary', async (req, res) => {
     try {
       const { slug } = req.params;
-      const snapshot = await db.collection('scan_events').where('slug', '==', slug).get();
+      const statsDoc = await db.collection('qr_stats').doc(slug).get();
       
-      let total_scans = 0;
-      let unique_visitors = 0;
-      let mobile_scans = 0;
-      let first_scan = null;
-      let last_scan = null;
+      if (!statsDoc.exists) {
+        return res.json({
+          total_scans: 0,
+          unique_visitors: 0,
+          mobile_pct: 0,
+          first_scan: null,
+          last_scan: null
+        });
+      }
 
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        total_scans++;
-        if (data.is_unique) unique_visitors++;
-        if (data.device_type === 'mobile') mobile_scans++;
-        
-        const scanTime = data.scanned_at?.toDate() || new Date();
-        if (!first_scan || scanTime < first_scan) first_scan = scanTime;
-        if (!last_scan || scanTime > last_scan) last_scan = scanTime;
-      });
-
-      const mobile_pct = total_scans > 0 ? (mobile_scans / total_scans * 100).toFixed(1) : 0;
+      const data = statsDoc.data()!;
+      const total_scans = data.total_scans || 0;
+      const unique_visitors = data.unique_scans || 0;
+      const mobile_scans = data.mobile_scans || 0;
+      const mobile_pct = total_scans > 0 ? ((mobile_scans / total_scans) * 100).toFixed(1) : 0;
+      
+      const last_scan = data.last_scan_at?.toDate() || null;
 
       res.json({
         total_scans,
         unique_visitors,
         mobile_pct,
-        first_scan,
+        first_scan: null,
         last_scan
       });
     } catch (error) {
@@ -63,11 +62,8 @@ async function startServer() {
     try {
       const { slug } = req.params;
       const days = parseInt(req.query.days as string) || 30;
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - days);
-
-      const snapshot = await db.collection('scan_events').where('slug', '==', slug).get();
       
+      const statsDoc = await db.collection('qr_stats').doc(slug).get();
       const dailyStats: Record<string, any> = {};
       
       // Initialize all days
@@ -78,18 +74,16 @@ async function startServer() {
         dailyStats[dateStr] = { date: dateStr, total_scans: 0, unique_scans: 0, mobile_scans: 0 };
       }
 
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        const scanTime = data.scanned_at?.toDate();
-        if (!scanTime || scanTime < cutoff) return;
+      if (statsDoc.exists) {
+        const data = statsDoc.data()!;
+        const daysData = data.days || {};
         
-        const dateStr = scanTime.toISOString().split('T')[0];
-        if (dailyStats[dateStr]) {
-          dailyStats[dateStr].total_scans++;
-          if (data.is_unique) dailyStats[dateStr].unique_scans++;
-          if (data.device_type === 'mobile') dailyStats[dateStr].mobile_scans++;
+        for (const [dateStr, count] of Object.entries(daysData)) {
+          if (dailyStats[dateStr]) {
+            dailyStats[dateStr].total_scans = count;
+          }
         }
-      });
+      }
 
       res.json(Object.values(dailyStats));
     } catch (error) {
@@ -101,23 +95,26 @@ async function startServer() {
   app.get('/api/analytics/:slug/devices', async (req, res) => {
     try {
       const { slug } = req.params;
-      const snapshot = await db.collection('scan_events').where('slug', '==', slug).get();
+      const statsDoc = await db.collection('qr_stats').doc(slug).get();
       
-      const devices: Record<string, number> = {};
-      let total = 0;
+      if (!statsDoc.exists) return res.json([]);
+      
+      const data = statsDoc.data()!;
+      const devices = {
+        mobile: data.mobile_scans || 0,
+        desktop: data.desktop_scans || 0,
+        tablet: data.tablet_scans || 0
+      };
+      
+      const total = devices.mobile + devices.desktop + devices.tablet;
 
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        const device = data.device_type || 'unknown';
-        devices[device] = (devices[device] || 0) + 1;
-        total++;
-      });
-
-      const result = Object.entries(devices).map(([device_type, count]) => ({
-        device_type,
-        count,
-        pct: total > 0 ? (count / total * 100).toFixed(1) : 0
-      })).sort((a, b) => b.count - a.count);
+      const result = Object.entries(devices)
+        .filter(([_, count]) => count > 0)
+        .map(([device_type, count]) => ({
+          device_type,
+          count,
+          pct: total > 0 ? ((count / total) * 100).toFixed(1) : 0
+        })).sort((a, b) => b.count - a.count);
 
       res.json(result);
     } catch (error) {
@@ -129,21 +126,17 @@ async function startServer() {
   app.get('/api/analytics/:slug/countries', async (req, res) => {
     try {
       const { slug } = req.params;
-      const snapshot = await db.collection('scan_events').where('slug', '==', slug).get();
+      const statsDoc = await db.collection('qr_stats').doc(slug).get();
       
-      const countries: Record<string, { scans: number, unique_visitors: number }> = {};
-
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        const country = data.country || 'Unknown';
-        if (!countries[country]) countries[country] = { scans: 0, unique_visitors: 0 };
-        countries[country].scans++;
-        if (data.is_unique) countries[country].unique_visitors++;
-      });
-
-      const result = Object.entries(countries).map(([country, stats]) => ({
+      if (!statsDoc.exists) return res.json([]);
+      
+      const data = statsDoc.data()!;
+      const countries = data.countries || {};
+      
+      const result = Object.entries(countries).map(([country, scans]) => ({
         country,
-        ...stats
+        scans: scans as number,
+        unique_visitors: 0 // Not tracked per country in new schema
       })).sort((a, b) => b.scans - a.scans).slice(0, 10);
 
       res.json(result);
@@ -156,22 +149,19 @@ async function startServer() {
   app.get('/api/analytics/:slug/os', async (req, res) => {
     try {
       const { slug } = req.params;
-      const snapshot = await db.collection('scan_events').where('slug', '==', slug).get();
+      const statsDoc = await db.collection('qr_stats').doc(slug).get();
       
-      const osStats: Record<string, number> = {};
+      if (!statsDoc.exists) return res.json([]);
+      
+      const data = statsDoc.data()!;
+      const osData = data.os || {};
       let total = 0;
+      Object.values(osData).forEach(v => total += (v as number));
 
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        const os = data.os || 'Unknown';
-        osStats[os] = (osStats[os] || 0) + 1;
-        total++;
-      });
-
-      const result = Object.entries(osStats).map(([os, count]) => ({
+      const result = Object.entries(osData).map(([os, count]) => ({
         os,
-        count,
-        pct: total > 0 ? (count / total * 100).toFixed(1) : 0
+        count: count as number,
+        pct: total > 0 ? (((count as number) / total) * 100).toFixed(1) : 0
       })).sort((a, b) => b.count - a.count);
 
       res.json(result);
@@ -184,22 +174,19 @@ async function startServer() {
   app.get('/api/analytics/:slug/browsers', async (req, res) => {
     try {
       const { slug } = req.params;
-      const snapshot = await db.collection('scan_events').where('slug', '==', slug).get();
+      const statsDoc = await db.collection('qr_stats').doc(slug).get();
       
-      const browserStats: Record<string, number> = {};
+      if (!statsDoc.exists) return res.json([]);
+      
+      const data = statsDoc.data()!;
+      const browsersData = data.browsers || {};
       let total = 0;
+      Object.values(browsersData).forEach(v => total += (v as number));
 
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        const browser = data.browser || 'Unknown';
-        browserStats[browser] = (browserStats[browser] || 0) + 1;
-        total++;
-      });
-
-      const result = Object.entries(browserStats).map(([browser, count]) => ({
+      const result = Object.entries(browsersData).map(([browser, count]) => ({
         browser,
-        count,
-        pct: total > 0 ? (count / total * 100).toFixed(1) : 0
+        count: count as number,
+        pct: total > 0 ? (((count as number) / total) * 100).toFixed(1) : 0
       })).sort((a, b) => b.count - a.count);
 
       res.json(result);
@@ -212,30 +199,19 @@ async function startServer() {
   app.get('/api/analytics/:slug/referrers', async (req, res) => {
     try {
       const { slug } = req.params;
-      const snapshot = await db.collection('scan_events').where('slug', '==', slug).get();
+      const statsDoc = await db.collection('qr_stats').doc(slug).get();
       
-      const referrerStats: Record<string, number> = {};
+      if (!statsDoc.exists) return res.json([]);
+      
+      const data = statsDoc.data()!;
+      const referrersData = data.referrers || {};
       let total = 0;
+      Object.values(referrersData).forEach(v => total += (v as number));
 
-      snapshot.forEach(doc => {
-        const data = doc.data();
-        let referrer = data.referrer || 'Direct';
-        if (referrer !== 'Direct') {
-          try {
-            const url = new URL(referrer);
-            referrer = url.hostname;
-          } catch (e) {
-            // keep as is if invalid URL
-          }
-        }
-        referrerStats[referrer] = (referrerStats[referrer] || 0) + 1;
-        total++;
-      });
-
-      const result = Object.entries(referrerStats).map(([referrer, count]) => ({
-        referrer,
-        count,
-        pct: total > 0 ? (count / total * 100).toFixed(1) : 0
+      const result = Object.entries(referrersData).map(([referrer, count]) => ({
+        referrer: referrer.replace(/_/g, '.'), // Restore dots
+        count: count as number,
+        pct: total > 0 ? (((count as number) / total) * 100).toFixed(1) : 0
       })).sort((a, b) => b.count - a.count).slice(0, 10);
 
       res.json(result);
@@ -248,34 +224,27 @@ async function startServer() {
   app.get('/api/analytics/:slug/recent', async (req, res) => {
     try {
       const { slug } = req.params;
-      const snapshot = await db.collection('scan_events').where('slug', '==', slug).get();
+      // For recent, we still query scan_events but limit it to 10
+      const snapshot = await db.collection('scan_events')
+        .where('slug', '==', slug)
+        .orderBy('scanned_at', 'desc')
+        .limit(10)
+        .get();
       
-      const allScans = snapshot.docs.map(doc => {
+      const recent = snapshot.docs.map(doc => {
         const data = doc.data();
         return {
           id: doc.id,
-          scanned_at: data.scanned_at?.toDate(),
+          scanned_at: data.scanned_at?.toDate()?.toISOString(),
           country: data.country || 'Unknown',
           city: data.city || 'Unknown',
-          device_type: data.device_type || 'Unknown',
+          device_type: data.device || 'Unknown',
           os: data.os || 'Unknown',
           browser: data.browser || 'Unknown',
-          referrer: data.referrer || 'Direct',
+          referrer: data.referer || 'Direct',
           is_unique: data.is_unique
         };
       });
-
-      // Sort in memory to avoid needing a composite index in Firestore
-      allScans.sort((a, b) => {
-        if (!a.scanned_at) return 1;
-        if (!b.scanned_at) return -1;
-        return b.scanned_at.getTime() - a.scanned_at.getTime();
-      });
-
-      const recent = allScans.slice(0, 10).map(scan => ({
-        ...scan,
-        scanned_at: scan.scanned_at?.toISOString()
-      }));
 
       res.json(recent);
     } catch (error) {
@@ -287,7 +256,6 @@ async function startServer() {
   app.get('/api/analytics/account/:uid', async (req, res) => {
     try {
       const { uid } = req.params;
-      // Get all QR codes for this user
       const qrSnapshot = await db.collection('qr_codes').where('user_uid', '==', uid).get();
       const slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
@@ -295,22 +263,20 @@ async function startServer() {
         return res.json({ total_scans: 0, unique_visitors: 0, total_qrs: 0, active_qrs: 0 });
       }
 
-      // Firestore 'in' query supports up to 30 items. If a user has more, we'd need to batch.
-      // For simplicity in this demo, we'll chunk them.
       let total_scans = 0;
       let unique_visitors = 0;
       
-      // Chunk slugs into arrays of 30
       const chunks = [];
       for (let i = 0; i < slugs.length; i += 30) {
         chunks.push(slugs.slice(i, i + 30));
       }
 
       for (const chunk of chunks) {
-        const scanSnapshot = await db.collection('scan_events').where('slug', 'in', chunk).get();
-        total_scans += scanSnapshot.size;
-        scanSnapshot.forEach(doc => {
-          if (doc.data().is_unique) unique_visitors++;
+        const statsSnapshot = await db.collection('qr_stats').where(admin.firestore.FieldPath.documentId(), 'in', chunk).get();
+        statsSnapshot.forEach(doc => {
+          const data = doc.data();
+          total_scans += (data.total_scans || 0);
+          unique_visitors += (data.unique_scans || 0);
         });
       }
 
@@ -332,15 +298,12 @@ async function startServer() {
     try {
       const { uid } = req.params;
       const days = parseInt(req.query.days as string) || 30;
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - days);
 
       const qrSnapshot = await db.collection('qr_codes').where('user_uid', '==', uid).get();
       const slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
       const dailyStats: Record<string, any> = {};
       
-      // Initialize all days
       for (let i = days - 1; i >= 0; i--) {
         const d = new Date();
         d.setDate(d.getDate() - i);
@@ -355,16 +318,14 @@ async function startServer() {
         }
 
         for (const chunk of chunks) {
-          const scanSnapshot = await db.collection('scan_events').where('slug', 'in', chunk).get();
-          scanSnapshot.forEach(doc => {
+          const statsSnapshot = await db.collection('qr_stats').where(admin.firestore.FieldPath.documentId(), 'in', chunk).get();
+          statsSnapshot.forEach(doc => {
             const data = doc.data();
-            const scanTime = data.scanned_at?.toDate();
-            if (!scanTime || scanTime < cutoff) return;
-            
-            const dateStr = scanTime.toISOString().split('T')[0];
-            if (dailyStats[dateStr]) {
-              dailyStats[dateStr].total_scans++;
-              if (data.is_unique) dailyStats[dateStr].unique_scans++;
+            const daysData = data.days || {};
+            for (const [dateStr, count] of Object.entries(daysData)) {
+              if (dailyStats[dateStr]) {
+                dailyStats[dateStr].total_scans += (count as number);
+              }
             }
           });
         }
@@ -453,26 +414,58 @@ async function captureAnalytics(req: express.Request, slug: string) {
 
   const parsed = parseUA(ua);
   const referer = req.headers.referer || '';
+  
+  let refererHost = 'Direct';
+  if (referer) {
+    try {
+      refererHost = new URL(referer).hostname;
+    } catch (e) {
+      refererHost = 'Unknown';
+    }
+  }
 
   // Mock country for demo purposes if not available in headers
-  const country = req.headers['cf-ipcountry'] || 'US';
+  const country = (req.headers['cf-ipcountry'] as string) || 'US';
+  
+  const now = new Date();
+  const dateStr = now.toISOString().split('T')[0];
+  const hourStr = now.getHours().toString();
 
+  // 1. Write to scan_events
   await db.collection('scan_events').add({
     slug,
-    scanned_at: admin.firestore.FieldValue.serverTimestamp(),
+    date: dateStr,
     country,
-    region: null,
-    city: null,
-    timezone: null,
-    device_type: parsed.device,
-    os: parsed.os,
-    os_version: parsed.osVersion,
+    device: parsed.device,
     browser: parsed.browser,
-    visitor_hash: visitorHash,
+    os: parsed.os,
+    referer: refererHost,
     is_unique: isUnique,
-    is_bot: false,
-    referer_type: classifyReferer(referer)
+    scanned_at: admin.firestore.FieldValue.serverTimestamp(),
+    visitor_hash: visitorHash, // Keep this for uniqueness check
   });
+
+  // 2. Update qr_stats/{slug}
+  const statsRef = db.collection('qr_stats').doc(slug);
+  const increment = admin.firestore.FieldValue.increment(1);
+  
+  const updateData: any = {
+    total_scans: increment,
+    [`${parsed.device}_scans`]: increment,
+    [`countries.${country}`]: increment,
+    [`days.${dateStr}`]: increment,
+    [`hours.${hourStr}`]: increment,
+    [`browsers.${parsed.browser}`]: increment,
+    [`os.${parsed.os}`]: increment,
+    [`referrers.${refererHost.replace(/\./g, '_')}`]: increment,
+    last_scan_at: admin.firestore.FieldValue.serverTimestamp()
+  };
+
+  if (isUnique) {
+    updateData.unique_scans = increment;
+  }
+
+  await statsRef.set(updateData, { merge: true });
 }
 
 function parseUA(ua: string) {
