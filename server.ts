@@ -28,6 +28,42 @@ async function startServer() {
 
   app.use(cors());
   app.use(express.json());
+  app.use(cors());
+
+  // Middlewares
+  const authenticate = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) return res.status(401).send('Unauthorized');
+      const token = authHeader.split('Bearer ')[1];
+      const decoded = await admin.auth().verifyIdToken(token);
+      (req as any).user = decoded;
+      next();
+    } catch (error) {
+      console.error('Auth error:', error);
+      res.status(401).send('Unauthorized');
+    }
+  };
+
+  const requireOwnership = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      const { slug } = req.params;
+      const user = (req as any).user;
+      if (!user) return res.status(401).send('Unauthorized');
+
+      const qrDoc = await getDoc(doc(db, 'qr_codes', slug));
+      if (!qrDoc.exists()) return res.status(404).send('Not found');
+      
+      if (qrDoc.data().user_uid !== user.uid) {
+        return res.status(403).send('Forbidden');
+      }
+      
+      next();
+    } catch (error) {
+      console.error('Ownership check error:', error);
+      res.status(500).send('Internal Server Error');
+    }
+  };
 
   // API routes
   app.get('/api/health', (req, res) => {
@@ -93,8 +129,13 @@ async function startServer() {
         return res.status(400).json({ error: 'Invalid plan' });
       }
 
-      const merchant_id = process.env.PAYHERE_MERCHANT_ID || '1234567';
-      const merchant_secret = process.env.PAYHERE_SECRET || 'sandbox_secret';
+      const merchant_id = process.env.PAYHERE_MERCHANT_ID;
+      const merchant_secret = process.env.PAYHERE_SECRET;
+      
+      if (!merchant_id || !merchant_secret) {
+        console.error('Missing PayHere credentials');
+        return res.status(500).json({ error: 'Billing configuration error' });
+      }
       const order_id = `ORDER_${uid}_${Date.now()}`;
       const amount = prices[plan].toFixed(2);
       const currency = 'USD';
@@ -232,7 +273,7 @@ async function startServer() {
   });
 
   // Analytics API
-  app.get('/api/analytics/:slug/summary', async (req, res) => {
+  app.get('/api/analytics/:slug/summary', authenticate, requireOwnership, async (req, res) => {
     try {
       const { slug } = req.params;
       const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
@@ -268,7 +309,7 @@ async function startServer() {
     }
   });
 
-  app.get('/api/analytics/:slug/timeseries', async (req, res) => {
+  app.get('/api/analytics/:slug/timeseries', authenticate, requireOwnership, async (req, res) => {
     try {
       const { slug } = req.params;
       const days = parseInt(req.query.days as string) || 30;
@@ -302,7 +343,7 @@ async function startServer() {
     }
   });
 
-  app.get('/api/analytics/:slug/devices', async (req, res) => {
+  app.get('/api/analytics/:slug/devices', authenticate, requireOwnership, async (req, res) => {
     try {
       const { slug } = req.params;
       const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
@@ -333,7 +374,7 @@ async function startServer() {
     }
   });
 
-  app.get('/api/analytics/:slug/countries', async (req, res) => {
+  app.get('/api/analytics/:slug/countries', authenticate, requireOwnership, async (req, res) => {
     try {
       const { slug } = req.params;
       const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
@@ -356,7 +397,7 @@ async function startServer() {
     }
   });
 
-  app.get('/api/analytics/:slug/os', async (req, res) => {
+  app.get('/api/analytics/:slug/os', authenticate, requireOwnership, async (req, res) => {
     try {
       const { slug } = req.params;
       const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
@@ -381,7 +422,7 @@ async function startServer() {
     }
   });
 
-  app.get('/api/analytics/:slug/browsers', async (req, res) => {
+  app.get('/api/analytics/:slug/browsers', authenticate, requireOwnership, async (req, res) => {
     try {
       const { slug } = req.params;
       const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
@@ -406,7 +447,7 @@ async function startServer() {
     }
   });
 
-  app.get('/api/analytics/:slug/referrers', async (req, res) => {
+  app.get('/api/analytics/:slug/referrers', authenticate, requireOwnership, async (req, res) => {
     try {
       const { slug } = req.params;
       const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
@@ -431,7 +472,7 @@ async function startServer() {
     }
   });
 
-  app.get('/api/analytics/:slug/recent', async (req, res) => {
+  app.get('/api/analytics/:slug/recent', authenticate, requireOwnership, async (req, res) => {
     try {
       const { slug } = req.params;
       // For recent, we still query scan_events but limit it to 10
@@ -459,7 +500,7 @@ async function startServer() {
     }
   });
 
-  app.get('/api/analytics/:slug/advanced', async (req, res) => {
+  app.get('/api/analytics/:slug/advanced', authenticate, requireOwnership, async (req, res) => {
     try {
       const { slug } = req.params;
       const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
@@ -503,9 +544,14 @@ async function startServer() {
     }
   });
 
-  app.get('/api/analytics/account/:uid', async (req, res) => {
+  app.get('/api/analytics/account/:uid', authenticate, async (req, res) => {
     try {
       const { uid } = req.params;
+      const decodedUser = (req as any).user;
+      
+      if (decodedUser.uid !== uid) {
+        return res.status(403).send('Forbidden');
+      }
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
       const slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
@@ -544,9 +590,14 @@ async function startServer() {
     }
   });
 
-  app.get('/api/analytics/account/:uid/timeseries', async (req, res) => {
+  app.get('/api/analytics/account/:uid/timeseries', authenticate, async (req, res) => {
     try {
       const { uid } = req.params;
+      const decodedUser = (req as any).user;
+      
+      if (decodedUser.uid !== uid) {
+        return res.status(403).send('Forbidden');
+      }
       const days = parseInt(req.query.days as string) || 30;
 
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
@@ -588,9 +639,14 @@ async function startServer() {
     }
   });
 
-  app.get('/api/analytics/account/:uid/devices', async (req, res) => {
+  app.get('/api/analytics/account/:uid/devices', authenticate, async (req, res) => {
     try {
       const { uid } = req.params;
+      const decodedUser = (req as any).user;
+      
+      if (decodedUser.uid !== uid) {
+        return res.status(403).send('Forbidden');
+      }
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
       const slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
@@ -628,9 +684,14 @@ async function startServer() {
     }
   });
 
-  app.get('/api/analytics/account/:uid/countries', async (req, res) => {
+  app.get('/api/analytics/account/:uid/countries', authenticate, async (req, res) => {
     try {
       const { uid } = req.params;
+      const decodedUser = (req as any).user;
+      
+      if (decodedUser.uid !== uid) {
+        return res.status(403).send('Forbidden');
+      }
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
       const slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
@@ -667,9 +728,14 @@ async function startServer() {
     }
   });
 
-  app.get('/api/analytics/account/:uid/recent', async (req, res) => {
+  app.get('/api/analytics/account/:uid/recent', authenticate, async (req, res) => {
     try {
       const { uid } = req.params;
+      const decodedUser = (req as any).user;
+      
+      if (decodedUser.uid !== uid) {
+        return res.status(403).send('Forbidden');
+      }
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
       const slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
@@ -714,9 +780,14 @@ async function startServer() {
     }
   });
 
-  app.get('/api/analytics/account/:uid/performance', async (req, res) => {
+  app.get('/api/analytics/account/:uid/performance', authenticate, async (req, res) => {
     try {
       const { uid } = req.params;
+      const decodedUser = (req as any).user;
+      
+      if (decodedUser.uid !== uid) {
+        return res.status(403).send('Forbidden');
+      }
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
       
       const performanceData = [];
@@ -747,8 +818,14 @@ async function startServer() {
   // Internal endpoint for Cloudflare Worker to send rich CF payload
   app.post('/internal/scan', async (req, res) => {
     try {
+      const internalSecret = process.env.INTERNAL_SECRET;
+      if (!internalSecret) {
+        console.error('INTERNAL_SECRET not set');
+        return res.status(500).send('Configuration Error');
+      }
+
       const authHeader = req.headers.authorization;
-      if (authHeader !== `Bearer ${process.env.INTERNAL_SECRET || 'dev-internal-secret'}`) {
+      if (authHeader !== `Bearer ${internalSecret}`) {
         return res.status(401).send('Unauthorized');
       }
 
@@ -757,6 +834,30 @@ async function startServer() {
     } catch (error) {
       console.error('Scan capture failed:', error);
       res.status(500).json({ error: 'Failed' });
+    }
+  });
+  // Internal endpoint for Worker KV-miss fallback
+  app.get('/internal/slug/:slug', async (req, res) => {
+    try {
+      const internalSecret = process.env.INTERNAL_SECRET;
+      if (!internalSecret) return res.status(500).send('Config missing');
+
+      const authHeader = req.headers.authorization;
+      if (authHeader !== `Bearer ${internalSecret}`) {
+        return res.status(401).send('Unauthorized');
+      }
+
+      const { slug } = req.params;
+      const qrDoc = await getDoc(doc(db, 'qr_codes', slug));
+      
+      if (!qrDoc.exists()) {
+        return res.status(404).send('Not found');
+      }
+
+      res.json(qrDoc.data());
+    } catch (error) {
+      console.error('Internal slug fetch failed:', error);
+      res.status(500).send('Error');
     }
   });
 

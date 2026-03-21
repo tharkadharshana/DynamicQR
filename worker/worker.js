@@ -18,8 +18,8 @@ export default {
     let destinationData = await env.QR_CACHE.get(cacheKey, "json");
 
     if (!destinationData) {
-      // Fallback to origin API to fetch it
-      const apiUrl = env.API_URL || "https://dynamicqr.dev"; // Change to your Cloud Run URL
+      const apiUrl = env.API_URL;
+      if (!apiUrl) return new Response("Configuration Error", { status: 500 });
       const res = await fetch(`${apiUrl}/internal/slug/${slug}`, {
         headers: { 'Authorization': `Bearer ${env.INTERNAL_SECRET}` }
       });
@@ -55,9 +55,10 @@ export default {
     };
 
     // 4. Send Analytics async
-    const apiUrl = env.API_URL || "https://dynamicqr.dev";
-    ctx.waitUntil(
-      fetch(`${apiUrl}/internal/scan`, {
+    const apiUrl = env.API_URL;
+    if (apiUrl) {
+      ctx.waitUntil(
+        fetch(`${apiUrl}/internal/scan`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -65,7 +66,8 @@ export default {
         },
         body: JSON.stringify(payload)
       }).catch(err => console.error("Worker analytics send failed:", err))
-    );
+      );
+    }
 
     // 5. Instantly redirect the user
     return Response.redirect(destinationUrl, 302);
