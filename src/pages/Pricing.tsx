@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Check, X, Zap, Crown, Building2, Loader2, ExternalLink } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 
@@ -232,6 +233,15 @@ export default function Pricing() {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Legal Links for PayHere Reviewers */}
+      <div className="mt-16 pb-12 text-center flex flex-col sm:flex-row items-center justify-center gap-4 text-xs font-medium text-zinc-600">
+        <Link to="/legal/refund-policy" className="hover:text-zinc-300 transition-colors">Refund Policy</Link>
+        <span className="hidden sm:inline w-1 h-1 rounded-full bg-zinc-700"></span>
+        <Link to="/legal/privacy-policy" className="hover:text-zinc-300 transition-colors">Privacy Policy</Link>
+        <span className="hidden sm:inline w-1 h-1 rounded-full bg-zinc-700"></span>
+        <Link to="/legal/terms-and-conditions" className="hover:text-zinc-300 transition-colors">Terms & Conditions</Link>
       </div>
     </div>
   );

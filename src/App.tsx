@@ -10,6 +10,9 @@ import Analytics from './pages/Analytics';
 import Landing from './pages/Landing';
 import Pricing from './pages/Pricing';
 import Settings from './pages/Settings';
+import RefundPolicy from './pages/RefundPolicy';
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import TermsConditions from './pages/TermsConditions';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
@@ -37,6 +40,11 @@ export default function App() {
   return (
     <Router>
       <Routes>
+        {/* Public Legal Pages (PayHere requirements) */}
+        <Route path="/legal/refund-policy" element={<RefundPolicy />} />
+        <Route path="/legal/privacy-policy" element={<PrivacyPolicy />} />
+        <Route path="/legal/terms-and-conditions" element={<TermsConditions />} />
+
         {user ? (
           <Route path="/" element={<Layout />}>
             <Route index element={<Dashboard />} />
