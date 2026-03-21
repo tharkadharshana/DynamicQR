@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { auth, logout } from '../firebase';
+import { apiFetch } from '../lib/api';
 import { User, Shield, CreditCard, LogOut, Mail, Calendar, Crown, ExternalLink } from 'lucide-react';
 
 export default function Settings() {
@@ -10,11 +11,7 @@ export default function Settings() {
   useEffect(() => {
     const fetchPlan = async () => {
       try {
-        const token = await auth.currentUser?.getIdToken();
-        const res = await fetch('/api/user/plan', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const data = await res.json();
+        const data = await apiFetch('/api/user/plan');
         setPlanInfo(data);
       } catch (err) {
         console.error('Failed to fetch plan:', err);

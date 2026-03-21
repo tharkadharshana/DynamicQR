@@ -8,6 +8,28 @@ export default {
     const url = new URL(request.url);
     const slug = url.pathname.slice(1); // '/abc123' → 'abc123'
 
+    // Core paths to ignore
+    if (slug === 'favicon.ico' || slug === 'robots.txt') {
+      return new Response(null, { status: 204 });
+    }
+    if (slug === 'internal/health') {
+      return new Response('ok', { status: 200 });
+    }
+
+    // Cache purge endpoint (internal)
+    if (url.pathname.startsWith('/internal/purge/')) {
+      const purgeSlug = url.pathname.split('/internal/purge/')[1];
+      const authHeader = request.headers.get('Authorization');
+      if (authHeader !== `Bearer ${env.INTERNAL_SECRET}`) {
+        return new Response('Forbidden', { status: 403 });
+      }
+      if (purgeSlug) {
+        await env.QR_KV.delete(`qr:${purgeSlug}`);
+        return new Response('Purged', { status: 200 });
+      }
+      return new Response('Invalid slug', { status: 400 });
+    }
+
     // Validate slug format — reject garbage immediately
     if (!/^[23456789a-zA-Z]{5,12}$/.test(slug)) {
       return new Response('Not found', { status: 404 });

@@ -118,6 +118,47 @@ function enforceAnalyticsWindow(plan: string, requestedDays: number): number {
 }
 
 // ────────────────────────────────────────────────────────────────
+// SSRF & URL Validation
+// ────────────────────────────────────────────────────────────────
+function isValidDestination(urlStr: string): boolean {
+  try {
+    const url = new URL(urlStr);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+
+    const hostname = url.hostname.toLowerCase();
+    // Block localhost and common internal IP ranges
+    const isInternal =
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "0.0.0.0" ||
+      hostname.startsWith("192.168.") ||
+      hostname.startsWith("10.") ||
+      hostname.startsWith("172.") || // overly broad but safe
+      hostname.endsWith(".local") ||
+      hostname.endsWith(".internal");
+
+    return !isInternal;
+  } catch {
+    return false;
+  }
+}
+
+async function purgeWorkerCache(slug: string) {
+  const workerUrl = process.env.WORKER_URL;
+  const secret = process.env.INTERNAL_SECRET || "dev-internal-secret";
+  if (!workerUrl) return;
+
+  try {
+    await fetch(`${workerUrl}/internal/purge/${slug}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${secret}` },
+    });
+  } catch (err) {
+    console.error(`Failed to purge worker cache for ${slug}:`, err);
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
 // Module 3 — UA Parsing, Bot Detection, Analytics Helpers
 // ────────────────────────────────────────────────────────────────
 function parseUA(ua: string) {
@@ -161,6 +202,29 @@ function parseUA(ua: string) {
   return { device, os, osVersion, browser };
 }
 
+// ────────────────────────────────────────────────────────────────
+// Server-Side QR Generation (Module 5)
+// ────────────────────────────────────────────────────────────────
+import QRCode from 'qrcode';
+
+async function generateQRCodeAssets(slug: string, destination: string, style: any) {
+  const options = {
+    color: {
+      dark: style.dot_color || '#000000',
+      light: style.bg_color || '#FFFFFF',
+    },
+    errorCorrectionLevel: style.error_correction || (style.logo_url ? 'H' : 'M'),
+    margin: 2,
+    width: 1000,
+  };
+
+  const pngBuffer = await QRCode.toBuffer(destination, options);
+  // In production, upload to GCS/Firebase Storage:
+  // const file = admin.storage().bucket().file(`qr/${slug}/standard.png`);
+  // await file.save(pngBuffer);
+  return pngBuffer;
+}
+
 function isBot(ua: string) {
   return /bot|crawler|spider|preview|facebookexternalhit|googlebot|twitterbot|slackbot|whatsapp|telegram/i.test(
     ua,
@@ -178,7 +242,7 @@ function classifyReferer(referer: string) {
 // ────────────────────────────────────────────────────────────────
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(cors());
 
@@ -247,6 +311,10 @@ async function startServer() {
           .json({ error: "title and destination_url are required" });
       }
 
+      if (!isValidDestination(destination_url)) {
+        return res.status(400).json({ error: "Invalid or restricted destination URL" });
+      }
+
       // Enforce plan limits
       const limitCheck = await enforceQRLimit(uid);
       if (!limitCheck.allowed) {
@@ -278,6 +346,12 @@ async function startServer() {
       };
 
       await db.collection("qr_codes").doc(slug).set(qrDoc);
+      
+      // Generate initial assets (server-side)
+      generateQRCodeAssets(slug, destination_url, qrDoc.style).catch(err => 
+        console.error("Initial QR generation failed:", err)
+      );
+
       res
         .status(201)
         .json({ id: slug, ...qrDoc, remaining: limitCheck.remaining });
@@ -328,7 +402,16 @@ async function startServer() {
       delete updates.created_at;
       updates.updated_at = admin.firestore.FieldValue.serverTimestamp();
 
+      // Validate destination if provided
+      if (updates.destination_url && !isValidDestination(updates.destination_url)) {
+        return res.status(400).json({ error: "Invalid or restricted destination URL" });
+      }
+
       await docRef.update(updates);
+      
+      // Invalidate edge cache
+      purgeWorkerCache(id).catch(() => {});
+
       res.json({ id, ...updates });
     } catch (error) {
       console.error("Update QR error:", error);
@@ -354,6 +437,10 @@ async function startServer() {
         is_active: false,
         updated_at: admin.firestore.FieldValue.serverTimestamp(),
       });
+
+      // Invalidate edge cache
+      purgeWorkerCache(id).catch(() => {});
+
       res.json({ id, is_active: false, message: "QR code deactivated" });
     } catch (error) {
       console.error("Delete QR error:", error);
@@ -482,6 +569,14 @@ async function startServer() {
   app.get("/api/analytics/:slug/devices", async (req, res) => {
     try {
       const { slug } = req.params;
+      const uid = (req as any).uid;
+
+      // Verify ownership on every analytics request
+      const qrDoc = await db.collection("qr_codes").doc(slug).get();
+      if (!qrDoc.exists || qrDoc.data()!.user_uid !== uid) {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
       const snapshot = await db
         .collection("scan_events")
         .where("slug", "==", slug)
@@ -514,6 +609,14 @@ async function startServer() {
   app.get("/api/analytics/:slug/countries", async (req, res) => {
     try {
       const { slug } = req.params;
+      const uid = (req as any).uid;
+
+      // Verify ownership on every analytics request
+      const qrDoc = await db.collection("qr_codes").doc(slug).get();
+      if (!qrDoc.exists || qrDoc.data()!.user_uid !== uid) {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
       const snapshot = await db
         .collection("scan_events")
         .where("slug", "==", slug)
@@ -551,6 +654,14 @@ async function startServer() {
   app.get("/api/analytics/:slug/os", async (req, res) => {
     try {
       const { slug } = req.params;
+      const uid = (req as any).uid;
+
+      // Verify ownership on every analytics request
+      const qrDoc = await db.collection("qr_codes").doc(slug).get();
+      if (!qrDoc.exists || qrDoc.data()!.user_uid !== uid) {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
       const snapshot = await db
         .collection("scan_events")
         .where("slug", "==", slug)
@@ -582,6 +693,14 @@ async function startServer() {
   app.get("/api/analytics/:slug/browsers", async (req, res) => {
     try {
       const { slug } = req.params;
+      const uid = (req as any).uid;
+
+      // Verify ownership on every analytics request
+      const qrDoc = await db.collection("qr_codes").doc(slug).get();
+      if (!qrDoc.exists || qrDoc.data()!.user_uid !== uid) {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
       const snapshot = await db
         .collection("scan_events")
         .where("slug", "==", slug)
@@ -613,6 +732,14 @@ async function startServer() {
   app.get("/api/analytics/:slug/referrers", async (req, res) => {
     try {
       const { slug } = req.params;
+      const uid = (req as any).uid;
+
+      // Verify ownership on every analytics request
+      const qrDoc = await db.collection("qr_codes").doc(slug).get();
+      if (!qrDoc.exists || qrDoc.data()!.user_uid !== uid) {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
       const snapshot = await db
         .collection("scan_events")
         .where("slug", "==", slug)
@@ -652,6 +779,14 @@ async function startServer() {
   app.get("/api/analytics/:slug/recent", async (req, res) => {
     try {
       const { slug } = req.params;
+      const uid = (req as any).uid;
+
+      // Verify ownership on every analytics request
+      const qrDoc = await db.collection("qr_codes").doc(slug).get();
+      if (!qrDoc.exists || qrDoc.data()!.user_uid !== uid) {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
       const snapshot = await db
         .collection("scan_events")
         .where("slug", "==", slug)
@@ -693,6 +828,14 @@ async function startServer() {
   app.get("/api/analytics/:slug/hours", async (req, res) => {
     try {
       const { slug } = req.params;
+      const uid = (req as any).uid;
+
+      // Verify ownership on every analytics request
+      const qrDoc = await db.collection("qr_codes").doc(slug).get();
+      if (!qrDoc.exists || qrDoc.data()!.user_uid !== uid) {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
       const snapshot = await db
         .collection("scan_events")
         .where("slug", "==", slug)
@@ -723,6 +866,14 @@ async function startServer() {
   app.get("/api/analytics/:slug/velocity", async (req, res) => {
     try {
       const { slug } = req.params;
+      const uid = (req as any).uid;
+
+      // Verify ownership on every analytics request
+      const qrDoc = await db.collection("qr_codes").doc(slug).get();
+      if (!qrDoc.exists || qrDoc.data()!.user_uid !== uid) {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
       const snapshot = await db
         .collection("scan_events")
         .where("slug", "==", slug)
@@ -860,10 +1011,30 @@ async function startServer() {
           });
         }
       }
-
       res.json(Object.values(dailyStats));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch account timeseries" });
+    }
+  });
+
+  // ════════════════════════════════════════════════════════════════
+  // Daily Aggregation Job (Module 6)
+  // ════════════════════════════════════════════════════════════════
+  app.post("/cron/aggregate", async (req, res) => {
+    // In production, protect with GCP_CRON_SECRET
+    try {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const dateStr = yesterday.toISOString().split("T")[0];
+
+      // Logic would go here to:
+      // 1. Fetch all scan_events for yesterday
+      // 2. Group by slug
+      // 3. Write to daily_stats collection
+      console.log(`Cron: Aggregating stats for ${dateStr}`);
+      res.json({ status: "ok", message: `Aggregation job scheduled for ${dateStr}` });
+    } catch (error) {
+      res.status(500).json({ error: "Aggregation failed" });
     }
   });
 

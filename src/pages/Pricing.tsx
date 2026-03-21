@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { auth } from '../firebase';
 import { Check, X, Zap, Crown, Building2, Loader2, ExternalLink } from 'lucide-react';
+import { apiFetch } from '../lib/api';
 
 const PLANS = [
   {
@@ -79,11 +79,7 @@ export default function Pricing() {
   useEffect(() => {
     const fetchPlan = async () => {
       try {
-        const token = await auth.currentUser?.getIdToken();
-        const res = await fetch('/api/user/plan', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const data = await res.json();
+        const data = await apiFetch('/api/user/plan');
         setCurrentPlan(data.plan || 'free');
       } catch (err) {
         console.error('Failed to fetch plan:', err);
@@ -97,17 +93,10 @@ export default function Pricing() {
     setLoading(planId);
 
     try {
-      const token = await auth.currentUser?.getIdToken();
-      const res = await fetch('/api/billing/checkout', {
+      const data = await apiFetch('/api/billing/checkout', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
         body: JSON.stringify({ plan: planId })
       });
-
-      const data = await res.json();
 
       // Build PayHere checkout form and submit
       const form = document.createElement('form');

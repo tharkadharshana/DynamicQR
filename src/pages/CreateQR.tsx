@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
+import { apiFetch } from '../lib/api';
 import QRCode from 'qrcode';
 import { ArrowLeft, Download, Palette, Eye } from 'lucide-react';
 
@@ -102,15 +103,9 @@ export default function CreateQR() {
     setSuccess('');
 
     try {
-      const token = await auth.currentUser.getIdToken();
-
       if (id) {
-        const res = await fetch(`/api/qr/${id}`, {
+        await apiFetch(`/api/qr/${id}`, {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`
-          },
           body: JSON.stringify({
             title: formData.title,
             destination_url: formData.destination_url,
@@ -118,19 +113,11 @@ export default function CreateQR() {
             style: formData.style
           })
         });
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || 'Failed to update');
-        }
         setSuccess('QR code updated successfully!');
         setTimeout(() => navigate('/'), 1000);
       } else {
-        const res = await fetch('/api/qr', {
+        await apiFetch('/api/qr', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`
-          },
           body: JSON.stringify({
             title: formData.title,
             destination_url: formData.destination_url,
@@ -138,16 +125,12 @@ export default function CreateQR() {
             style: formData.style
           })
         });
-
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error || 'Failed to create');
-        }
-        setSuccess('QR code created!');
+        setSuccess('QR code created successfully!');
         setTimeout(() => navigate('/'), 1000);
       }
     } catch (err: any) {
-      setError(err.message || 'Something went wrong');
+      console.error(err);
+      setError(err.message || 'Failed to save QR code');
     } finally {
       setLoading(false);
     }

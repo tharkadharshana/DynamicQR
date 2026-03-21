@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 import { db, auth } from '../firebase';
+import { apiFetch, formatNumber } from '../lib/api';
 import {
   Plus, BarChart2, MoreVertical, ExternalLink, Activity, Users, QrCode,
   TrendingUp, Eye, Copy, Check, Power, Pencil
@@ -20,23 +21,15 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!auth.currentUser) return;
-    const token = auth.currentUser.getIdToken();
 
-    token.then(t => {
-      fetch('/api/analytics/account/summary', {
-        headers: { Authorization: `Bearer ${t}` }
-      })
-        .then(res => res.json())
-        .then(data => setAccountStats(data))
-        .catch(err => console.error("Failed to fetch account stats", err));
+    // Use apiFetch for automatic token refresh + error handling
+    apiFetch('/api/analytics/account/summary')
+      .then(data => setAccountStats(data))
+      .catch(err => console.error('Failed to fetch account stats:', err.message));
 
-      fetch('/api/analytics/account/timeseries?days=30', {
-        headers: { Authorization: `Bearer ${t}` }
-      })
-        .then(res => res.json())
-        .then(data => setAccountTimeseries(data))
-        .catch(err => console.error("Failed to fetch account timeseries", err));
-    });
+    apiFetch('/api/analytics/account/timeseries?days=30')
+      .then(data => setAccountTimeseries(data))
+      .catch(err => console.error('Failed to fetch account timeseries:', err.message));
 
     const q = query(
       collection(db, 'qr_codes'),
@@ -66,15 +59,14 @@ export default function Dashboard() {
   };
 
   const toggleQR = async (id: string, currentState: boolean) => {
-    const token = await auth.currentUser?.getIdToken();
-    await fetch(`/api/qr/${id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
-      },
-      body: JSON.stringify({ is_active: !currentState })
-    });
+    try {
+      await apiFetch(`/api/qr/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ is_active: !currentState })
+      });
+    } catch (err: any) {
+      console.error('Toggle QR failed:', err.message);
+    }
     setMenuOpen(null);
   };
 
@@ -90,8 +82,8 @@ export default function Dashboard() {
   }
 
   const statCards = accountStats ? [
-    { label: 'Total Scans', value: accountStats.total_scans?.toLocaleString() || '0', icon: Activity, color: 'violet', gradient: 'from-violet-500/20 to-violet-600/5' },
-    { label: 'Unique Visitors', value: accountStats.unique_visitors?.toLocaleString() || '0', icon: Users, color: 'emerald', gradient: 'from-emerald-500/20 to-emerald-600/5' },
+    { label: 'Total Scans', value: formatNumber(accountStats.total_scans), icon: Activity, color: 'violet', gradient: 'from-violet-500/20 to-violet-600/5' },
+    { label: 'Unique Visitors', value: formatNumber(accountStats.unique_visitors), icon: Users, color: 'emerald', gradient: 'from-emerald-500/20 to-emerald-600/5' },
     { label: 'Active QR Codes', value: `${accountStats.active_qrs || 0}`, sub: `/ ${accountStats.total_qrs || 0} total`, icon: QrCode, color: 'amber', gradient: 'from-amber-500/20 to-amber-600/5' },
   ] : [];
 

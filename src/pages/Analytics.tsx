@@ -2,13 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft, Users, Smartphone, Globe, Calendar, Link as LinkIcon,
-  Clock, TrendingUp, TrendingDown, Minus, BarChart3
+  Clock, TrendingUp, TrendingDown, Minus, BarChart3, AlertCircle
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, BarChart, Bar, AreaChart, Area
 } from 'recharts';
-import { auth } from '../firebase';
+import { apiFetch, formatNumber, clampPct } from '../lib/api';
 
 const COLORS = ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#a855f7'];
 const COUNTRY_FLAGS: Record<string, string> = {
@@ -30,25 +30,24 @@ export default function Analytics() {
   const [peakHours, setPeakHours] = useState<any[]>([]);
   const [velocity, setVelocity] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedDays, setSelectedDays] = useState(30);
 
   useEffect(() => {
     const fetchAnalytics = async () => {
       try {
-        const token = await auth.currentUser?.getIdToken();
-        const headers = { Authorization: `Bearer ${token}` };
-
+        setError(null);
         const [sumRes, tsRes, devRes, ctryRes, browserRes, osRes, refRes, recentRes, hoursRes, velRes] = await Promise.all([
-          fetch(`/api/analytics/${slug}/summary`, { headers }).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/timeseries?days=${selectedDays}`, { headers }).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/devices`, { headers }).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/countries`, { headers }).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/browsers`, { headers }).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/os`, { headers }).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/referrers`, { headers }).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/recent`, { headers }).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/hours`, { headers }).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/velocity`, { headers }).then(r => r.json()),
+          apiFetch(`/api/analytics/${slug}/summary`),
+          apiFetch(`/api/analytics/${slug}/timeseries?days=${selectedDays}`),
+          apiFetch(`/api/analytics/${slug}/devices`),
+          apiFetch(`/api/analytics/${slug}/countries`),
+          apiFetch(`/api/analytics/${slug}/browsers`),
+          apiFetch(`/api/analytics/${slug}/os`),
+          apiFetch(`/api/analytics/${slug}/referrers`),
+          apiFetch(`/api/analytics/${slug}/recent`),
+          apiFetch(`/api/analytics/${slug}/hours`),
+          apiFetch(`/api/analytics/${slug}/velocity`),
         ]);
 
         setSummary(sumRes);
@@ -61,8 +60,8 @@ export default function Analytics() {
         setRecentScans(recentRes);
         setPeakHours(hoursRes);
         setVelocity(velRes);
-      } catch (error) {
-        console.error("Error fetching analytics:", error);
+      } catch (err: any) {
+        setError(err.message || 'Failed to load analytics');
       } finally {
         setLoading(false);
       }
