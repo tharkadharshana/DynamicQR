@@ -4,6 +4,8 @@ import path from 'path';
 import cors from 'cors';
 import admin from 'firebase-admin';
 import crypto from 'crypto';
+import { customAlphabet } from 'nanoid';
+import QRCode from 'qrcode';
 
 // Initialize Firebase Admin
 admin.initializeApp();
@@ -19,6 +21,78 @@ async function startServer() {
   // API routes
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok' });
+  });
+
+  const ALPHABET = "23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ";
+  const generateSlug = customAlphabet(ALPHABET, 7);
+  async function createUniqueSlug(): Promise<string> {
+    let slug: string, exists: boolean, attempts = 0;
+    do {
+      slug = generateSlug();
+      exists = (await db.collection("qr_codes").doc(slug).get()).exists;
+      if (++attempts > 10) throw new Error("Slug gen failed");
+    } while (exists);
+    return slug;
+  }
+
+  // ── EXACT SCHEMA CREATION for qr_codes AND qr_stats ─────────
+  app.post('/api/qr', async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) return res.status(401).send('Unauthorized');
+      const token = authHeader.split('Bearer ')[1];
+      const decoded = await admin.auth().verifyIdToken(token);
+      
+      const { destination_url, title, style } = req.body;
+      const slug = await createUniqueSlug();
+      
+      const defaultStyle = { dot_color: '#000000', bg_color: '#ffffff' };
+      const activeStyle = style || defaultStyle;
+
+      // Generate raw SVG
+      const qrSvg = await QRCode.toString(`https://dynamicqr.dev/${slug}`, {
+        type: 'svg',
+        color: { dark: activeStyle.dot_color, light: activeStyle.bg_color },
+        margin: 1
+      });
+
+      // EXACT SCHEMA for /qr_codes/{slug}
+      const qrDoc = {
+        slug,
+        user_uid: decoded.uid,
+        destination_url,
+        title: title || 'My QR',
+        is_active: true,
+        qr_svg: qrSvg,
+        style: activeStyle,
+        created_at: admin.firestore.FieldValue.serverTimestamp()
+      };
+
+      // EXACT SCHEMA for /qr_stats/{slug} initialization
+      const statsDoc = {
+        total_scans: 0,
+        unique_scans: 0,
+        mobile_scans: 0,
+        desktop_scans: 0,
+        tablet_scans: 0,
+        countries: {},
+        days: {},
+        hours: {},
+        browsers: {},
+        os: {},
+        last_scan_at: null
+      };
+
+      const batch = db.batch();
+      batch.set(db.collection('qr_codes').doc(slug), qrDoc);
+      batch.set(db.collection('qr_stats').doc(slug), statsDoc);
+      await batch.commit();
+
+      res.status(201).json(qrDoc);
+    } catch (error) {
+      console.error('QR creation error:', error);
+      res.status(500).json({ error: 'Failed' });
+    }
   });
 
   // Analytics API
@@ -338,7 +412,23 @@ async function startServer() {
     }
   });
 
-  // Redirect Engine
+  // Internal endpoint for Cloudflare Worker to send rich CF payload
+  app.post('/internal/scan', async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (authHeader !== `Bearer ${process.env.INTERNAL_SECRET || 'dev-internal-secret'}`) {
+        return res.status(401).send('Unauthorized');
+      }
+
+      await captureAnalyticsFromPayload(req.body);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Scan capture failed:', error);
+      res.status(500).json({ error: 'Failed' });
+    }
+  });
+
+  // Redirect Engine (Local Dev fallback)
   app.get('/:slug', async (req, res, next) => {
     const { slug } = req.params;
     
@@ -395,17 +485,14 @@ async function startServer() {
 }
 
 // Analytics Capture Logic
-async function captureAnalytics(req: express.Request, slug: string) {
-  const ua = req.headers['user-agent'] || '';
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
-  
+async function captureAnalyticsFromPayload(payload: any) {
+  const { slug, ip, ua, country, asn, colo, tls, lang, is_eu } = payload;
   if (isBot(ua)) return;
 
   const today = new Date().toISOString().slice(0, 10);
   const fingerprint = `${ip}:${ua.slice(0, 100)}:${today}`;
   const visitorHash = crypto.createHash('sha256').update(fingerprint).digest('hex');
 
-  // Check uniqueness (in a real app, use Redis/KV. Here we query Firestore for simplicity)
   const snapshot = await db.collection('scan_events')
     .where('slug', '==', slug)
     .where('visitor_hash', '==', visitorHash)
@@ -413,59 +500,68 @@ async function captureAnalytics(req: express.Request, slug: string) {
   const isUnique = snapshot.empty;
 
   const parsed = parseUA(ua);
-  const referer = req.headers.referer || '';
-  
-  let refererHost = 'Direct';
-  if (referer) {
-    try {
-      refererHost = new URL(referer).hostname;
-    } catch (e) {
-      refererHost = 'Unknown';
-    }
-  }
-
-  // Mock country for demo purposes if not available in headers
-  const country = (req.headers['cf-ipcountry'] as string) || 'US';
-  
   const now = new Date();
   const dateStr = now.toISOString().split('T')[0];
   const hourStr = now.getHours().toString();
 
-  // 1. Write to scan_events
+  // 1. EXACT SCHEMA for scan_events per user prompt (plus CF extensions)
   await db.collection('scan_events').add({
     slug,
     date: dateStr,
-    country,
+    country: country || 'Unknown',
     device: parsed.device,
-    browser: parsed.browser,
-    os: parsed.os,
-    referer: refererHost,
     is_unique: isUnique,
     scanned_at: admin.firestore.FieldValue.serverTimestamp(),
-    visitor_hash: visitorHash, // Keep this for uniqueness check
+    
+    // Kept behind the scenes for uniqueness check / CF data
+    visitor_hash: visitorHash,
+    asn: asn || null,
+    colo: colo || null,
+    lang: lang || null,
+    tls: tls || null,
+    is_eu: is_eu || false
   });
 
-  // 2. Update qr_stats/{slug}
+  // 2. EXACT SCHEMA for qr_stats per user prompt (plus CF atomic increments)
   const statsRef = db.collection('qr_stats').doc(slug);
   const increment = admin.firestore.FieldValue.increment(1);
   
   const updateData: any = {
     total_scans: increment,
     [`${parsed.device}_scans`]: increment,
-    [`countries.${country}`]: increment,
+    [`countries.${country || 'Unknown'}`]: increment,
     [`days.${dateStr}`]: increment,
     [`hours.${hourStr}`]: increment,
     [`browsers.${parsed.browser}`]: increment,
     [`os.${parsed.os}`]: increment,
-    [`referrers.${refererHost.replace(/\./g, '_')}`]: increment,
     last_scan_at: admin.firestore.FieldValue.serverTimestamp()
   };
+
+  // Extra Cloudflare enrichments 
+  if (asn) updateData[`isps.AS${asn}`] = increment;
+  if (colo) updateData[`regions.${colo}`] = increment;
+  if (lang) updateData[`languages.${lang.substring(0, 2)}`] = increment;
 
   if (isUnique) {
     updateData.unique_scans = increment;
   }
 
   await statsRef.set(updateData, { merge: true });
+}
+
+async function captureAnalytics(req: express.Request, slug: string) {
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+  const ua = req.headers['user-agent'] || '';
+  const country = (req.headers['cf-ipcountry'] as string) || 'US';
+
+  const payload = {
+    slug, ip, ua, country,
+    referer: req.headers.referer || '',
+    lang: req.headers['accept-language'] || '',
+    asn: null, colo: null, tls: null, is_eu: false
+  };
+
+  await captureAnalyticsFromPayload(payload);
 }
 
 function parseUA(ua: string) {
