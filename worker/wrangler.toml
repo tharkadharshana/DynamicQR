@@ -3,10 +3,18 @@ main = "worker.js"
 compatibility_date = "2024-03-21"
 
 # KV Namespace bindings
+# To get your ID:
+# 1. Create a KV namespace in the Cloudflare Dashboard (Workers & Pages > KV).
+# 2. Copy the ID and paste it below.
 [[kv_namespaces]]
 binding = "QR_CACHE"
 id = "YOUR_KV_NAMESPACE_ID"
 
 [vars]
-# API_URL = "https://your-cloud-run-url.a.run.app"
-# INTERNAL_SECRET is set via `wrangler secret put INTERNAL_SECRET`
+# The base URL of your Cloud Run API server
+API_URL = "https://your-cloud-run-url.a.run.app"
+
+# --- SECRETS (Do NOT commit to git) ---
+# Set these using the wrangler CLI:
+# 1. wrangler secret put INTERNAL_SECRET
+# 2. wrangler secret put HASH_SALT

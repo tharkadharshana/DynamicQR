@@ -77,7 +77,7 @@ export default {
         if (request.method === "POST") {
           const body = await request.formData();
           const submittedPw = body.get("password");
-          const pwUint8 = new TextEncoder().encode(submittedPw);
+          const pwUint8 = new TextEncoder().encode(submittedPw + slug); // Salted
           const pwBuffer = await crypto.subtle.digest('SHA-256', pwUint8);
           const pwArray = Array.from(new Uint8Array(pwBuffer));
           const submittedHash = pwArray.map(b => b.toString(16).padStart(2, '0')).join('');

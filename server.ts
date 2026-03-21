@@ -29,7 +29,6 @@ async function startServer() {
 
   app.use(cors({ origin: process.env.APP_URL }));
   app.use(express.json());
-  app.use(cors());
 
   // Middlewares
   const authenticate = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -293,7 +292,7 @@ async function startServer() {
 
       let passwordHash = null;
       if (password) {
-        passwordHash = crypto.createHash('sha256').update(password).digest('hex');
+        passwordHash = crypto.createHash('sha256').update(password + slug).digest('hex');
       }
 
       // EXACT SCHEMA for /qr_codes/{slug}
@@ -400,7 +399,7 @@ async function startServer() {
         }
         if (options.password_protect !== undefined) {
           if (options.password_protect && options.password) {
-            updateData.password_hash = crypto.createHash('sha256').update(options.password).digest('hex');
+            updateData.password_hash = crypto.createHash('sha256').update(options.password + slug).digest('hex');
           } else if (!options.password_protect) {
             updateData.password_hash = null;
           }
@@ -1045,7 +1044,7 @@ async function startServer() {
       }
 
       // 2. Fire analytics async (don't block redirect)
-      captureAnalytics(req, slug).catch(err => console.error('Analytics capture failed:', err));
+      captureAnalytics(req, slug).catch(err => logger.error('Analytics capture failed', { error: err }));
 
       // 3. Handle different QR types
       if (qrData.qr_type === 'vcard') {
@@ -1075,7 +1074,7 @@ async function startServer() {
       // Redirect immediately
       return res.redirect(302, destination);
     } catch (error) {
-      console.error('Redirect error:', error);
+      logger.error('Redirect error', { error });
       next();
     }
   });
@@ -1096,7 +1095,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    logger.info(`Server running on port ${PORT}`);
   });
 }
 
