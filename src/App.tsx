@@ -7,7 +7,7 @@ import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import CreateQR from './pages/CreateQR';
 import Analytics from './pages/Analytics';
-import Login from './pages/Login';
+import Landing from './pages/Landing';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
@@ -38,7 +38,7 @@ export default function App() {
           </Route>
         ) : (
           <>
-            <Route path="/login" element={<Login />} />
+            <Route path="/login" element={<Landing />} />
             <Route path="*" element={<Navigate to="/login" replace />} />
           </>
         )}

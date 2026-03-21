@@ -2,14 +2,31 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { Plus, BarChart2, MoreVertical, ExternalLink } from 'lucide-react';
+import { Plus, BarChart2, MoreVertical, ExternalLink, Activity, Users, QrCode } from 'lucide-react';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
+} from 'recharts';
 
 export default function Dashboard() {
   const [qrCodes, setQrCodes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [accountStats, setAccountStats] = useState<any>(null);
+  const [accountTimeseries, setAccountTimeseries] = useState<any[]>([]);
 
   useEffect(() => {
     if (!auth.currentUser) return;
+
+    // Fetch account stats
+    fetch(`/api/analytics/account/${auth.currentUser.uid}`)
+      .then(res => res.json())
+      .then(data => setAccountStats(data))
+      .catch(err => console.error("Failed to fetch account stats", err));
+
+    // Fetch account timeseries
+    fetch(`/api/analytics/account/${auth.currentUser.uid}/timeseries?days=30`)
+      .then(res => res.json())
+      .then(data => setAccountTimeseries(data))
+      .catch(err => console.error("Failed to fetch account timeseries", err));
 
     const q = query(
       collection(db, 'qr_codes'),
@@ -40,9 +57,9 @@ export default function Dashboard() {
     <div>
       <div className="sm:flex sm:items-center sm:justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900">My QR Codes</h1>
+          <h1 className="text-2xl font-bold text-zinc-900">Dashboard</h1>
           <p className="mt-2 text-sm text-zinc-600">
-            A list of all the QR codes in your account including their destination and status.
+            Overview of your QR codes and scan activity.
           </p>
         </div>
         <div className="mt-4 sm:mt-0">
@@ -56,6 +73,95 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Account Stats */}
+      {accountStats && (
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-3 mb-8">
+          <div className="bg-white overflow-hidden shadow rounded-lg">
+            <div className="p-5">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <Activity className="h-6 w-6 text-indigo-400" />
+                </div>
+                <div className="ml-5 w-0 flex-1">
+                  <dl>
+                    <dt className="text-sm font-medium text-zinc-500 truncate">Total Scans</dt>
+                    <dd className="text-3xl font-semibold text-zinc-900">{accountStats.total_scans}</dd>
+                  </dl>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white overflow-hidden shadow rounded-lg">
+            <div className="p-5">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <Users className="h-6 w-6 text-emerald-400" />
+                </div>
+                <div className="ml-5 w-0 flex-1">
+                  <dl>
+                    <dt className="text-sm font-medium text-zinc-500 truncate">Unique Visitors</dt>
+                    <dd className="text-3xl font-semibold text-zinc-900">{accountStats.unique_visitors}</dd>
+                  </dl>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white overflow-hidden shadow rounded-lg">
+            <div className="p-5">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <QrCode className="h-6 w-6 text-amber-400" />
+                </div>
+                <div className="ml-5 w-0 flex-1">
+                  <dl>
+                    <dt className="text-sm font-medium text-zinc-500 truncate">Active QR Codes</dt>
+                    <dd className="text-3xl font-semibold text-zinc-900">{accountStats.active_qrs} <span className="text-sm text-zinc-500 font-normal">/ {accountStats.total_qrs}</span></dd>
+                  </dl>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Account Timeseries */}
+      {accountTimeseries.length > 0 && (
+        <div className="bg-white shadow rounded-lg p-6 mb-8">
+          <h3 className="text-lg font-medium text-zinc-900 mb-6">Scans over time (All QR Codes)</h3>
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={accountTimeseries}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
+                <XAxis 
+                  dataKey="date" 
+                  tickFormatter={(val) => {
+                    const d = new Date(val);
+                    return `${d.getMonth()+1}/${d.getDate()}`;
+                  }}
+                  stroke="#a1a1aa"
+                  fontSize={12}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis 
+                  stroke="#a1a1aa" 
+                  fontSize={12} 
+                  tickLine={false} 
+                  axisLine={false} 
+                  allowDecimals={false}
+                />
+                <Tooltip 
+                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                />
+                <Line type="monotone" dataKey="total_scans" name="Total" stroke="#4f46e5" strokeWidth={3} dot={false} />
+                <Line type="monotone" dataKey="unique_scans" name="Unique" stroke="#10b981" strokeWidth={3} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      <h2 className="text-lg font-medium text-zinc-900 mb-4">Your QR Codes</h2>
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         <ul role="list" className="divide-y divide-zinc-200">
           {qrCodes.length === 0 ? (

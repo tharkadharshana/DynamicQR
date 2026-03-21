@@ -153,6 +153,230 @@ async function startServer() {
     }
   });
 
+  app.get('/api/analytics/:slug/os', async (req, res) => {
+    try {
+      const { slug } = req.params;
+      const snapshot = await db.collection('scan_events').where('slug', '==', slug).get();
+      
+      const osStats: Record<string, number> = {};
+      let total = 0;
+
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const os = data.os || 'Unknown';
+        osStats[os] = (osStats[os] || 0) + 1;
+        total++;
+      });
+
+      const result = Object.entries(osStats).map(([os, count]) => ({
+        os,
+        count,
+        pct: total > 0 ? (count / total * 100).toFixed(1) : 0
+      })).sort((a, b) => b.count - a.count);
+
+      res.json(result);
+    } catch (error) {
+      console.error('Analytics error:', error);
+      res.status(500).json({ error: 'Failed to fetch analytics' });
+    }
+  });
+
+  app.get('/api/analytics/:slug/browsers', async (req, res) => {
+    try {
+      const { slug } = req.params;
+      const snapshot = await db.collection('scan_events').where('slug', '==', slug).get();
+      
+      const browserStats: Record<string, number> = {};
+      let total = 0;
+
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const browser = data.browser || 'Unknown';
+        browserStats[browser] = (browserStats[browser] || 0) + 1;
+        total++;
+      });
+
+      const result = Object.entries(browserStats).map(([browser, count]) => ({
+        browser,
+        count,
+        pct: total > 0 ? (count / total * 100).toFixed(1) : 0
+      })).sort((a, b) => b.count - a.count);
+
+      res.json(result);
+    } catch (error) {
+      console.error('Analytics error:', error);
+      res.status(500).json({ error: 'Failed to fetch analytics' });
+    }
+  });
+
+  app.get('/api/analytics/:slug/referrers', async (req, res) => {
+    try {
+      const { slug } = req.params;
+      const snapshot = await db.collection('scan_events').where('slug', '==', slug).get();
+      
+      const referrerStats: Record<string, number> = {};
+      let total = 0;
+
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        let referrer = data.referrer || 'Direct';
+        if (referrer !== 'Direct') {
+          try {
+            const url = new URL(referrer);
+            referrer = url.hostname;
+          } catch (e) {
+            // keep as is if invalid URL
+          }
+        }
+        referrerStats[referrer] = (referrerStats[referrer] || 0) + 1;
+        total++;
+      });
+
+      const result = Object.entries(referrerStats).map(([referrer, count]) => ({
+        referrer,
+        count,
+        pct: total > 0 ? (count / total * 100).toFixed(1) : 0
+      })).sort((a, b) => b.count - a.count).slice(0, 10);
+
+      res.json(result);
+    } catch (error) {
+      console.error('Analytics error:', error);
+      res.status(500).json({ error: 'Failed to fetch analytics' });
+    }
+  });
+
+  app.get('/api/analytics/:slug/recent', async (req, res) => {
+    try {
+      const { slug } = req.params;
+      const snapshot = await db.collection('scan_events').where('slug', '==', slug).get();
+      
+      const allScans = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          scanned_at: data.scanned_at?.toDate(),
+          country: data.country || 'Unknown',
+          city: data.city || 'Unknown',
+          device_type: data.device_type || 'Unknown',
+          os: data.os || 'Unknown',
+          browser: data.browser || 'Unknown',
+          referrer: data.referrer || 'Direct',
+          is_unique: data.is_unique
+        };
+      });
+
+      // Sort in memory to avoid needing a composite index in Firestore
+      allScans.sort((a, b) => {
+        if (!a.scanned_at) return 1;
+        if (!b.scanned_at) return -1;
+        return b.scanned_at.getTime() - a.scanned_at.getTime();
+      });
+
+      const recent = allScans.slice(0, 10).map(scan => ({
+        ...scan,
+        scanned_at: scan.scanned_at?.toISOString()
+      }));
+
+      res.json(recent);
+    } catch (error) {
+      console.error('Analytics error:', error);
+      res.status(500).json({ error: 'Failed to fetch recent scans' });
+    }
+  });
+
+  app.get('/api/analytics/account/:uid', async (req, res) => {
+    try {
+      const { uid } = req.params;
+      // Get all QR codes for this user
+      const qrSnapshot = await db.collection('qr_codes').where('user_uid', '==', uid).get();
+      const slugs = qrSnapshot.docs.map(doc => doc.data().slug);
+      
+      if (slugs.length === 0) {
+        return res.json({ total_scans: 0, unique_visitors: 0, total_qrs: 0, active_qrs: 0 });
+      }
+
+      // Firestore 'in' query supports up to 30 items. If a user has more, we'd need to batch.
+      // For simplicity in this demo, we'll chunk them.
+      let total_scans = 0;
+      let unique_visitors = 0;
+      
+      // Chunk slugs into arrays of 30
+      const chunks = [];
+      for (let i = 0; i < slugs.length; i += 30) {
+        chunks.push(slugs.slice(i, i + 30));
+      }
+
+      for (const chunk of chunks) {
+        const scanSnapshot = await db.collection('scan_events').where('slug', 'in', chunk).get();
+        total_scans += scanSnapshot.size;
+        scanSnapshot.forEach(doc => {
+          if (doc.data().is_unique) unique_visitors++;
+        });
+      }
+
+      const active_qrs = qrSnapshot.docs.filter(doc => doc.data().is_active).length;
+
+      res.json({
+        total_scans,
+        unique_visitors,
+        total_qrs: slugs.length,
+        active_qrs
+      });
+    } catch (error) {
+      console.error('Account analytics error:', error);
+      res.status(500).json({ error: 'Failed to fetch account analytics' });
+    }
+  });
+
+  app.get('/api/analytics/account/:uid/timeseries', async (req, res) => {
+    try {
+      const { uid } = req.params;
+      const days = parseInt(req.query.days as string) || 30;
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - days);
+
+      const qrSnapshot = await db.collection('qr_codes').where('user_uid', '==', uid).get();
+      const slugs = qrSnapshot.docs.map(doc => doc.data().slug);
+      
+      const dailyStats: Record<string, any> = {};
+      
+      // Initialize all days
+      for (let i = days - 1; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+        dailyStats[dateStr] = { date: dateStr, total_scans: 0, unique_scans: 0 };
+      }
+
+      if (slugs.length > 0) {
+        const chunks = [];
+        for (let i = 0; i < slugs.length; i += 30) {
+          chunks.push(slugs.slice(i, i + 30));
+        }
+
+        for (const chunk of chunks) {
+          const scanSnapshot = await db.collection('scan_events').where('slug', 'in', chunk).get();
+          scanSnapshot.forEach(doc => {
+            const data = doc.data();
+            const scanTime = data.scanned_at?.toDate();
+            if (!scanTime || scanTime < cutoff) return;
+            
+            const dateStr = scanTime.toISOString().split('T')[0];
+            if (dailyStats[dateStr]) {
+              dailyStats[dateStr].total_scans++;
+              if (data.is_unique) dailyStats[dateStr].unique_scans++;
+            }
+          });
+        }
+      }
+
+      res.json(Object.values(dailyStats));
+    } catch (error) {
+      console.error('Account timeseries error:', error);
+      res.status(500).json({ error: 'Failed to fetch account timeseries' });
+    }
+  });
+
   // Redirect Engine
   app.get('/:slug', async (req, res, next) => {
     const { slug } = req.params;
