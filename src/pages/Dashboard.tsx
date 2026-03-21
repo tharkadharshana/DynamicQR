@@ -2,13 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { apiFetch, formatNumber } from '../lib/api';
+import { Plus, BarChart2, MoreVertical, ExternalLink, Activity, Users, QrCode } from 'lucide-react';
 import {
-  Plus, BarChart2, MoreVertical, ExternalLink, Activity, Users, QrCode,
-  TrendingUp, Eye, Copy, Check, Power, Pencil
-} from 'lucide-react';
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 
 export default function Dashboard() {
@@ -16,20 +12,21 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [accountStats, setAccountStats] = useState<any>(null);
   const [accountTimeseries, setAccountTimeseries] = useState<any[]>([]);
-  const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
-  const [menuOpen, setMenuOpen] = useState<string | null>(null);
 
   useEffect(() => {
     if (!auth.currentUser) return;
 
-    // Use apiFetch for automatic token refresh + error handling
-    apiFetch('/api/analytics/account/summary')
+    // Fetch account stats
+    fetch(`/api/analytics/account/${auth.currentUser.uid}`)
+      .then(res => res.json())
       .then(data => setAccountStats(data))
-      .catch(err => console.error('Failed to fetch account stats:', err.message));
+      .catch(err => console.error("Failed to fetch account stats", err));
 
-    apiFetch('/api/analytics/account/timeseries?days=30')
+    // Fetch account timeseries
+    fetch(`/api/analytics/account/${auth.currentUser.uid}/timeseries?days=30`)
+      .then(res => res.json())
       .then(data => setAccountTimeseries(data))
-      .catch(err => console.error('Failed to fetch account timeseries:', err.message));
+      .catch(err => console.error("Failed to fetch account timeseries", err));
 
     const q = query(
       collection(db, 'qr_codes'),
@@ -52,232 +49,175 @@ export default function Dashboard() {
     return () => unsubscribe();
   }, [auth.currentUser]);
 
-  const copySlug = (slug: string) => {
-    navigator.clipboard.writeText(`scnr.app/${slug}`);
-    setCopiedSlug(slug);
-    setTimeout(() => setCopiedSlug(null), 2000);
-  };
-
-  const toggleQR = async (id: string, currentState: boolean) => {
-    try {
-      await apiFetch(`/api/qr/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify({ is_active: !currentState })
-      });
-    } catch (err: any) {
-      console.error('Toggle QR failed:', err.message);
-    }
-    setMenuOpen(null);
-  };
-
   if (loading) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <div className="flex items-center gap-3">
-          <div className="w-5 h-5 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
-          <span className="text-zinc-400 text-sm">Loading dashboard...</span>
-        </div>
-      </div>
-    );
+    return <div className="flex justify-center items-center h-64">Loading...</div>;
   }
-
-  const statCards = accountStats ? [
-    { label: 'Total Scans', value: formatNumber(accountStats.total_scans), icon: Activity, color: 'violet', gradient: 'from-violet-500/20 to-violet-600/5' },
-    { label: 'Unique Visitors', value: formatNumber(accountStats.unique_visitors), icon: Users, color: 'emerald', gradient: 'from-emerald-500/20 to-emerald-600/5' },
-    { label: 'Active QR Codes', value: `${accountStats.active_qrs || 0}`, sub: `/ ${accountStats.total_qrs || 0} total`, icon: QrCode, color: 'amber', gradient: 'from-amber-500/20 to-amber-600/5' },
-  ] : [];
 
   return (
     <div>
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8">
+      <div className="sm:flex sm:items-center sm:justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-          <p className="mt-1 text-sm text-zinc-500">Overview of your QR codes and scan activity.</p>
+          <h1 className="text-2xl font-bold text-zinc-900">Dashboard</h1>
+          <p className="mt-2 text-sm text-zinc-600">
+            Overview of your QR codes and scan activity.
+          </p>
         </div>
         <div className="mt-4 sm:mt-0">
           <Link
             to="/create"
-            className="inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 hover:from-violet-500 hover:to-indigo-500 transition-all"
+            className="inline-flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:w-auto"
           >
-            <Plus className="-ml-0.5 mr-2 h-4 w-4" />
+            <Plus className="-ml-1 mr-2 h-5 w-5" />
             Create QR Code
           </Link>
         </div>
       </div>
 
-      {/* Stat Cards */}
-      {statCards.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-8">
-          {statCards.map((stat) => {
-            const Icon = stat.icon;
-            return (
-              <div key={stat.label} className={`relative overflow-hidden rounded-xl bg-gradient-to-br ${stat.gradient} border border-white/[0.06] p-5`}>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-[13px] font-medium text-zinc-400">{stat.label}</p>
-                    <p className="text-3xl font-bold text-white mt-1.5 tracking-tight">
-                      {stat.value}
-                      {stat.sub && <span className="text-sm text-zinc-500 font-normal ml-1">{stat.sub}</span>}
-                    </p>
-                  </div>
-                  <div className={`w-10 h-10 rounded-lg bg-${stat.color}-500/10 flex items-center justify-center`}>
-                    <Icon className={`h-5 w-5 text-${stat.color}-400`} />
-                  </div>
+      {/* Account Stats */}
+      {accountStats && (
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-3 mb-8">
+          <div className="bg-white overflow-hidden shadow rounded-lg">
+            <div className="p-5">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <Activity className="h-6 w-6 text-indigo-400" />
+                </div>
+                <div className="ml-5 w-0 flex-1">
+                  <dl>
+                    <dt className="text-sm font-medium text-zinc-500 truncate">Total Scans</dt>
+                    <dd className="text-3xl font-semibold text-zinc-900">{accountStats.total_scans}</dd>
+                  </dl>
                 </div>
               </div>
-            );
-          })}
+            </div>
+          </div>
+          <div className="bg-white overflow-hidden shadow rounded-lg">
+            <div className="p-5">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <Users className="h-6 w-6 text-emerald-400" />
+                </div>
+                <div className="ml-5 w-0 flex-1">
+                  <dl>
+                    <dt className="text-sm font-medium text-zinc-500 truncate">Unique Visitors</dt>
+                    <dd className="text-3xl font-semibold text-zinc-900">{accountStats.unique_visitors}</dd>
+                  </dl>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white overflow-hidden shadow rounded-lg">
+            <div className="p-5">
+              <div className="flex items-center">
+                <div className="flex-shrink-0">
+                  <QrCode className="h-6 w-6 text-amber-400" />
+                </div>
+                <div className="ml-5 w-0 flex-1">
+                  <dl>
+                    <dt className="text-sm font-medium text-zinc-500 truncate">Active QR Codes</dt>
+                    <dd className="text-3xl font-semibold text-zinc-900">{accountStats.active_qrs} <span className="text-sm text-zinc-500 font-normal">/ {accountStats.total_qrs}</span></dd>
+                  </dl>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Scan Chart */}
+      {/* Account Timeseries */}
       {accountTimeseries.length > 0 && (
-        <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-6 mb-8">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-sm font-semibold text-white">Scans over time</h3>
-            <span className="text-xs text-zinc-500">Last 30 days</span>
-          </div>
-          <div className="h-56">
+        <div className="bg-white shadow rounded-lg p-6 mb-8">
+          <h3 className="text-lg font-medium text-zinc-900 mb-6">Scans over time (All QR Codes)</h3>
+          <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={accountTimeseries}>
-                <defs>
-                  <linearGradient id="gradTotal" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.3} />
-                    <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="gradUnique" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.2} />
-                    <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.04)" />
-                <XAxis
-                  dataKey="date"
+              <LineChart data={accountTimeseries}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e4e4e7" />
+                <XAxis 
+                  dataKey="date" 
                   tickFormatter={(val) => {
                     const d = new Date(val);
                     return `${d.getMonth()+1}/${d.getDate()}`;
                   }}
-                  stroke="#52525b"
-                  fontSize={11}
+                  stroke="#a1a1aa"
+                  fontSize={12}
                   tickLine={false}
                   axisLine={false}
                 />
-                <YAxis stroke="#52525b" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#18181b',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    borderRadius: '10px',
-                    boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-                    color: '#fff',
-                    fontSize: '12px',
-                  }}
-                  labelStyle={{ color: '#a1a1aa' }}
+                <YAxis 
+                  stroke="#a1a1aa" 
+                  fontSize={12} 
+                  tickLine={false} 
+                  axisLine={false} 
+                  allowDecimals={false}
                 />
-                <Area type="monotone" dataKey="total_scans" name="Total" stroke="#8b5cf6" strokeWidth={2} fill="url(#gradTotal)" dot={false} />
-                <Area type="monotone" dataKey="unique_scans" name="Unique" stroke="#10b981" strokeWidth={2} fill="url(#gradUnique)" dot={false} />
-              </AreaChart>
+                <Tooltip 
+                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                />
+                <Line type="monotone" dataKey="total_scans" name="Total" stroke="#4f46e5" strokeWidth={3} dot={false} />
+                <Line type="monotone" dataKey="unique_scans" name="Unique" stroke="#10b981" strokeWidth={3} dot={false} />
+              </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
       )}
 
-      {/* QR Codes List */}
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-semibold text-white">Your QR Codes</h2>
-        <span className="text-xs text-zinc-500">{qrCodes.length} total</span>
+      <h2 className="text-lg font-medium text-zinc-900 mb-4">Your QR Codes</h2>
+      <div className="bg-white shadow overflow-hidden sm:rounded-md">
+        <ul role="list" className="divide-y divide-zinc-200">
+          {qrCodes.length === 0 ? (
+            <li className="px-6 py-12 text-center text-zinc-500">
+              No QR codes found. Create one to get started!
+            </li>
+          ) : (
+            qrCodes.map((qr) => (
+              <li key={qr.id}>
+                <div className="px-4 py-4 sm:px-6 hover:bg-zinc-50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <p className="text-sm font-medium text-indigo-600 truncate">{qr.title}</p>
+                      <div className="mt-2 flex items-center text-sm text-zinc-500">
+                        <ExternalLink className="flex-shrink-0 mr-1.5 h-4 w-4 text-zinc-400" />
+                        <a href={qr.destination_url} target="_blank" rel="noreferrer" className="truncate max-w-xs hover:underline">
+                          {qr.destination_url}
+                        </a>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-4">
+                      <div className="flex flex-col items-end">
+                        <p className="text-sm text-zinc-900 font-medium">qik.app/{qr.slug}</p>
+                        <p className="mt-1 flex items-center text-sm text-zinc-500">
+                          {qr.is_active ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              Active
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-100 text-zinc-800">
+                              Inactive
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <Link
+                        to={`/analytics/${qr.slug}`}
+                        className="p-2 text-zinc-400 hover:text-indigo-600 transition-colors"
+                        title="Analytics"
+                      >
+                        <BarChart2 className="h-5 w-5" />
+                      </Link>
+                      <Link
+                        to={`/edit/${qr.id}`}
+                        className="p-2 text-zinc-400 hover:text-zinc-600 transition-colors"
+                      >
+                        <MoreVertical className="h-5 w-5" />
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              </li>
+            ))
+          )}
+        </ul>
       </div>
-
-      {qrCodes.length === 0 ? (
-        <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] border-dashed p-12 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-violet-500/10 flex items-center justify-center mx-auto mb-4">
-            <QrCode className="w-7 h-7 text-violet-400" />
-          </div>
-          <h3 className="text-white font-semibold mb-1">No QR codes yet</h3>
-          <p className="text-sm text-zinc-500 mb-5">Create your first dynamic QR code to get started.</p>
-          <Link
-            to="/create"
-            className="inline-flex items-center rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 transition-colors"
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Create QR Code
-          </Link>
-        </div>
-      ) : (
-        <div className="grid gap-3">
-          {qrCodes.map((qr) => (
-            <div
-              key={qr.id}
-              className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4 hover:bg-white/[0.05] transition-all group"
-            >
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2.5 mb-1.5">
-                    <p className="text-sm font-semibold text-white truncate">{qr.title}</p>
-                    {qr.is_active ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 animate-pulse" />
-                        Active
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-500/10 text-zinc-500 border border-zinc-500/20">
-                        Inactive
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-4 text-xs text-zinc-500">
-                    <a href={qr.destination_url} target="_blank" rel="noreferrer" className="truncate max-w-[300px] hover:text-zinc-300 transition-colors flex items-center gap-1">
-                      <ExternalLink className="w-3 h-3 flex-shrink-0" />
-                      {qr.destination_url}
-                    </a>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <button
-                    onClick={() => copySlug(qr.slug)}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/[0.06] text-xs font-mono text-zinc-300 hover:bg-white/[0.1] transition-all"
-                    title="Copy short URL"
-                  >
-                    {copiedSlug === qr.slug ? (
-                      <Check className="w-3 h-3 text-emerald-400" />
-                    ) : (
-                      <Copy className="w-3 h-3" />
-                    )}
-                    scnr.app/{qr.slug}
-                  </button>
-                  <Link
-                    to={`/analytics/${qr.slug}`}
-                    className="p-2 rounded-lg text-zinc-500 hover:text-violet-400 hover:bg-violet-500/10 transition-all"
-                    title="Analytics"
-                  >
-                    <BarChart2 className="h-4 w-4" />
-                  </Link>
-                  <Link
-                    to={`/edit/${qr.id}`}
-                    className="p-2 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.06] transition-all"
-                    title="Edit"
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Link>
-                  <button
-                    onClick={() => toggleQR(qr.id, qr.is_active)}
-                    className={`p-2 rounded-lg transition-all ${
-                      qr.is_active
-                        ? 'text-zinc-500 hover:text-amber-400 hover:bg-amber-500/10'
-                        : 'text-zinc-500 hover:text-emerald-400 hover:bg-emerald-500/10'
-                    }`}
-                    title={qr.is_active ? 'Deactivate' : 'Activate'}
-                  >
-                    <Power className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
