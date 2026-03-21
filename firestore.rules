@@ -1,0 +1,63 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.user_uid;
+    }
+
+    function uidUnchanged() {
+      return !('user_uid' in request.resource.data) || request.resource.data.user_uid == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return !('user_uid' in request.resource.data) || request.resource.data.user_uid == resource.data.user_uid;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    
+    function isValidUrl(url) {
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && hasRequiredFields(['email', 'plan', 'created_at']);
+      allow update: if isOwner(userId) && request.resource.data.plan == resource.data.plan; // Users can't change their own plan
+      allow delete: if false;
+    }
+
+    match /qr_codes/{qrId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && 
+                    !exists(/databases/$(database)/documents/qr_codes/$(qrId)) &&
+                    request.resource.data.user_uid == request.auth.uid &&
+                    hasRequiredFields(['slug', 'destination_url', 'title', 'is_active']) &&
+                    isValidUrl(request.resource.data.destination_url);
+      allow update: if isDocOwner() && 
+                    uidNotModified() &&
+                    request.resource.data.slug == resource.data.slug && // slug is immutable
+                    (!('destination_url' in request.resource.data) || isValidUrl(request.resource.data.destination_url));
+      allow delete: if false; // Soft delete only via is_active
+    }
+
+    match /scan_events/{eventId} {
+      // Users can read their own scan events (though the backend handles analytics, this is for safety)
+      // Actually, scan_events don't have user_uid. They have slug.
+      // We'll let the backend (Admin SDK) handle all scan_events reads and writes.
+      // Clients don't need direct access to scan_events.
+      allow read, write: if false;
+    }
+  }
+}
