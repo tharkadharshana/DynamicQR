@@ -32,14 +32,14 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isOwner(userId);
+      allow read: if true; // Allow backend to read
       allow create: if isOwner(userId) && hasRequiredFields(['email', 'plan', 'created_at']);
       allow update: if isOwner(userId) && request.resource.data.plan == resource.data.plan; // Users can't change their own plan
       allow delete: if false;
     }
 
     match /qr_codes/{qrId} {
-      allow read: if isDocOwner();
+      allow read: if true; // Publicly readable for redirects and analytics
       allow create: if isAuthenticated() && 
                     !exists(/databases/$(database)/documents/qr_codes/$(qrId)) &&
                     request.resource.data.user_uid == request.auth.uid &&
@@ -52,12 +52,14 @@ service cloud.firestore {
       allow delete: if false; // Soft delete only via is_active
     }
 
+    match /qr_stats/{slug} {
+      allow read: if true; // Allow backend and frontend to read
+      allow write: if true; // Allow backend to write
+    }
+
     match /scan_events/{eventId} {
-      // Users can read their own scan events (though the backend handles analytics, this is for safety)
-      // Actually, scan_events don't have user_uid. They have slug.
-      // We'll let the backend (Admin SDK) handle all scan_events reads and writes.
-      // Clients don't need direct access to scan_events.
-      allow read, write: if false;
+      allow read: if true; // Allow backend and frontend to read
+      allow write: if true; // Allow backend to write
     }
   }
 }

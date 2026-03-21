@@ -3,13 +3,24 @@ import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import cors from 'cors';
 import admin from 'firebase-admin';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, writeBatch, query, where, orderBy, limit, serverTimestamp, increment, documentId } from 'firebase/firestore';
 import crypto from 'crypto';
 import { customAlphabet } from 'nanoid';
 import QRCode from 'qrcode';
+import fs from 'fs';
 
-// Initialize Firebase Admin
-admin.initializeApp();
-const db = admin.firestore();
+// Load Firebase config
+const firebaseConfig = JSON.parse(fs.readFileSync('./firebase-applet-config.json', 'utf-8'));
+
+// Initialize Firebase Admin for Auth
+admin.initializeApp({
+  projectId: firebaseConfig.projectId,
+});
+
+// Initialize Firebase Client SDK for Firestore
+const clientApp = initializeApp(firebaseConfig);
+const db = getFirestore(clientApp, firebaseConfig.firestoreDatabaseId);
 
 async function startServer() {
   const app = express();
@@ -23,13 +34,117 @@ async function startServer() {
     res.json({ status: 'ok' });
   });
 
+  // User Plan API
+  app.get('/api/user/plan', async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) return res.status(401).send('Unauthorized');
+      const token = authHeader.split('Bearer ')[1];
+      const decoded = await admin.auth().verifyIdToken(token);
+      
+      const uid = decoded.uid;
+      
+      // Get user's plan from Firestore (or default to free)
+      const userDoc = await getDoc(doc(db, 'users', uid));
+      const plan = userDoc.exists() ? userDoc.data()?.plan || 'free' : 'free';
+      
+      // Get number of active QR codes
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid), where('is_active', '==', true)));
+        
+      const activeQrs = qrSnapshot.size;
+      
+      const plans: Record<string, any> = {
+        free: { qr_codes: 3, analytics_days: 7, custom_domain: false, logo: false },
+        pro: { qr_codes: 50, analytics_days: 30, custom_domain: true, logo: true },
+        team: { qr_codes: Infinity, analytics_days: 365, custom_domain: true, logo: true }
+      };
+      
+      const limits = plans[plan] || plans.free;
+      const remaining_qr = limits.qr_codes === Infinity ? Infinity : Math.max(0, limits.qr_codes - activeQrs);
+      
+      res.json({
+        plan,
+        limits,
+        remaining_qr
+      });
+    } catch (error) {
+      console.error('Plan fetch error:', error);
+      res.status(500).json({ error: 'Failed to fetch plan' });
+    }
+  });
+
+  // Billing Checkout API
+  app.post('/api/billing/checkout', async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) return res.status(401).send('Unauthorized');
+      const token = authHeader.split('Bearer ')[1];
+      const decoded = await admin.auth().verifyIdToken(token);
+      
+      const { plan } = req.body;
+      const uid = decoded.uid;
+      
+      const prices: Record<string, number> = {
+        pro: 7,
+        team: 29
+      };
+      
+      if (!prices[plan]) {
+        return res.status(400).json({ error: 'Invalid plan' });
+      }
+
+      const merchant_id = process.env.PAYHERE_MERCHANT_ID || '1234567';
+      const merchant_secret = process.env.PAYHERE_SECRET || 'sandbox_secret';
+      const order_id = `ORDER_${uid}_${Date.now()}`;
+      const amount = prices[plan].toFixed(2);
+      const currency = 'USD';
+      
+      // Generate PayHere Hash
+      // md5(merchant_id + order_id + amount + currency + md5(merchant_secret))
+      const hashedSecret = crypto.createHash('md5').update(merchant_secret).digest('hex').toUpperCase();
+      const hashString = `${merchant_id}${order_id}${amount}${currency}${hashedSecret}`;
+      const hash = crypto.createHash('md5').update(hashString).digest('hex').toUpperCase();
+
+      const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
+
+      const checkoutData = {
+        merchant_id,
+        return_url: `${appUrl}/settings`,
+        cancel_url: `${appUrl}/pricing`,
+        notify_url: `${appUrl}/api/billing/notify`,
+        order_id,
+        items: `${plan.toUpperCase()} Plan Subscription`,
+        currency,
+        amount,
+        first_name: decoded.name?.split(' ')[0] || 'User',
+        last_name: decoded.name?.split(' ').slice(1).join(' ') || '',
+        email: decoded.email || '',
+        phone: '0000000000',
+        address: 'N/A',
+        city: 'N/A',
+        country: 'Sri Lanka',
+        hash,
+        custom_1: uid,
+        custom_2: plan,
+        recurrence: '1 Month',
+        duration: 'Forever'
+      };
+
+      res.json(checkoutData);
+    } catch (error) {
+      console.error('Checkout error:', error);
+      res.status(500).json({ error: 'Failed to generate checkout' });
+    }
+  });
+
   const ALPHABET = "23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ";
   const generateSlug = customAlphabet(ALPHABET, 7);
   async function createUniqueSlug(): Promise<string> {
     let slug: string, exists: boolean, attempts = 0;
     do {
       slug = generateSlug();
-      exists = (await db.collection("qr_codes").doc(slug).get()).exists;
+      const docSnap = await getDoc(doc(db, "qr_codes", slug));
+      exists = docSnap.exists();
       if (++attempts > 10) throw new Error("Slug gen failed");
     } while (exists);
     return slug;
@@ -43,14 +158,31 @@ async function startServer() {
       const token = authHeader.split('Bearer ')[1];
       const decoded = await admin.auth().verifyIdToken(token);
       
-      const { destination_url, title, style } = req.body;
+      const { destination_url, title, style, rate_limit, is_dynamic, qr_type, content_data } = req.body;
       const slug = await createUniqueSlug();
       
       const defaultStyle = { dot_color: '#000000', bg_color: '#ffffff' };
       const activeStyle = style || defaultStyle;
 
+      const protocol = req.headers['x-forwarded-proto'] || 'https';
+      const host = req.headers.host;
+      let qrContent = `${protocol}://${host}/${slug}`;
+      if (is_dynamic === false) {
+        if (qr_type === 'wifi') {
+          qrContent = `WIFI:S:${content_data?.ssid || ''};T:${content_data?.encryption || 'WPA'};P:${content_data?.password || ''};;`;
+        } else if (qr_type === 'vcard') {
+          qrContent = `BEGIN:VCARD\nVERSION:3.0\nN:${content_data?.last_name || ''};${content_data?.first_name || ''}\nFN:${content_data?.first_name || ''} ${content_data?.last_name || ''}\nTEL:${content_data?.phone || ''}\nEMAIL:${content_data?.email || ''}\nORG:${content_data?.company || ''}\nURL:${content_data?.website || ''}\nEND:VCARD`;
+        } else if (qr_type === 'email') {
+          qrContent = `mailto:${content_data?.email || ''}?subject=${encodeURIComponent(content_data?.subject || '')}&body=${encodeURIComponent(content_data?.body || '')}`;
+        } else if (qr_type === 'text') {
+          qrContent = content_data?.text || '';
+        } else {
+          qrContent = destination_url;
+        }
+      }
+
       // Generate raw SVG
-      const qrSvg = await QRCode.toString(`https://dynamicqr.dev/${slug}`, {
+      const qrSvg = await QRCode.toString(qrContent, {
         type: 'svg',
         color: { dark: activeStyle.dot_color, light: activeStyle.bg_color },
         margin: 1
@@ -60,12 +192,16 @@ async function startServer() {
       const qrDoc = {
         slug,
         user_uid: decoded.uid,
-        destination_url,
+        destination_url: destination_url || '',
+        qr_type: qr_type || 'url',
+        content_data: content_data || null,
+        is_dynamic: is_dynamic !== false,
         title: title || 'My QR',
         is_active: true,
         qr_svg: qrSvg,
         style: activeStyle,
-        created_at: admin.firestore.FieldValue.serverTimestamp()
+        rate_limit: rate_limit || { enabled: false, max_scans: 100, period: 'total' },
+        created_at: serverTimestamp()
       };
 
       // EXACT SCHEMA for /qr_stats/{slug} initialization
@@ -83,9 +219,9 @@ async function startServer() {
         last_scan_at: null
       };
 
-      const batch = db.batch();
-      batch.set(db.collection('qr_codes').doc(slug), qrDoc);
-      batch.set(db.collection('qr_stats').doc(slug), statsDoc);
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'qr_codes', slug), qrDoc);
+      batch.set(doc(db, 'qr_stats', slug), statsDoc);
       await batch.commit();
 
       res.status(201).json(qrDoc);
@@ -99,9 +235,9 @@ async function startServer() {
   app.get('/api/analytics/:slug/summary', async (req, res) => {
     try {
       const { slug } = req.params;
-      const statsDoc = await db.collection('qr_stats').doc(slug).get();
+      const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
       
-      if (!statsDoc.exists) {
+      if (!statsDoc.exists()) {
         return res.json({
           total_scans: 0,
           unique_visitors: 0,
@@ -137,7 +273,7 @@ async function startServer() {
       const { slug } = req.params;
       const days = parseInt(req.query.days as string) || 30;
       
-      const statsDoc = await db.collection('qr_stats').doc(slug).get();
+      const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
       const dailyStats: Record<string, any> = {};
       
       // Initialize all days
@@ -148,7 +284,7 @@ async function startServer() {
         dailyStats[dateStr] = { date: dateStr, total_scans: 0, unique_scans: 0, mobile_scans: 0 };
       }
 
-      if (statsDoc.exists) {
+      if (statsDoc.exists()) {
         const data = statsDoc.data()!;
         const daysData = data.days || {};
         
@@ -169,9 +305,9 @@ async function startServer() {
   app.get('/api/analytics/:slug/devices', async (req, res) => {
     try {
       const { slug } = req.params;
-      const statsDoc = await db.collection('qr_stats').doc(slug).get();
+      const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
       
-      if (!statsDoc.exists) return res.json([]);
+      if (!statsDoc.exists()) return res.json([]);
       
       const data = statsDoc.data()!;
       const devices = {
@@ -200,9 +336,9 @@ async function startServer() {
   app.get('/api/analytics/:slug/countries', async (req, res) => {
     try {
       const { slug } = req.params;
-      const statsDoc = await db.collection('qr_stats').doc(slug).get();
+      const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
       
-      if (!statsDoc.exists) return res.json([]);
+      if (!statsDoc.exists()) return res.json([]);
       
       const data = statsDoc.data()!;
       const countries = data.countries || {};
@@ -223,9 +359,9 @@ async function startServer() {
   app.get('/api/analytics/:slug/os', async (req, res) => {
     try {
       const { slug } = req.params;
-      const statsDoc = await db.collection('qr_stats').doc(slug).get();
+      const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
       
-      if (!statsDoc.exists) return res.json([]);
+      if (!statsDoc.exists()) return res.json([]);
       
       const data = statsDoc.data()!;
       const osData = data.os || {};
@@ -248,9 +384,9 @@ async function startServer() {
   app.get('/api/analytics/:slug/browsers', async (req, res) => {
     try {
       const { slug } = req.params;
-      const statsDoc = await db.collection('qr_stats').doc(slug).get();
+      const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
       
-      if (!statsDoc.exists) return res.json([]);
+      if (!statsDoc.exists()) return res.json([]);
       
       const data = statsDoc.data()!;
       const browsersData = data.browsers || {};
@@ -273,9 +409,9 @@ async function startServer() {
   app.get('/api/analytics/:slug/referrers', async (req, res) => {
     try {
       const { slug } = req.params;
-      const statsDoc = await db.collection('qr_stats').doc(slug).get();
+      const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
       
-      if (!statsDoc.exists) return res.json([]);
+      if (!statsDoc.exists()) return res.json([]);
       
       const data = statsDoc.data()!;
       const referrersData = data.referrers || {};
@@ -299,11 +435,7 @@ async function startServer() {
     try {
       const { slug } = req.params;
       // For recent, we still query scan_events but limit it to 10
-      const snapshot = await db.collection('scan_events')
-        .where('slug', '==', slug)
-        .orderBy('scanned_at', 'desc')
-        .limit(10)
-        .get();
+      const snapshot = await getDocs(query(collection(db, 'scan_events'), where('slug', '==', slug), orderBy('scanned_at', 'desc'), limit(10)));
       
       const recent = snapshot.docs.map(doc => {
         const data = doc.data();
@@ -327,10 +459,54 @@ async function startServer() {
     }
   });
 
+  app.get('/api/analytics/:slug/advanced', async (req, res) => {
+    try {
+      const { slug } = req.params;
+      const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
+      
+      if (!statsDoc.exists()) {
+        return res.json({
+          regions: [],
+          isps: [],
+          languages: [],
+          hours: [],
+          os_versions: [],
+          tls_protocols: [],
+          eu_scans: 0
+        });
+      }
+      
+      const data = statsDoc.data()!;
+      
+      const formatData = (obj: any = {}) => {
+        let total = 0;
+        Object.values(obj).forEach(v => total += (v as number));
+        return Object.entries(obj).map(([name, count]) => ({
+          name,
+          count: count as number,
+          pct: total > 0 ? (((count as number) / total) * 100).toFixed(1) : 0
+        })).sort((a, b) => b.count - a.count).slice(0, 10);
+      };
+
+      res.json({
+        regions: formatData(data.regions),
+        isps: formatData(data.isps),
+        languages: formatData(data.languages),
+        hours: formatData(data.hours),
+        os_versions: formatData(data.os_versions),
+        tls_protocols: formatData(data.tls_protocols),
+        eu_scans: data.eu_scans || 0
+      });
+    } catch (error) {
+      console.error('Analytics error:', error);
+      res.status(500).json({ error: 'Failed to fetch advanced analytics' });
+    }
+  });
+
   app.get('/api/analytics/account/:uid', async (req, res) => {
     try {
       const { uid } = req.params;
-      const qrSnapshot = await db.collection('qr_codes').where('user_uid', '==', uid).get();
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
       const slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
       if (slugs.length === 0) {
@@ -346,7 +522,7 @@ async function startServer() {
       }
 
       for (const chunk of chunks) {
-        const statsSnapshot = await db.collection('qr_stats').where(admin.firestore.FieldPath.documentId(), 'in', chunk).get();
+        const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
         statsSnapshot.forEach(doc => {
           const data = doc.data();
           total_scans += (data.total_scans || 0);
@@ -373,7 +549,7 @@ async function startServer() {
       const { uid } = req.params;
       const days = parseInt(req.query.days as string) || 30;
 
-      const qrSnapshot = await db.collection('qr_codes').where('user_uid', '==', uid).get();
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
       const slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
       const dailyStats: Record<string, any> = {};
@@ -392,7 +568,7 @@ async function startServer() {
         }
 
         for (const chunk of chunks) {
-          const statsSnapshot = await db.collection('qr_stats').where(admin.firestore.FieldPath.documentId(), 'in', chunk).get();
+          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
           statsSnapshot.forEach(doc => {
             const data = doc.data();
             const daysData = data.days || {};
@@ -409,6 +585,162 @@ async function startServer() {
     } catch (error) {
       console.error('Account timeseries error:', error);
       res.status(500).json({ error: 'Failed to fetch account timeseries' });
+    }
+  });
+
+  app.get('/api/analytics/account/:uid/devices', async (req, res) => {
+    try {
+      const { uid } = req.params;
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      const slugs = qrSnapshot.docs.map(doc => doc.data().slug);
+      
+      let mobile = 0, desktop = 0, tablet = 0;
+      
+      if (slugs.length > 0) {
+        const chunks = [];
+        for (let i = 0; i < slugs.length; i += 30) {
+          chunks.push(slugs.slice(i, i + 30));
+        }
+
+        for (const chunk of chunks) {
+          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          statsSnapshot.forEach(doc => {
+            const data = doc.data();
+            mobile += (data.mobile_scans || 0);
+            desktop += (data.desktop_scans || 0);
+            tablet += (data.tablet_scans || 0);
+          });
+        }
+      }
+
+      const total = mobile + desktop + tablet;
+
+      const result = [
+        { device_type: 'mobile', count: mobile, pct: total > 0 ? ((mobile / total) * 100).toFixed(1) : 0 },
+        { device_type: 'desktop', count: desktop, pct: total > 0 ? ((desktop / total) * 100).toFixed(1) : 0 },
+        { device_type: 'tablet', count: tablet, pct: total > 0 ? ((tablet / total) * 100).toFixed(1) : 0 }
+      ].filter(d => d.count > 0).sort((a, b) => b.count - a.count);
+
+      res.json(result);
+    } catch (error) {
+      console.error('Account devices error:', error);
+      res.status(500).json({ error: 'Failed to fetch account devices' });
+    }
+  });
+
+  app.get('/api/analytics/account/:uid/countries', async (req, res) => {
+    try {
+      const { uid } = req.params;
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      const slugs = qrSnapshot.docs.map(doc => doc.data().slug);
+      
+      const countries: Record<string, number> = {};
+      
+      if (slugs.length > 0) {
+        const chunks = [];
+        for (let i = 0; i < slugs.length; i += 30) {
+          chunks.push(slugs.slice(i, i + 30));
+        }
+
+        for (const chunk of chunks) {
+          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          statsSnapshot.forEach(doc => {
+            const data = doc.data();
+            const c = data.countries || {};
+            for (const [country, count] of Object.entries(c)) {
+              countries[country] = (countries[country] || 0) + (count as number);
+            }
+          });
+        }
+      }
+
+      const result = Object.entries(countries).map(([country, scans]) => ({
+        country,
+        scans,
+        unique_visitors: 0
+      })).sort((a, b) => b.scans - a.scans).slice(0, 10);
+
+      res.json(result);
+    } catch (error) {
+      console.error('Account countries error:', error);
+      res.status(500).json({ error: 'Failed to fetch account countries' });
+    }
+  });
+
+  app.get('/api/analytics/account/:uid/recent', async (req, res) => {
+    try {
+      const { uid } = req.params;
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      const slugs = qrSnapshot.docs.map(doc => doc.data().slug);
+      
+      if (slugs.length === 0) return res.json([]);
+      
+      const recentScans: any[] = [];
+      
+      const chunks = [];
+      for (let i = 0; i < slugs.length; i += 30) {
+        chunks.push(slugs.slice(i, i + 30));
+      }
+
+      for (const chunk of chunks) {
+        const scansSnapshot = await getDocs(query(collection(db, 'scan_events'), where('slug', 'in', chunk), orderBy('scanned_at', 'desc'), limit(20)));
+        scansSnapshot.forEach(doc => {
+          const data = doc.data();
+          recentScans.push({
+            id: doc.id,
+            slug: data.slug,
+            scanned_at: data.scanned_at?.toDate()?.toISOString(),
+            country: data.country || 'Unknown',
+            city: data.city || 'Unknown',
+            device_type: data.device || 'Unknown',
+            os: data.os || 'Unknown',
+            browser: data.browser || 'Unknown',
+            referrer: data.referer || 'Direct',
+            is_unique: data.is_unique,
+            _timestamp: data.scanned_at?.toMillis ? data.scanned_at.toMillis() : 0
+          });
+        });
+      }
+
+      recentScans.sort((a, b) => b._timestamp - a._timestamp);
+
+      res.json(recentScans.slice(0, 20).map(s => {
+        const { _timestamp, ...rest } = s;
+        return rest;
+      }));
+    } catch (error) {
+      console.error('Account recent scans error:', error);
+      res.status(500).json({ error: 'Failed to fetch account recent scans' });
+    }
+  });
+
+  app.get('/api/analytics/account/:uid/performance', async (req, res) => {
+    try {
+      const { uid } = req.params;
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      
+      const performanceData = [];
+      
+      for (const docSnap of qrSnapshot.docs) {
+        const qrData = docSnap.data();
+        const statsDoc = await getDoc(doc(db, 'qr_stats', qrData.slug));
+        const statsData = statsDoc.exists() ? statsDoc.data() : { total_scans: 0, unique_scans: 0 };
+        
+        performanceData.push({
+          id: docSnap.id,
+          slug: qrData.slug,
+          title: qrData.title,
+          total_scans: statsData.total_scans || 0,
+          unique_scans: statsData.unique_scans || 0
+        });
+      }
+      
+      performanceData.sort((a, b) => b.total_scans - a.total_scans);
+      
+      res.json(performanceData);
+    } catch (error) {
+      console.error('Account performance error:', error);
+      res.status(500).json({ error: 'Failed to fetch account performance' });
     }
   });
 
@@ -439,9 +771,9 @@ async function startServer() {
 
     try {
       // 1. Look up destination
-      const qrDoc = await db.collection('qr_codes').doc(slug).get();
+      const qrDoc = await getDoc(doc(db, 'qr_codes', slug));
       
-      if (!qrDoc.exists) {
+      if (!qrDoc.exists()) {
         return next(); // Let Vite handle it (might be a frontend route)
       }
 
@@ -451,12 +783,35 @@ async function startServer() {
         return res.status(410).send('QR code inactive');
       }
 
-      const destination = qrData.destination_url;
-
       // 2. Fire analytics async (don't block redirect)
       captureAnalytics(req, slug).catch(err => console.error('Analytics capture failed:', err));
 
-      // 3. Redirect immediately
+      // 3. Handle different QR types
+      if (qrData.qr_type === 'vcard') {
+        const content = qrData.content_data;
+        const vcard = `BEGIN:VCARD\nVERSION:3.0\nN:${content?.last_name || ''};${content?.first_name || ''}\nFN:${content?.first_name || ''} ${content?.last_name || ''}\nTEL:${content?.phone || ''}\nEMAIL:${content?.email || ''}\nORG:${content?.company || ''}\nURL:${content?.website || ''}\nEND:VCARD`;
+        res.setHeader('Content-Type', 'text/vcard');
+        res.setHeader('Content-Disposition', `attachment; filename="${content?.first_name || 'contact'}.vcf"`);
+        return res.send(vcard);
+      } else if (qrData.qr_type === 'text') {
+        const text = qrData.content_data?.text || '';
+        return res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="font-family: sans-serif; padding: 20px; white-space: pre-wrap; word-break: break-word;">${text}</body></html>`);
+      } else if (qrData.qr_type === 'email') {
+        const content = qrData.content_data;
+        const mailto = `mailto:${content?.email || ''}?subject=${encodeURIComponent(content?.subject || '')}&body=${encodeURIComponent(content?.body || '')}`;
+        return res.redirect(302, mailto);
+      } else if (qrData.qr_type === 'wifi') {
+        // WiFi should ideally be static, but if dynamic, just show the details
+        const content = qrData.content_data;
+        return res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="font-family: sans-serif; padding: 20px;"><h2>WiFi Network</h2><p><strong>SSID:</strong> ${content?.ssid}</p><p><strong>Password:</strong> ${content?.password}</p><p><strong>Security:</strong> ${content?.encryption}</p></body></html>`);
+      }
+
+      const destination = qrData.destination_url;
+      if (!destination) {
+        return res.status(404).send('Destination not found');
+      }
+
+      // Redirect immediately
       return res.redirect(302, destination);
     } catch (error) {
       console.error('Redirect error:', error);
@@ -493,10 +848,7 @@ async function captureAnalyticsFromPayload(payload: any) {
   const fingerprint = `${ip}:${ua.slice(0, 100)}:${today}`;
   const visitorHash = crypto.createHash('sha256').update(fingerprint).digest('hex');
 
-  const snapshot = await db.collection('scan_events')
-    .where('slug', '==', slug)
-    .where('visitor_hash', '==', visitorHash)
-    .get();
+  const snapshot = await getDocs(query(collection(db, 'scan_events'), where('slug', '==', slug), where('visitor_hash', '==', visitorHash)));
   const isUnique = snapshot.empty;
 
   const parsed = parseUA(ua);
@@ -505,13 +857,13 @@ async function captureAnalyticsFromPayload(payload: any) {
   const hourStr = now.getHours().toString();
 
   // 1. EXACT SCHEMA for scan_events per user prompt (plus CF extensions)
-  await db.collection('scan_events').add({
+  await addDoc(collection(db, 'scan_events'), {
     slug,
     date: dateStr,
     country: country || 'Unknown',
     device: parsed.device,
     is_unique: isUnique,
-    scanned_at: admin.firestore.FieldValue.serverTimestamp(),
+    scanned_at: serverTimestamp(),
     
     // Kept behind the scenes for uniqueness check / CF data
     visitor_hash: visitorHash,
@@ -523,30 +875,33 @@ async function captureAnalyticsFromPayload(payload: any) {
   });
 
   // 2. EXACT SCHEMA for qr_stats per user prompt (plus CF atomic increments)
-  const statsRef = db.collection('qr_stats').doc(slug);
-  const increment = admin.firestore.FieldValue.increment(1);
+  const statsRef = doc(db, 'qr_stats', slug);
+  const inc = increment(1);
   
   const updateData: any = {
-    total_scans: increment,
-    [`${parsed.device}_scans`]: increment,
-    [`countries.${country || 'Unknown'}`]: increment,
-    [`days.${dateStr}`]: increment,
-    [`hours.${hourStr}`]: increment,
-    [`browsers.${parsed.browser}`]: increment,
-    [`os.${parsed.os}`]: increment,
-    last_scan_at: admin.firestore.FieldValue.serverTimestamp()
+    total_scans: inc,
+    [`${parsed.device}_scans`]: inc,
+    [`countries.${country || 'Unknown'}`]: inc,
+    [`days.${dateStr}`]: inc,
+    [`hours.${hourStr}`]: inc,
+    [`browsers.${parsed.browser}`]: inc,
+    [`os.${parsed.os}`]: inc,
+    last_scan_at: serverTimestamp()
   };
 
   // Extra Cloudflare enrichments 
-  if (asn) updateData[`isps.AS${asn}`] = increment;
-  if (colo) updateData[`regions.${colo}`] = increment;
-  if (lang) updateData[`languages.${lang.substring(0, 2)}`] = increment;
+  if (asn) updateData[`isps.AS${asn}`] = inc;
+  if (colo) updateData[`regions.${colo}`] = inc;
+  if (lang) updateData[`languages.${lang.substring(0, 2)}`] = inc;
+  if (parsed.osVersion) updateData[`os_versions.${parsed.os} ${parsed.osVersion}`] = inc;
+  if (tls) updateData[`tls_protocols.${tls}`] = inc;
+  if (is_eu) updateData[`eu_scans`] = inc;
 
   if (isUnique) {
-    updateData.unique_scans = increment;
+    updateData.unique_scans = inc;
   }
 
-  await statsRef.set(updateData, { merge: true });
+  await setDoc(statsRef, updateData, { merge: true });
 }
 
 async function captureAnalytics(req: express.Request, slug: string) {

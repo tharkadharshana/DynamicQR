@@ -1,0 +1,2449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scnr — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,300;1,9..144,400&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+:root {
+  --bg:       #0C0D10;
+  --surface:  #13151A;
+  --surface2: #1A1D24;
+  --surface3: #21252F;
+  --border:   rgba(255,255,255,0.07);
+  --border2:  rgba(255,255,255,0.12);
+  --border3:  rgba(255,255,255,0.18);
+  --text:     #ECEAE3;
+  --text2:    #9B9A93;
+  --text3:    #5A5955;
+  --coral:    #E85D3A;
+  --coral-d:  #C44D2E;
+  --coral-l:  rgba(232,93,58,0.15);
+  --coral-ll: rgba(232,93,58,0.08);
+  --green:    #3DCC7E;
+  --green-l:  rgba(61,204,126,0.12);
+  --blue:     #4D9EFF;
+  --blue-l:   rgba(77,158,255,0.12);
+  --amber:    #F0A030;
+  --amber-l:  rgba(240,160,48,0.12);
+  --red:      #FF5757;
+  --red-l:    rgba(255,87,87,0.12);
+  --purple:   #9B7FFF;
+  --purple-l: rgba(155,127,255,0.12);
+  --sidebar:  220px;
+  --font-h:   'Fraunces', Georgia, serif;
+  --font-b:   'Instrument Sans', sans-serif;
+  --radius:   10px;
+  --radius-lg:16px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--text);font-family:var(--font-b);font-size:14px;-webkit-font-smoothing:antialiased;display:flex}
+
+/* ── SIDEBAR ── */
+.sidebar{
+  width:var(--sidebar);flex-shrink:0;
+  background:var(--surface);
+  border-right:1px solid var(--border);
+  display:flex;flex-direction:column;
+  padding:20px 0;height:100vh;
+  position:relative;z-index:10;
+}
+.sidebar-logo{
+  display:flex;align-items:center;gap:10px;
+  padding:0 20px 24px;
+  border-bottom:1px solid var(--border);
+  margin-bottom:16px;
+}
+.logo-mark{
+  width:30px;height:30px;background:var(--coral);
+  border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.logo-mark svg{width:18px;height:18px}
+.logo-text{font-family:var(--font-h);font-size:18px;font-weight:700;color:var(--text)}
+
+.nav-section{padding:0 12px;margin-bottom:8px}
+.nav-label{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;padding:0 8px;margin-bottom:6px}
+.nav-item{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 10px;border-radius:8px;
+  cursor:pointer;transition:background 0.15s,color 0.15s;
+  color:var(--text2);font-size:13px;font-weight:500;
+  margin-bottom:2px;position:relative;
+}
+.nav-item:hover{background:var(--surface2);color:var(--text)}
+.nav-item.active{background:var(--coral-l);color:var(--coral)}
+.nav-item.active .nav-icon{color:var(--coral)}
+.nav-icon{width:16px;height:16px;flex-shrink:0;opacity:0.7}
+.nav-item.active .nav-icon{opacity:1}
+.nav-badge{
+  margin-left:auto;background:var(--coral);color:#fff;
+  font-size:10px;font-weight:700;
+  padding:1px 6px;border-radius:10px;
+}
+.nav-badge.green{background:var(--green);color:var(--bg)}
+
+.sidebar-footer{
+  margin-top:auto;padding:16px 12px 0;
+  border-top:1px solid var(--border);
+}
+.user-chip{
+  display:flex;align-items:center;gap:10px;
+  padding:8px 10px;border-radius:8px;cursor:pointer;
+  transition:background 0.15s;
+}
+.user-chip:hover{background:var(--surface2)}
+.user-av{
+  width:30px;height:30px;border-radius:50%;
+  background:var(--coral-l);border:1px solid var(--coral);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-h);font-size:12px;font-weight:700;color:var(--coral);
+  flex-shrink:0;
+}
+.user-info{flex:1;min-width:0}
+.user-name{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.user-plan{font-size:11px;color:var(--text3)}
+.plan-badge{
+  font-size:9px;font-weight:700;
+  background:var(--amber-l);color:var(--amber);
+  padding:2px 6px;border-radius:4px;text-transform:uppercase;letter-spacing:0.05em;
+}
+
+/* ── MAIN CONTENT ── */
+.main{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.topbar{
+  height:56px;flex-shrink:0;
+  background:var(--surface);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 28px;
+}
+.topbar-left{display:flex;align-items:center;gap:12px}
+.page-title{font-family:var(--font-h);font-size:18px;font-weight:600;color:var(--text);letter-spacing:-0.3px}
+.page-sub{font-size:12px;color:var(--text3)}
+.topbar-right{display:flex;align-items:center;gap:10px}
+
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:7px 14px;border-radius:8px;
+  font-family:var(--font-b);font-size:13px;font-weight:500;
+  cursor:pointer;transition:all 0.15s;border:none;
+}
+.btn-primary{background:var(--coral);color:#fff}
+.btn-primary:hover{background:var(--coral-d);transform:translateY(-1px)}
+.btn-ghost{background:none;border:1px solid var(--border2);color:var(--text2)}
+.btn-ghost:hover{background:var(--surface2);color:var(--text);border-color:var(--border3)}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn-icon{width:32px;height:32px;padding:0;justify-content:center;background:none;border:1px solid var(--border);color:var(--text2)}
+.btn-icon:hover{background:var(--surface2);color:var(--text)}
+
+.content{flex:1;overflow-y:auto;padding:28px}
+.content::-webkit-scrollbar{width:4px}
+.content::-webkit-scrollbar-track{background:transparent}
+.content::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:2px}
+
+.page{display:none}
+.page.active{display:block;animation:fadeIn 0.25s ease}
+
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+@keyframes tick{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── CARDS ── */
+.card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius-lg);padding:20px;
+}
+.card-sm{padding:16px}
+.card-title{
+  font-size:11px;font-weight:600;color:var(--text3);
+  text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;
+}
+
+/* ── STAT CARDS ── */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+.stat-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius-lg);padding:18px 20px;
+  transition:border-color 0.2s,transform 0.2s;
+}
+.stat-card:hover{border-color:var(--border2);transform:translateY(-1px)}
+.stat-label{font-size:11px;color:var(--text3);font-weight:500;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.stat-icon{width:14px;height:14px;flex-shrink:0}
+.stat-val{
+  font-family:var(--font-h);font-size:28px;font-weight:600;
+  letter-spacing:-1px;line-height:1;color:var(--text);margin-bottom:6px;
+}
+.stat-change{
+  font-size:11px;font-weight:600;display:inline-flex;align-items:center;gap:3px;
+  padding:2px 7px;border-radius:4px;
+}
+.up{background:var(--green-l);color:var(--green)}
+.dn{background:var(--red-l);color:var(--red)}
+.neutral{background:var(--surface2);color:var(--text3)}
+
+/* ── GRID LAYOUTS ── */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.grid-12{display:grid;grid-template-columns:1fr 2fr;gap:16px}
+.grid-21{display:grid;grid-template-columns:2fr 1fr;gap:16px}
+.mb16{margin-bottom:16px}
+.mb24{margin-bottom:24px}
+
+/* ── QR TABLE ── */
+.qr-table{width:100%;border-collapse:collapse}
+.qr-table th{
+  text-align:left;font-size:11px;font-weight:600;color:var(--text3);
+  text-transform:uppercase;letter-spacing:0.06em;
+  padding:0 14px 10px;border-bottom:1px solid var(--border);
+}
+.qr-table td{
+  padding:12px 14px;border-bottom:1px solid var(--border);
+  font-size:13px;vertical-align:middle;
+}
+.qr-table tr:last-child td{border-bottom:none}
+.qr-table tr:hover td{background:var(--surface2)}
+.qr-thumb{
+  width:36px;height:36px;background:#fff;border-radius:6px;
+  display:flex;align-items:center;justify-content:center;overflow:hidden;
+  border:1px solid var(--border2);flex-shrink:0;
+}
+.qr-thumb img,.qr-thumb canvas{width:32px;height:32px}
+.qr-row-name{font-weight:500;color:var(--text);margin-bottom:2px}
+.qr-row-slug{font-size:11px;color:var(--text3);font-family:monospace}
+.status-pill{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;
+}
+.status-active{background:var(--green-l);color:var(--green)}
+.status-inactive{background:var(--surface3);color:var(--text3)}
+.mini-bar{height:3px;border-radius:2px;background:var(--surface3);margin-top:3px}
+.mini-fill{height:100%;border-radius:2px;background:var(--coral)}
+
+/* ── CHART ── */
+.chart-wrap{position:relative;width:100%}
+.bar-chart{display:flex;align-items:flex-end;gap:4px;height:100px;padding-top:10px}
+.bar-col{
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;
+}
+.bar-fill{
+  width:100%;border-radius:3px 3px 0 0;
+  background:var(--coral-l);border:1px solid rgba(232,93,58,0.2);
+  transition:background 0.15s,transform 0.1s;min-height:4px;
+}
+.bar-fill.hi{background:var(--coral);border-color:var(--coral)}
+.bar-col:hover .bar-fill{background:var(--coral);border-color:var(--coral)}
+.bar-label{font-size:9px;color:var(--text3);white-space:nowrap}
+.line-chart{position:relative;height:100px;width:100%}
+.line-chart svg{width:100%;height:100%}
+
+/* ── DONUT ── */
+.donut-ring{transform:rotate(-90deg);transform-origin:50% 50%}
+
+/* ── COUNTRY LIST ── */
+.country-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)}
+.country-row:last-child{border-bottom:none}
+.c-flag{font-size:15px;flex-shrink:0}
+.c-name{flex:1;font-size:13px;color:var(--text2)}
+.c-bar-track{flex:2;height:3px;background:var(--surface3);border-radius:2px;overflow:hidden}
+.c-bar-fill{height:100%;background:var(--coral);border-radius:2px}
+.c-count{font-size:12px;font-weight:600;color:var(--text);min-width:36px;text-align:right}
+
+/* ── HOUR HEATMAP ── */
+.heatmap{display:flex;gap:3px;flex-wrap:wrap}
+.hm-cell{
+  width:28px;height:28px;border-radius:5px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:10px;font-weight:500;cursor:pointer;
+  transition:transform 0.1s;position:relative;
+}
+.hm-cell:hover{transform:scale(1.15);z-index:2}
+.hm-0{background:var(--surface3);color:var(--text3)}
+.hm-1{background:rgba(232,93,58,0.15);color:var(--coral)}
+.hm-2{background:rgba(232,93,58,0.3);color:var(--coral)}
+.hm-3{background:rgba(232,93,58,0.55);color:#fff}
+.hm-4{background:var(--coral);color:#fff}
+
+/* ── CREATE QR PAGE ── */
+.create-layout{display:grid;grid-template-columns:1fr 380px;gap:24px;align-items:start}
+.form-section{margin-bottom:20px}
+.form-label{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px;display:block}
+.form-input{
+  width:100%;background:var(--surface2);border:1px solid var(--border2);
+  color:var(--text);padding:10px 12px;border-radius:8px;
+  font-family:var(--font-b);font-size:14px;outline:none;
+  transition:border-color 0.2s,box-shadow 0.2s;
+}
+.form-input:focus{border-color:var(--coral);box-shadow:0 0 0 3px rgba(232,93,58,0.12)}
+.form-input::placeholder{color:var(--text3)}
+.form-input.error{border-color:var(--red)}
+.error-msg{font-size:11px;color:var(--red);margin-top:4px}
+textarea.form-input{resize:vertical;min-height:80px}
+.color-row{display:flex;gap:10px;align-items:center}
+.color-swatch{
+  width:36px;height:36px;border-radius:8px;border:2px solid transparent;
+  cursor:pointer;transition:border-color 0.15s,transform 0.1s;flex-shrink:0;
+}
+.color-swatch.selected{border-color:var(--coral);transform:scale(1.1)}
+.color-input-wrap{display:flex;align-items:center;gap:8px;flex:1}
+.color-preview{width:32px;height:32px;border-radius:6px;border:1px solid var(--border2);flex-shrink:0}
+.style-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.style-opt{
+  aspect-ratio:1;background:var(--surface2);border:2px solid var(--border);
+  border-radius:8px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:border-color 0.15s,background 0.15s;
+}
+.style-opt:hover{background:var(--surface3);border-color:var(--border2)}
+.style-opt.selected{border-color:var(--coral);background:var(--coral-ll)}
+.style-opt svg{width:28px;height:28px}
+
+/* QR Preview card */
+.qr-preview-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius-lg);padding:24px;position:sticky;top:0;
+}
+.qr-preview-frame{
+  width:200px;height:200px;background:#fff;border-radius:14px;
+  margin:0 auto 20px;display:flex;align-items:center;justify-content:center;
+  overflow:hidden;position:relative;
+}
+#preview-canvas{display:block}
+.qr-preview-slug{
+  text-align:center;font-family:monospace;font-size:13px;
+  color:var(--coral);background:var(--coral-ll);
+  padding:6px 12px;border-radius:6px;margin-bottom:16px;
+}
+.dl-row{display:flex;gap:8px}
+.dl-btn{
+  flex:1;background:var(--surface2);border:1px solid var(--border);
+  color:var(--text2);padding:8px;border-radius:8px;
+  font-family:var(--font-b);font-size:12px;font-weight:500;
+  cursor:pointer;text-align:center;transition:all 0.15s;
+}
+.dl-btn:hover{background:var(--surface3);color:var(--text);border-color:var(--border2)}
+.qr-type-tabs{display:flex;gap:4px;background:var(--surface2);padding:3px;border-radius:8px;margin-bottom:20px}
+.qr-type-tab{
+  flex:1;text-align:center;font-size:12px;font-weight:500;
+  padding:6px 4px;border-radius:6px;cursor:pointer;color:var(--text3);
+  transition:all 0.15s;border:none;background:none;font-family:var(--font-b);
+}
+.qr-type-tab.active{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,0.2)}
+
+/* ── TOGGLE ── */
+.toggle-wrap{display:flex;align-items:center;gap:10px}
+.toggle{
+  width:36px;height:20px;background:var(--surface3);border-radius:10px;
+  cursor:pointer;position:relative;transition:background 0.2s;border:none;flex-shrink:0;
+}
+.toggle.on{background:var(--coral)}
+.toggle::after{
+  content:'';position:absolute;width:14px;height:14px;background:#fff;
+  border-radius:50%;top:3px;left:3px;transition:transform 0.2s;
+}
+.toggle.on::after{transform:translateX(16px)}
+.toggle-label{font-size:13px;color:var(--text2)}
+
+/* ── PROFILE PAGE ── */
+.profile-layout{display:grid;grid-template-columns:280px 1fr;gap:20px;align-items:start}
+.profile-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius-lg);padding:24px;text-align:center;
+}
+.profile-av{
+  width:72px;height:72px;border-radius:50%;
+  background:var(--coral-l);border:2px solid var(--coral);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-h);font-size:28px;font-weight:700;color:var(--coral);
+  margin:0 auto 14px;cursor:pointer;position:relative;overflow:hidden;
+  transition:transform 0.2s;
+}
+.profile-av:hover{transform:scale(1.04)}
+.profile-av-overlay{
+  position:absolute;inset:0;background:rgba(0,0,0,0.5);
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;transition:opacity 0.2s;font-size:20px;
+}
+.profile-av:hover .profile-av-overlay{opacity:1}
+.profile-name{font-family:var(--font-h);font-size:18px;font-weight:600;color:var(--text);margin-bottom:4px}
+.profile-email{font-size:13px;color:var(--text3);margin-bottom:14px}
+.profile-plan-chip{
+  display:inline-flex;align-items:center;gap:6px;
+  background:var(--amber-l);border:1px solid rgba(240,160,48,0.2);
+  color:var(--amber);font-size:12px;font-weight:600;
+  padding:5px 12px;border-radius:20px;margin-bottom:20px;
+}
+.profile-stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border);border-radius:10px;overflow:hidden;margin-bottom:20px}
+.p-stat{background:var(--surface2);padding:12px;text-align:center}
+.p-stat-val{font-family:var(--font-h);font-size:20px;font-weight:600;color:var(--text)}
+.p-stat-key{font-size:11px;color:var(--text3)}
+
+.settings-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);margin-bottom:16px;overflow:hidden}
+.settings-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.settings-title{font-size:14px;font-weight:600;color:var(--text)}
+.settings-body{padding:20px}
+.setting-row{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 0;border-bottom:1px solid var(--border);
+}
+.setting-row:last-child{border-bottom:none;padding-bottom:0}
+.setting-row:first-child{padding-top:0}
+.setting-info{}
+.setting-name{font-size:13px;font-weight:500;color:var(--text);margin-bottom:2px}
+.setting-desc{font-size:12px;color:var(--text3)}
+
+/* ── PLAN SECTION ── */
+.plan-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.plan-card{
+  background:var(--surface2);border:1px solid var(--border);
+  border-radius:var(--radius-lg);padding:20px;text-align:center;
+  cursor:pointer;transition:border-color 0.2s,transform 0.15s;
+}
+.plan-card:hover{border-color:var(--border2);transform:translateY(-2px)}
+.plan-card.current{border-color:var(--coral);background:var(--coral-ll)}
+.plan-name{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px}
+.plan-price{font-family:var(--font-h);font-size:30px;font-weight:600;color:var(--text);letter-spacing:-1px;line-height:1;margin-bottom:4px}
+.plan-period{font-size:11px;color:var(--text3);margin-bottom:14px}
+.plan-cta{
+  width:100%;padding:8px;border-radius:8px;
+  font-family:var(--font-b);font-size:12px;font-weight:600;cursor:pointer;
+  transition:all 0.15s;
+}
+.plan-cta.outline{background:none;border:1px solid var(--border2);color:var(--text2)}
+.plan-cta.current-btn{background:var(--coral-ll);border:1px solid var(--coral);color:var(--coral);cursor:default}
+.plan-cta.upgrade-btn{background:var(--coral);border:none;color:#fff}
+.plan-cta.upgrade-btn:hover{background:var(--coral-d)}
+
+/* ── TOASTS ── */
+.toast-wrap{position:fixed;bottom:24px;right:24px;z-index:999;display:flex;flex-direction:column;gap:8px}
+.toast{
+  background:var(--surface);border:1px solid var(--border2);
+  border-radius:10px;padding:12px 16px;
+  display:flex;align-items:center;gap:10px;
+  font-size:13px;color:var(--text);min-width:240px;
+  animation:slideUp 0.25s ease;box-shadow:0 4px 20px rgba(0,0,0,0.4);
+}
+.toast.success{border-color:var(--green);background:rgba(61,204,126,0.06)}
+.toast.error{border-color:var(--red)}
+.toast-icon{font-size:15px;flex-shrink:0}
+
+/* ── MISC ── */
+.divider{height:1px;background:var(--border);margin:16px 0}
+.chip{
+  display:inline-flex;align-items:center;gap:4px;
+  font-size:11px;font-weight:600;padding:3px 8px;border-radius:4px;
+}
+.live-dot{
+  width:6px;height:6px;background:var(--green);border-radius:50%;
+  animation:pulse 1.5s ease infinite;display:inline-block;
+}
+.progress-bar{height:4px;background:var(--surface3);border-radius:2px;overflow:hidden;margin-top:6px}
+.progress-fill{height:100%;background:var(--coral);border-radius:2px;transition:width 0.8s ease}
+.empty-state{text-align:center;padding:48px 20px;color:var(--text3)}
+.empty-icon{font-size:36px;margin-bottom:12px}
+.empty-title{font-size:16px;font-weight:500;color:var(--text2);margin-bottom:6px}
+.section-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.section-title{font-family:var(--font-h);font-size:16px;font-weight:600;color:var(--text);letter-spacing:-0.3px}
+select.form-input{cursor:pointer}
+
+/* ── BILLING PAGE ── */
+.billing-hero{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius-lg);padding:28px 32px;
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:20px;position:relative;overflow:hidden;
+}
+.billing-hero::before{
+  content:'';position:absolute;right:-60px;top:-60px;
+  width:240px;height:240px;border-radius:50%;
+  background:var(--coral);opacity:0.05;pointer-events:none;
+}
+.billing-hero-left{}
+.billing-plan-name{
+  font-family:var(--font-h);font-size:26px;font-weight:600;
+  color:var(--text);letter-spacing:-0.5px;margin-bottom:4px;
+}
+.billing-plan-desc{font-size:13px;color:var(--text3);margin-bottom:16px}
+.billing-next{
+  font-size:12px;color:var(--text2);
+  display:flex;align-items:center;gap:8px;
+}
+.billing-next-dot{width:6px;height:6px;border-radius:50%;background:var(--green)}
+
+.invoice-table{width:100%;border-collapse:collapse}
+.invoice-table th{
+  text-align:left;font-size:11px;font-weight:600;color:var(--text3);
+  text-transform:uppercase;letter-spacing:0.06em;
+  padding:0 14px 10px;border-bottom:1px solid var(--border);
+}
+.invoice-table td{padding:13px 14px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
+.invoice-table tr:last-child td{border-bottom:none}
+.invoice-table tr:hover td{background:rgba(255,255,255,0.02)}
+.invoice-status{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;
+}
+.inv-paid{background:var(--green-l);color:var(--green)}
+.inv-pending{background:var(--amber-l);color:var(--amber)}
+.inv-failed{background:var(--red-l);color:var(--red)}
+
+.usage-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px}
+.usage-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius-lg);padding:18px 20px;
+}
+.usage-icon{font-size:18px;margin-bottom:8px}
+.usage-label{font-size:11px;color:var(--text3);font-weight:500;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.06em}
+.usage-val{font-family:var(--font-h);font-size:22px;font-weight:600;color:var(--text);letter-spacing:-0.5px;margin-bottom:6px}
+.usage-sub{font-size:11px;color:var(--text3)}
+
+.plan-compare{width:100%;border-collapse:collapse}
+.plan-compare th{
+  padding:12px 16px;text-align:center;font-size:13px;font-weight:600;
+  border-bottom:1px solid var(--border);color:var(--text2);
+}
+.plan-compare th.current{color:var(--coral)}
+.plan-compare td{
+  padding:11px 16px;font-size:13px;color:var(--text3);
+  border-bottom:1px solid var(--border);text-align:center;
+}
+.plan-compare td:first-child{text-align:left;color:var(--text2)}
+.plan-compare tr:last-child td{border-bottom:none}
+.plan-compare tr:hover td{background:rgba(255,255,255,0.02)}
+.check-y{color:var(--green);font-size:14px}
+.check-n{color:var(--text3);font-size:14px}
+
+/* ── API DOCS PAGE ── */
+.docs-layout{display:grid;grid-template-columns:220px 1fr;gap:0;height:100%}
+.docs-nav{
+  border-right:1px solid var(--border);padding:0 0 24px;
+  overflow-y:auto;flex-shrink:0;
+}
+.docs-nav::-webkit-scrollbar{width:3px}
+.docs-nav::-webkit-scrollbar-thumb{background:var(--surface3)}
+.docs-nav-section{padding:16px 16px 6px}
+.docs-nav-label{font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px}
+.docs-nav-item{
+  display:block;padding:6px 10px;border-radius:6px;
+  font-size:12px;font-weight:500;color:var(--text3);
+  cursor:pointer;transition:background 0.12s,color 0.12s;
+  margin-bottom:1px;
+}
+.docs-nav-item:hover{background:var(--surface2);color:var(--text2)}
+.docs-nav-item.active{background:var(--coral-l);color:var(--coral)}
+.method-tag{
+  display:inline-block;font-size:9px;font-weight:700;
+  padding:1px 5px;border-radius:3px;margin-right:5px;
+  letter-spacing:0.03em;vertical-align:middle;
+}
+.get{background:var(--green-l);color:var(--green)}
+.post{background:var(--blue-l);color:var(--blue)}
+.put{background:var(--amber-l);color:var(--amber)}
+.del{background:var(--red-l);color:var(--red)}
+
+.docs-content{
+  overflow-y:auto;padding:28px 32px;
+}
+.docs-content::-webkit-scrollbar{width:4px}
+.docs-content::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:2px}
+
+.docs-section{margin-bottom:40px;scroll-margin-top:20px}
+.docs-h1{
+  font-family:var(--font-h);font-size:26px;font-weight:600;
+  color:var(--text);letter-spacing:-0.5px;margin-bottom:8px;
+}
+.docs-h2{
+  font-family:var(--font-h);font-size:19px;font-weight:600;
+  color:var(--text);letter-spacing:-0.3px;margin-bottom:12px;
+  padding-bottom:10px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:10px;
+}
+.docs-p{font-size:13px;color:var(--text3);line-height:1.75;margin-bottom:14px}
+.docs-p a{color:var(--coral);text-decoration:none}
+.docs-p a:hover{text-decoration:underline}
+
+.endpoint-card{
+  background:var(--surface2);border:1px solid var(--border);
+  border-radius:var(--radius-lg);margin-bottom:16px;overflow:hidden;
+}
+.endpoint-header{
+  display:flex;align-items:center;gap:12px;
+  padding:14px 18px;cursor:pointer;
+  transition:background 0.15s;
+  justify-content:space-between;
+}
+.endpoint-header:hover{background:var(--surface3)}
+.endpoint-left{display:flex;align-items:center;gap:10px}
+.endpoint-path{
+  font-family:monospace;font-size:13px;font-weight:600;color:var(--text);
+}
+.endpoint-desc{font-size:12px;color:var(--text3)}
+.endpoint-chevron{font-size:10px;color:var(--text3);transition:transform 0.2s}
+.endpoint-card.open .endpoint-chevron{transform:rotate(180deg)}
+.endpoint-body{
+  border-top:1px solid var(--border);padding:18px;
+  display:none;
+}
+.endpoint-card.open .endpoint-body{display:block}
+
+.param-table{width:100%;border-collapse:collapse;margin-bottom:14px}
+.param-table th{
+  text-align:left;font-size:10px;font-weight:700;color:var(--text3);
+  text-transform:uppercase;letter-spacing:0.08em;
+  padding:0 10px 8px;border-bottom:1px solid var(--border);
+}
+.param-table td{padding:8px 10px;font-size:12px;border-bottom:1px solid var(--border);vertical-align:top}
+.param-table tr:last-child td{border-bottom:none}
+.param-name{font-family:monospace;color:var(--text);font-size:12px}
+.param-type{color:var(--blue);font-family:monospace;font-size:11px}
+.param-req{color:var(--coral);font-size:10px;font-weight:700}
+.param-opt{color:var(--text3);font-size:10px}
+.param-desc{color:var(--text3);font-size:12px;line-height:1.5}
+
+.code-block{
+  background:var(--bg);border:1px solid var(--border);
+  border-radius:8px;padding:14px 16px;
+  font-family:'Courier New',Courier,monospace;font-size:12px;
+  line-height:1.7;overflow-x:auto;margin-bottom:14px;
+  position:relative;
+}
+.code-block pre{margin:0;white-space:pre;color:var(--text2)}
+.code-copy{
+  position:absolute;top:8px;right:8px;
+  background:var(--surface2);border:1px solid var(--border);
+  color:var(--text3);font-size:11px;padding:3px 8px;
+  border-radius:4px;cursor:pointer;font-family:var(--font-b);
+  transition:color 0.15s,background 0.15s;
+}
+.code-copy:hover{background:var(--surface3);color:var(--text)}
+
+.hl-k{color:#E85D3A}
+.hl-s{color:#3DCC7E}
+.hl-n{color:#4D9EFF}
+.hl-c{color:#5A5955;font-style:italic}
+.hl-v{color:#F0A030}
+
+.response-tabs{display:flex;gap:2px;background:var(--surface3);padding:2px;border-radius:6px;margin-bottom:10px;width:fit-content}
+.resp-tab{
+  font-size:11px;font-weight:500;padding:4px 10px;border-radius:4px;
+  cursor:pointer;color:var(--text3);transition:all 0.15s;
+  border:none;background:none;font-family:var(--font-b);
+}
+.resp-tab.active{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,0.2)}
+
+.key-card{
+  background:var(--surface2);border:1px solid var(--border);
+  border-radius:var(--radius);padding:16px;margin-bottom:12px;
+  display:flex;align-items:center;gap:14px;
+}
+.key-icon{
+  width:36px;height:36px;border-radius:8px;background:var(--blue-l);
+  display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;
+}
+.key-info{flex:1;min-width:0}
+.key-name{font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px}
+.key-val{
+  font-family:monospace;font-size:12px;color:var(--text3);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  cursor:pointer;
+}
+.key-val:hover{color:var(--text2)}
+.key-meta{font-size:11px;color:var(--text3);margin-top:2px}
+
+.alert-box{
+  border-radius:8px;padding:12px 14px;margin-bottom:14px;
+  font-size:12px;line-height:1.6;display:flex;gap:10px;align-items:flex-start;
+}
+.alert-info{background:var(--blue-l);border:1px solid rgba(77,158,255,0.2);color:var(--blue)}
+.alert-warn{background:var(--amber-l);border:1px solid rgba(240,160,48,0.2);color:var(--amber)}
+.alert-icon{flex-shrink:0;font-size:14px}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-mark">
+      <svg viewBox="0 0 18 18" fill="none">
+        <rect x="1" y="1" width="6" height="6" rx="1.5" fill="white"/>
+        <rect x="11" y="1" width="6" height="6" rx="1.5" fill="white"/>
+        <rect x="1" y="11" width="6" height="6" rx="1.5" fill="white"/>
+        <rect x="12" y="12" width="2.5" height="2.5" fill="white"/>
+        <rect x="15.5" y="12" width="2.5" height="2.5" fill="white"/>
+        <rect x="12" y="15.5" width="2.5" height="2.5" fill="white"/>
+        <rect x="15.5" y="15.5" width="2.5" height="2.5" fill="white"/>
+      </svg>
+    </div>
+    <span class="logo-text">Scnr</span>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">Main</div>
+    <div class="nav-item active" onclick="showPage('dashboard',this)">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="4" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="7" width="6" height="8" rx="1"/></svg>
+      Dashboard
+      <span class="nav-badge green">Live</span>
+    </div>
+    <div class="nav-item" onclick="showPage('analytics',this)">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M1 12l4-4 3 3 4-5 3 2V14H1v-2z" opacity="0.4"/><path d="M1 10l4-4 3 3 4-5 3 2"/><circle cx="1" cy="10" r="1"/><circle cx="5" cy="6" r="1"/><circle cx="8" cy="9" r="1"/><circle cx="12" cy="4" r="1"/><circle cx="15" cy="6" r="1"/></svg>
+      Analytics
+    </div>
+    <div class="nav-item" onclick="showPage('create',this)">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1v14M1 8h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+      Create QR
+    </div>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">Account</div>
+    <div class="nav-item" onclick="showPage('profile',this)">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.314 2.686-6 6-6s6 2.686 6 6"/></svg>
+      Profile & Settings
+    </div>
+    <div class="nav-item" onclick="showPage('billing',this)">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M2 6h12"/><path d="M5 10h2"/></svg>
+      Billing
+      <span class="nav-badge">Pro</span>
+    </div>
+    <div class="nav-item" onclick="showPage('apidocs',this)">
+      <svg class="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 4l-3 4 3 4M11 4l3 4-3 4M9 3l-2 10"/></svg>
+      API Docs
+    </div>
+  </div>
+
+  <div class="sidebar-footer">
+    <div class="user-chip" onclick="showPage('profile', document.querySelector('.nav-item:nth-child(4)'))">
+      <div class="user-av">AK</div>
+      <div class="user-info">
+        <div class="user-name">Ashan K.</div>
+        <div class="user-plan"><span class="plan-badge">Pro</span></div>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<div class="main">
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <span class="page-title" id="page-title">Dashboard</span>
+      <span class="live-dot" id="live-indicator"></span>
+      <span class="page-sub" id="page-sub">Live · Updated just now</span>
+    </div>
+    <div class="topbar-right">
+      <button class="btn btn-ghost btn-sm" id="topbar-date">Last 30 days ▾</button>
+      <button class="btn btn-primary btn-sm" onclick="showPage('create', document.querySelectorAll('.nav-item')[2])">
+        + New QR
+      </button>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ═══════════════════════════════════════
+         PAGE: DASHBOARD
+    ═══════════════════════════════════════ -->
+    <div id="page-dashboard" class="page active">
+      <!-- Stats -->
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-label">
+            <svg class="stat-icon" viewBox="0 0 16 16" fill="var(--coral)"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 2a5 5 0 110 10A5 5 0 018 3zm0 2a3 3 0 100 6 3 3 0 000-6z"/></svg>
+            Total Scans
+          </div>
+          <div class="stat-val" id="d-total">48,291</div>
+          <span class="stat-change up">↑ 23.4% vs last month</span>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">
+            <svg class="stat-icon" viewBox="0 0 16 16" fill="var(--blue)"><circle cx="8" cy="6" r="3"/><path d="M3 14c0-2.761 2.239-5 5-5s5 2.239 5 5"/></svg>
+            Unique Visitors
+          </div>
+          <div class="stat-val" id="d-unique">12,040</div>
+          <span class="stat-change up">↑ 18% vs last month</span>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">
+            <svg class="stat-icon" viewBox="0 0 16 16" fill="var(--purple)"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+            Active QR Codes
+          </div>
+          <div class="stat-val">7</div>
+          <span class="stat-change neutral">3 of 10 used</span>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">
+            <svg class="stat-icon" viewBox="0 0 16 16" fill="var(--amber)"><path d="M8 1l2 4 5 .7-3.5 3.4.8 5L8 12l-4.3 2.1.8-5L1 5.7 6 5z"/></svg>
+            Scan Rate
+          </div>
+          <div class="stat-val">1,609</div>
+          <span class="stat-change up">↑ 9% scans/day avg</span>
+        </div>
+      </div>
+
+      <!-- Chart + Top QRs -->
+      <div class="grid-21 mb24">
+        <div class="card">
+          <div class="section-row">
+            <span class="card-title">Scans over time</span>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:4px 8px" onclick="setRange(this,7)">7d</button>
+              <button class="btn btn-ghost btn-sm active-range" style="font-size:11px;padding:4px 8px;background:var(--surface3)" onclick="setRange(this,30)">30d</button>
+              <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:4px 8px" onclick="setRange(this,90)">90d</button>
+            </div>
+          </div>
+          <div class="bar-chart" id="main-chart"></div>
+          <div style="display:flex;justify-content:space-between;margin-top:6px">
+            <span style="font-size:10px;color:var(--text3)" id="chart-start">Mar 1</span>
+            <span style="font-size:10px;color:var(--text3)" id="chart-end">Mar 21</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Device split</div>
+          <div style="display:flex;align-items:center;gap:20px">
+            <svg width="90" height="90" viewBox="0 0 90 90">
+              <circle cx="45" cy="45" r="35" fill="none" stroke="var(--surface3)" stroke-width="10"/>
+              <circle cx="45" cy="45" r="35" fill="none" stroke="var(--coral)" stroke-width="10"
+                stroke-dasharray="154 66" stroke-dashoffset="-88" stroke-linecap="round" class="donut-ring"/>
+              <circle cx="45" cy="45" r="35" fill="none" stroke="var(--blue)" stroke-width="10"
+                stroke-dasharray="59 161" stroke-dashoffset="-242" stroke-linecap="round" class="donut-ring"/>
+              <circle cx="45" cy="45" r="35" fill="none" stroke="var(--surface3)" stroke-width="10"
+                stroke-dasharray="7 213" stroke-dashoffset="-301" stroke-linecap="round" class="donut-ring"/>
+              <text x="45" y="42" text-anchor="middle" fill="var(--text)" font-size="14" font-weight="700" font-family="Fraunces,serif">71%</text>
+              <text x="45" y="54" text-anchor="middle" fill="var(--text3)" font-size="8">mobile</text>
+            </svg>
+            <div style="flex:1;display:flex;flex-direction:column;gap:10px">
+              <div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span style="color:var(--text2)">📱 Mobile</span><span style="font-weight:600;color:var(--text)">71%</span></div><div class="progress-bar"><div class="progress-fill" style="width:71%"></div></div></div>
+              <div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span style="color:var(--text2)">💻 Desktop</span><span style="font-weight:600;color:var(--text)">27%</span></div><div class="progress-bar"><div class="progress-fill" style="width:27%;background:var(--blue)"></div></div></div>
+              <div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span style="color:var(--text2)">📟 Tablet</span><span style="font-weight:600;color:var(--text)">2%</span></div><div class="progress-bar"><div class="progress-fill" style="width:2%;background:var(--purple)"></div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- QR Codes table + Top Countries -->
+      <div class="grid-21 mb24">
+        <div class="card">
+          <div class="section-row">
+            <span class="section-title">Your QR codes</span>
+            <button class="btn btn-ghost btn-sm" onclick="showPage('create',document.querySelectorAll('.nav-item')[2])">+ New</button>
+          </div>
+          <table class="qr-table" id="qr-table-main"></table>
+        </div>
+        <div class="card">
+          <div class="card-title">Top countries</div>
+          <div id="country-list-main"></div>
+        </div>
+      </div>
+
+      <!-- Recent activity -->
+      <div class="card">
+        <div class="section-row">
+          <span class="section-title">Live scan feed</span>
+          <span style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:6px"><span class="live-dot"></span> Real-time</span>
+        </div>
+        <div id="live-feed" style="display:flex;flex-direction:column;gap:1px"></div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════
+         PAGE: ANALYTICS
+    ═══════════════════════════════════════ -->
+    <div id="page-analytics" class="page">
+      <!-- Big stats -->
+      <div class="stats-row mb24">
+        <div class="stat-card">
+          <div class="stat-label">Total scans</div>
+          <div class="stat-val">48,291</div>
+          <span class="stat-change up">↑ 23.4%</span>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Unique visitors</div>
+          <div class="stat-val">12,040</div>
+          <span class="stat-change up">↑ 18%</span>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Avg scans / day</div>
+          <div class="stat-val">1,609</div>
+          <span class="stat-change up">↑ 9%</span>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Scan velocity</div>
+          <div class="stat-val">+31%</div>
+          <span class="stat-change up">↑ Growing</span>
+        </div>
+      </div>
+
+      <!-- Line chart + Countries -->
+      <div class="grid-21 mb16">
+        <div class="card">
+          <div class="section-row">
+            <span class="section-title">Scan trend — 30 days</span>
+            <div style="display:flex;gap:6px;align-items:center">
+              <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text3)"><span style="width:10px;height:2px;background:var(--coral);display:inline-block;border-radius:1px"></span>Total</span>
+              <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text3)"><span style="width:10px;height:2px;background:var(--blue);display:inline-block;border-radius:1px"></span>Unique</span>
+            </div>
+          </div>
+          <div style="height:120px;position:relative">
+            <svg id="analytics-chart" width="100%" height="120" viewBox="0 0 600 120" preserveAspectRatio="none"></svg>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:6px">
+            <span style="font-size:10px;color:var(--text3)">Feb 20</span>
+            <span style="font-size:10px;color:var(--text3)">Mar 21</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Top countries</div>
+          <div id="country-list-analytics"></div>
+        </div>
+      </div>
+
+      <!-- Heatmap + Browsers -->
+      <div class="grid-2 mb16">
+        <div class="card">
+          <div class="section-row">
+            <span class="section-title">Peak hours</span>
+            <span style="font-size:11px;color:var(--text3)">UTC · hover for details</span>
+          </div>
+          <div class="heatmap" id="heatmap"></div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:12px">
+            <span style="font-size:11px;color:var(--text3)">Less</span>
+            <div style="display:flex;gap:3px">
+              <div style="width:14px;height:14px;border-radius:3px;background:var(--surface3)"></div>
+              <div style="width:14px;height:14px;border-radius:3px;background:rgba(232,93,58,0.2)"></div>
+              <div style="width:14px;height:14px;border-radius:3px;background:rgba(232,93,58,0.5)"></div>
+              <div style="width:14px;height:14px;border-radius:3px;background:var(--coral)"></div>
+            </div>
+            <span style="font-size:11px;color:var(--text3)">More</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="section-title mb16">Browser & OS</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div>
+              <div class="card-title">Browser</div>
+              <div id="browser-list"></div>
+            </div>
+            <div>
+              <div class="card-title">OS</div>
+              <div id="os-list"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Per-QR breakdown -->
+      <div class="card">
+        <div class="section-row">
+          <span class="section-title">Per QR performance</span>
+          <select class="form-input" style="width:auto;padding:5px 10px;font-size:12px">
+            <option>Last 30 days</option>
+            <option>Last 7 days</option>
+            <option>Last 90 days</option>
+          </select>
+        </div>
+        <table class="qr-table" id="qr-analytics-table"></table>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════
+         PAGE: CREATE QR
+    ═══════════════════════════════════════ -->
+    <div id="page-create" class="page">
+      <div class="create-layout">
+        <!-- Left: Form -->
+        <div>
+          <!-- QR type selector -->
+          <div class="card mb16">
+            <div class="card-title">QR code type</div>
+            <div class="qr-type-tabs">
+              <button class="qr-type-tab active" onclick="setQRType(this,'url')">URL</button>
+              <button class="qr-type-tab" onclick="setQRType(this,'vcard')">vCard</button>
+              <button class="qr-type-tab" onclick="setQRType(this,'wifi')">WiFi</button>
+              <button class="qr-type-tab" onclick="setQRType(this,'text')">Text</button>
+              <button class="qr-type-tab" onclick="setQRType(this,'email')">Email</button>
+            </div>
+
+            <!-- URL fields -->
+            <div id="fields-url">
+              <div class="form-section">
+                <label class="form-label">Destination URL *</label>
+                <input type="url" class="form-input" id="qr-url" placeholder="https://yourwebsite.com" oninput="updatePreview()">
+                <div class="error-msg" id="url-error" style="display:none">Please enter a valid URL starting with https://</div>
+              </div>
+              <div class="form-section">
+                <label class="form-label">QR Code title</label>
+                <input type="text" class="form-input" id="qr-title" placeholder="e.g. Restaurant Menu QR" oninput="updatePreview()">
+              </div>
+            </div>
+
+            <!-- vCard fields -->
+            <div id="fields-vcard" style="display:none">
+              <div class="grid-2 mb16">
+                <div><label class="form-label">First name</label><input type="text" class="form-input" placeholder="Ashan" oninput="updateVCard()"></div>
+                <div><label class="form-label">Last name</label><input type="text" class="form-input" placeholder="Kumar" oninput="updateVCard()"></div>
+              </div>
+              <div class="form-section"><label class="form-label">Phone</label><input type="tel" class="form-input" placeholder="+94 77 123 4567" oninput="updateVCard()"></div>
+              <div class="form-section"><label class="form-label">Email</label><input type="email" class="form-input" placeholder="ashan@email.com" oninput="updateVCard()"></div>
+              <div class="form-section"><label class="form-label">Company</label><input type="text" class="form-input" placeholder="Company name" oninput="updateVCard()"></div>
+              <div class="form-section"><label class="form-label">Website</label><input type="url" class="form-input" placeholder="https://yoursite.com" oninput="updateVCard()"></div>
+            </div>
+
+            <!-- WiFi fields -->
+            <div id="fields-wifi" style="display:none">
+              <div class="form-section"><label class="form-label">Network name (SSID)</label><input type="text" class="form-input" id="wifi-ssid" placeholder="MyHomeWiFi" oninput="updateWifi()"></div>
+              <div class="form-section"><label class="form-label">Password</label><input type="text" class="form-input" id="wifi-pass" placeholder="password123" oninput="updateWifi()"></div>
+              <div class="form-section">
+                <label class="form-label">Security type</label>
+                <select class="form-input" id="wifi-sec" onchange="updateWifi()">
+                  <option value="WPA">WPA/WPA2</option>
+                  <option value="WEP">WEP</option>
+                  <option value="">None (open)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Text fields -->
+            <div id="fields-text" style="display:none">
+              <div class="form-section">
+                <label class="form-label">Text content</label>
+                <textarea class="form-input" id="qr-text-content" placeholder="Enter any text, message, or note..." oninput="updatePreview()" rows="4"></textarea>
+              </div>
+            </div>
+
+            <!-- Email fields -->
+            <div id="fields-email" style="display:none">
+              <div class="form-section"><label class="form-label">Recipient email</label><input type="email" class="form-input" id="email-to" placeholder="hello@example.com" oninput="updateEmail()"></div>
+              <div class="form-section"><label class="form-label">Subject</label><input type="text" class="form-input" id="email-subject" placeholder="Subject line" oninput="updateEmail()"></div>
+              <div class="form-section"><label class="form-label">Body (optional)</label><textarea class="form-input" id="email-body" placeholder="Message body..." rows="3" oninput="updateEmail()"></textarea></div>
+            </div>
+          </div>
+
+          <!-- Style -->
+          <div class="card mb16">
+            <div class="card-title">Style</div>
+
+            <div class="form-section">
+              <label class="form-label">Foreground color</label>
+              <div class="color-row">
+                <div class="color-swatch selected" style="background:#1A1916" onclick="setFgColor('#1A1916',this)"></div>
+                <div class="color-swatch" style="background:#E85D3A" onclick="setFgColor('#E85D3A',this)"></div>
+                <div class="color-swatch" style="background:#4D9EFF" onclick="setFgColor('#4D9EFF',this)"></div>
+                <div class="color-swatch" style="background:#3DCC7E" onclick="setFgColor('#3DCC7E',this)"></div>
+                <div class="color-swatch" style="background:#9B7FFF" onclick="setFgColor('#9B7FFF',this)"></div>
+                <div class="color-input-wrap">
+                  <div class="color-preview" id="fg-preview" style="background:#1A1916"></div>
+                  <input type="color" class="form-input" id="fg-color" value="#1A1916" style="height:36px;padding:4px;cursor:pointer" oninput="fgColorPicker(this.value)">
+                </div>
+              </div>
+            </div>
+
+            <div class="form-section">
+              <label class="form-label">Background color</label>
+              <div class="color-row">
+                <div class="color-swatch selected" style="background:#FFFFFF;border:1px solid var(--border)" onclick="setBgColor('#FFFFFF',this)"></div>
+                <div class="color-swatch" style="background:#F4F3EF" onclick="setBgColor('#F4F3EF',this)"></div>
+                <div class="color-swatch" style="background:#FBE9E4" onclick="setBgColor('#FBE9E4',this)"></div>
+                <div class="color-swatch" style="background:#E8F5EC" onclick="setBgColor('#E8F5EC',this)"></div>
+                <div class="color-swatch" style="background:#EEF0FF" onclick="setBgColor('#EEF0FF',this)"></div>
+                <div class="color-input-wrap">
+                  <div class="color-preview" id="bg-preview" style="background:#FFFFFF;border:1px solid var(--border2)"></div>
+                  <input type="color" class="form-input" id="bg-color" value="#FFFFFF" style="height:36px;padding:4px;cursor:pointer" oninput="bgColorPicker(this.value)">
+                </div>
+              </div>
+            </div>
+
+            <div class="form-section">
+              <label class="form-label">Dot style</label>
+              <div class="style-grid">
+                <div class="style-opt selected" onclick="setDotStyle(this,'square')" title="Square">
+                  <svg viewBox="0 0 28 28" fill="var(--text2)"><rect x="2" y="2" width="6" height="6"/><rect x="20" y="2" width="6" height="6"/><rect x="2" y="20" width="6" height="6"/><rect x="11" y="2" width="6" height="6"/><rect x="2" y="11" width="6" height="6"/><rect x="20" y="20" width="6" height="6"/><rect x="11" y="20" width="6" height="6"/><rect x="20" y="11" width="6" height="6"/><rect x="11" y="11" width="6" height="6"/></svg>
+                </div>
+                <div class="style-opt" onclick="setDotStyle(this,'dots')" title="Dots">
+                  <svg viewBox="0 0 28 28" fill="var(--text2)"><circle cx="5" cy="5" r="3"/><circle cx="23" cy="5" r="3"/><circle cx="5" cy="23" r="3"/><circle cx="14" cy="5" r="3"/><circle cx="5" cy="14" r="3"/><circle cx="23" cy="23" r="3"/><circle cx="14" cy="23" r="3"/><circle cx="23" cy="14" r="3"/><circle cx="14" cy="14" r="3"/></svg>
+                </div>
+                <div class="style-opt" onclick="setDotStyle(this,'rounded')" title="Rounded">
+                  <svg viewBox="0 0 28 28" fill="var(--text2)"><rect x="2" y="2" width="6" height="6" rx="2"/><rect x="20" y="2" width="6" height="6" rx="2"/><rect x="2" y="20" width="6" height="6" rx="2"/><rect x="11" y="2" width="6" height="6" rx="2"/><rect x="2" y="11" width="6" height="6" rx="2"/><rect x="20" y="20" width="6" height="6" rx="2"/><rect x="11" y="20" width="6" height="6" rx="2"/><rect x="20" y="11" width="6" height="6" rx="2"/><rect x="11" y="11" width="6" height="6" rx="2"/></svg>
+                </div>
+                <div class="style-opt" onclick="setDotStyle(this,'diamond')" title="Diamond">
+                  <svg viewBox="0 0 28 28" fill="var(--text2)"><polygon points="5,2 8,5 5,8 2,5"/><polygon points="23,2 26,5 23,8 20,5"/><polygon points="5,20 8,23 5,26 2,23"/><polygon points="14,2 17,5 14,8 11,5"/><polygon points="5,11 8,14 5,17 2,14"/><polygon points="23,20 26,23 23,26 20,23"/><polygon points="14,20 17,23 14,26 11,23"/><polygon points="23,11 26,14 23,17 20,14"/><polygon points="14,11 17,14 14,17 11,14"/></svg>
+                </div>
+                <div class="style-opt" onclick="setDotStyle(this,'star')" title="Star">
+                  <svg viewBox="0 0 28 28" fill="var(--text2)"><text x="2" y="9" font-size="8">★</text><text x="20" y="9" font-size="8">★</text><text x="11" y="9" font-size="8">★</text><text x="2" y="18" font-size="8">★</text><text x="20" y="18" font-size="8">★</text><text x="11" y="18" font-size="8">★</text><text x="2" y="27" font-size="8">★</text><text x="20" y="27" font-size="8">★</text><text x="11" y="27" font-size="8">★</text></svg>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-section">
+              <label class="form-label">Error correction</label>
+              <select class="form-input" id="ec-level" onchange="updatePreview()">
+                <option value="M">M — Medium (15% recovery)</option>
+                <option value="H">H — High (30% recovery, required for logos)</option>
+                <option value="L">L — Low (7% recovery, smallest QR)</option>
+                <option value="Q">Q — Quartile (25% recovery)</option>
+              </select>
+            </div>
+
+            <div class="toggle-wrap">
+              <button class="toggle" id="dynamic-toggle" onclick="this.classList.toggle('on')"></button>
+              <span class="toggle-label">Dynamic QR (editable destination + analytics)</span>
+            </div>
+          </div>
+
+          <!-- Submit -->
+          <div style="display:flex;gap:10px">
+            <button class="btn btn-primary" style="flex:1;padding:12px;font-size:15px;justify-content:center" onclick="createQR()">
+              Create QR Code →
+            </button>
+            <button class="btn btn-ghost" onclick="resetCreateForm()">Reset</button>
+          </div>
+        </div>
+
+        <!-- Right: Preview -->
+        <div class="qr-preview-card">
+          <div class="card-title">Live preview</div>
+          <div class="qr-preview-frame">
+            <canvas id="preview-canvas" width="180" height="180"></canvas>
+          </div>
+          <div class="qr-preview-slug" id="preview-slug">scnr.app/———</div>
+          <div style="margin-bottom:16px">
+            <div style="font-size:11px;color:var(--text3);margin-bottom:4px">Destination</div>
+            <div style="font-size:13px;color:var(--text2);word-break:break-all;line-height:1.5" id="preview-dest">Enter a URL to generate your QR</div>
+          </div>
+          <div class="divider"></div>
+          <div style="margin-bottom:12px">
+            <div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em">Download</div>
+            <div class="dl-row">
+              <button class="dl-btn" onclick="downloadPreview('png')">PNG</button>
+              <button class="dl-btn" onclick="downloadPreview('svg')">SVG</button>
+              <button class="dl-btn" onclick="downloadPreview('print')">Print PDF</button>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;justify-content:space-between;font-size:12px">
+              <span style="color:var(--text3)">Type</span>
+              <span style="color:var(--text);font-weight:500" id="preview-type">URL</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:12px">
+              <span style="color:var(--text3)">Mode</span>
+              <span class="chip" style="background:var(--coral-ll);color:var(--coral)" id="preview-mode">Dynamic</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:12px">
+              <span style="color:var(--text3)">Error correction</span>
+              <span style="color:var(--text);font-weight:500" id="preview-ec">M (15%)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════
+         PAGE: PROFILE & SETTINGS
+    ═══════════════════════════════════════ -->
+    <div id="page-profile" class="page">
+      <div class="profile-layout">
+        <!-- Left: Profile card -->
+        <div>
+          <div class="profile-card mb16">
+            <div class="profile-av">
+              AK
+              <div class="profile-av-overlay">📷</div>
+            </div>
+            <div class="profile-name">Ashan Kumar</div>
+            <div class="profile-email"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="f392809b929db3968b929e839f96dd909c9e">[email&#160;protected]</a></div>
+            <div class="profile-plan-chip">⭐ Pro Plan</div>
+            <div class="profile-stats">
+              <div class="p-stat">
+                <div class="p-stat-val">7</div>
+                <div class="p-stat-key">QR Codes</div>
+              </div>
+              <div class="p-stat">
+                <div class="p-stat-val">48K</div>
+                <div class="p-stat-key">Total Scans</div>
+              </div>
+              <div class="p-stat">
+                <div class="p-stat-val">30</div>
+                <div class="p-stat-key">Days active</div>
+              </div>
+              <div class="p-stat">
+                <div class="p-stat-val">12</div>
+                <div class="p-stat-key">Countries</div>
+              </div>
+            </div>
+            <button class="btn btn-ghost" style="width:100%;justify-content:center;font-size:13px">Edit profile photo</button>
+          </div>
+
+          <!-- Plan usage -->
+          <div class="card">
+            <div class="card-title">Plan usage</div>
+            <div style="display:flex;flex-direction:column;gap:14px">
+              <div>
+                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
+                  <span style="color:var(--text2)">QR codes</span>
+                  <span style="color:var(--text);font-weight:600">7 / ∞</span>
+                </div>
+                <div class="progress-bar"><div class="progress-fill" style="width:20%"></div></div>
+              </div>
+              <div>
+                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
+                  <span style="color:var(--text2)">Storage</span>
+                  <span style="color:var(--text);font-weight:600">2.4 MB / ∞</span>
+                </div>
+                <div class="progress-bar"><div class="progress-fill" style="width:8%;background:var(--blue)"></div></div>
+              </div>
+              <div>
+                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
+                  <span style="color:var(--text2)">Analytics history</span>
+                  <span style="color:var(--text);font-weight:600">90 days</span>
+                </div>
+                <div class="progress-bar"><div class="progress-fill" style="width:100%;background:var(--green)"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Settings sections -->
+        <div>
+          <!-- Profile info -->
+          <div class="settings-section mb16">
+            <div class="settings-header">
+              <span class="settings-title">Profile information</span>
+              <button class="btn btn-ghost btn-sm" onclick="saveSettings(this,'profile')">Save changes</button>
+            </div>
+            <div class="settings-body">
+              <div class="grid-2 mb16">
+                <div><label class="form-label">First name</label><input type="text" class="form-input" value="Ashan"></div>
+                <div><label class="form-label">Last name</label><input type="text" class="form-input" value="Kumar"></div>
+              </div>
+              <div class="form-section mb16"><label class="form-label">Email address</label><input type="email" class="form-input" value="ashan@example.com"></div>
+              <div class="form-section"><label class="form-label">Company (optional)</label><input type="text" class="form-input" placeholder="Your company or business"></div>
+            </div>
+          </div>
+
+          <!-- Security -->
+          <div class="settings-section mb16">
+            <div class="settings-header">
+              <span class="settings-title">Security</span>
+            </div>
+            <div class="settings-body">
+              <div class="setting-row">
+                <div class="setting-info">
+                  <div class="setting-name">Password</div>
+                  <div class="setting-desc">Last changed 30 days ago</div>
+                </div>
+                <button class="btn btn-ghost btn-sm">Change password</button>
+              </div>
+              <div class="setting-row">
+                <div class="setting-info">
+                  <div class="setting-name">Two-factor authentication</div>
+                  <div class="setting-desc">Add an extra layer of security to your account</div>
+                </div>
+                <button class="toggle" onclick="this.classList.toggle('on')"></button>
+              </div>
+              <div class="setting-row">
+                <div class="setting-info">
+                  <div class="setting-name">Active sessions</div>
+                  <div class="setting-desc">2 active sessions across devices</div>
+                </div>
+                <button class="btn btn-ghost btn-sm" style="color:var(--red)">Revoke all</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Notifications -->
+          <div class="settings-section mb16">
+            <div class="settings-header">
+              <span class="settings-title">Notifications</span>
+              <button class="btn btn-ghost btn-sm" onclick="saveSettings(this,'notifications')">Save</button>
+            </div>
+            <div class="settings-body">
+              <div class="setting-row">
+                <div class="setting-info">
+                  <div class="setting-name">Weekly scan report</div>
+                  <div class="setting-desc">Email summary every Monday morning</div>
+                </div>
+                <button class="toggle on" onclick="this.classList.toggle('on')"></button>
+              </div>
+              <div class="setting-row">
+                <div class="setting-info">
+                  <div class="setting-name">Scan milestone alerts</div>
+                  <div class="setting-desc">Notify when a QR hits 100, 1K, 10K scans</div>
+                </div>
+                <button class="toggle on" onclick="this.classList.toggle('on')"></button>
+              </div>
+              <div class="setting-row">
+                <div class="setting-info">
+                  <div class="setting-name">Anomaly detection</div>
+                  <div class="setting-desc">Alert on unusual scan spikes or drops</div>
+                </div>
+                <button class="toggle" onclick="this.classList.toggle('on')"></button>
+              </div>
+              <div class="setting-row">
+                <div class="setting-info">
+                  <div class="setting-name">Product updates</div>
+                  <div class="setting-desc">New features and announcements</div>
+                </div>
+                <button class="toggle on" onclick="this.classList.toggle('on')"></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Plan -->
+          <div class="settings-section mb16">
+            <div class="settings-header">
+              <span class="settings-title">Subscription plan</span>
+              <span class="chip" style="background:var(--amber-l);color:var(--amber)">⭐ Pro — Active</span>
+            </div>
+            <div class="settings-body">
+              <div class="plan-cards mb16">
+                <div class="plan-card">
+                  <div class="plan-name">Free</div>
+                  <div class="plan-price">$0</div>
+                  <div class="plan-period">forever</div>
+                  <button class="plan-cta outline">Downgrade</button>
+                </div>
+                <div class="plan-card current">
+                  <div class="plan-name">Pro</div>
+                  <div class="plan-price">$7</div>
+                  <div class="plan-period">per month</div>
+                  <button class="plan-cta current-btn">Current plan</button>
+                </div>
+                <div class="plan-card">
+                  <div class="plan-name">Team</div>
+                  <div class="plan-price">$29</div>
+                  <div class="plan-period">per month</div>
+                  <button class="plan-cta upgrade-btn">Upgrade</button>
+                </div>
+              </div>
+              <div style="font-size:12px;color:var(--text3)">Next billing date: April 21, 2026 · <a href="#" style="color:var(--coral);text-decoration:none">Manage via PayHere →</a></div>
+            </div>
+          </div>
+
+          <!-- Danger zone -->
+          <div class="settings-section" style="border-color:rgba(255,87,87,0.2)">
+            <div class="settings-header" style="border-color:rgba(255,87,87,0.2)">
+              <span class="settings-title" style="color:var(--red)">Danger zone</span>
+            </div>
+            <div class="settings-body">
+              <div class="setting-row">
+                <div class="setting-info">
+                  <div class="setting-name">Export all data</div>
+                  <div class="setting-desc">Download all QR codes and analytics as JSON</div>
+                </div>
+                <button class="btn btn-ghost btn-sm">Export</button>
+              </div>
+              <div class="setting-row">
+                <div class="setting-info">
+                  <div class="setting-name">Delete account</div>
+                  <div class="setting-desc">Permanently delete your account and all data</div>
+                </div>
+                <button class="btn btn-ghost btn-sm" style="border-color:var(--red);color:var(--red)">Delete account</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ═══════════════════════════════════════
+         PAGE: BILLING
+    ═══════════════════════════════════════ -->
+    <div id="page-billing" class="page">
+
+      <!-- Hero: current plan -->
+      <div class="billing-hero">
+        <div class="billing-hero-left">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+            <span class="chip" style="background:var(--amber-l);color:var(--amber);font-size:11px;padding:4px 10px;border-radius:20px;font-weight:700">⭐ Pro Plan</span>
+            <span class="chip" style="background:var(--green-l);color:var(--green);font-size:11px;padding:4px 10px;border-radius:20px;font-weight:600">● Active</span>
+          </div>
+          <div class="billing-plan-name">Pro — $7 / month</div>
+          <div class="billing-plan-desc">Unlimited QR codes · Full analytics · 90-day history · Logo embedding</div>
+          <div class="billing-next">
+            <span class="billing-next-dot"></span>
+            Next billing: <strong style="color:var(--text)">April 21, 2026</strong> · Auto-renews via PayHere
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;align-items:flex-end">
+          <button class="btn btn-primary" onclick="showToast('success','Redirecting to PayHere portal…')">Manage billing →</button>
+          <button class="btn btn-ghost btn-sm" onclick="showToast('success','Invoice downloaded')">Download invoice</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--text3);font-size:11px" onclick="confirmCancel()">Cancel subscription</button>
+        </div>
+      </div>
+
+      <!-- Usage this cycle -->
+      <div class="section-row mb16">
+        <span class="section-title">This billing cycle</span>
+        <span style="font-size:12px;color:var(--text3)">Mar 21 – Apr 21, 2026</span>
+      </div>
+      <div class="usage-grid mb24">
+        <div class="usage-card">
+          <div class="usage-icon">📡</div>
+          <div class="usage-label">Scans tracked</div>
+          <div class="usage-val">48,291</div>
+          <div class="usage-sub">Unlimited on Pro</div>
+          <div class="progress-bar" style="margin-top:8px"><div class="progress-fill" style="width:100%;background:var(--green)"></div></div>
+        </div>
+        <div class="usage-card">
+          <div class="usage-icon">🔳</div>
+          <div class="usage-label">QR codes</div>
+          <div class="usage-val">7 active</div>
+          <div class="usage-sub">Unlimited on Pro</div>
+          <div class="progress-bar" style="margin-top:8px"><div class="progress-fill" style="width:14%;background:var(--blue)"></div></div>
+        </div>
+        <div class="usage-card">
+          <div class="usage-icon">💾</div>
+          <div class="usage-label">Storage used</div>
+          <div class="usage-val">2.4 MB</div>
+          <div class="usage-sub">Firebase — no hard limit</div>
+          <div class="progress-bar" style="margin-top:8px"><div class="progress-fill" style="width:3%;background:var(--purple)"></div></div>
+        </div>
+      </div>
+
+      <!-- Plan comparison + upgrade -->
+      <div class="grid-21 mb24">
+        <div class="card">
+          <div class="section-row">
+            <span class="section-title">Plan comparison</span>
+          </div>
+          <table class="plan-compare">
+            <thead>
+              <tr>
+                <th style="text-align:left">Feature</th>
+                <th>Free</th>
+                <th class="current">Pro ✓</th>
+                <th>Team</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>QR codes</td><td>3</td><td style="color:var(--coral);font-weight:600">Unlimited</td><td>Unlimited</td></tr>
+              <tr><td>Dynamic destinations</td><td><span class="check-n">—</span></td><td><span class="check-y">✓</span></td><td><span class="check-y">✓</span></td></tr>
+              <tr><td>Scan analytics</td><td><span class="check-n">—</span></td><td><span class="check-y">✓</span></td><td><span class="check-y">✓</span></td></tr>
+              <tr><td>Analytics history</td><td>—</td><td style="color:var(--coral);font-weight:600">90 days</td><td>365 days</td></tr>
+              <tr><td>Logo embedding</td><td><span class="check-n">—</span></td><td><span class="check-y">✓</span></td><td><span class="check-y">✓</span></td></tr>
+              <tr><td>Custom domain</td><td><span class="check-n">—</span></td><td><span class="check-n">—</span></td><td><span class="check-y">✓</span></td></tr>
+              <tr><td>White-label</td><td><span class="check-n">—</span></td><td><span class="check-n">—</span></td><td><span class="check-y">✓</span></td></tr>
+              <tr><td>API access</td><td><span class="check-n">—</span></td><td><span class="check-n">—</span></td><td><span class="check-y">✓</span></td></tr>
+              <tr><td>Shared workspaces</td><td><span class="check-n">—</span></td><td><span class="check-n">—</span></td><td><span class="check-y">✓</span></td></tr>
+              <tr><td>Priority support</td><td><span class="check-n">—</span></td><td><span class="check-n">—</span></td><td><span class="check-y">✓</span></td></tr>
+              <tr>
+                <td style="font-weight:600;color:var(--text)">Price</td>
+                <td style="font-weight:600">$0</td>
+                <td style="color:var(--coral);font-weight:700">$7/mo</td>
+                <td style="font-weight:600">$29/mo</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <!-- Upgrade card -->
+          <div class="card" style="border-color:rgba(155,127,255,0.25);background:rgba(155,127,255,0.04)">
+            <div style="font-size:11px;font-weight:700;color:var(--purple);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px">Team plan</div>
+            <div style="font-family:var(--font-h);font-size:32px;font-weight:600;color:var(--text);letter-spacing:-1px;margin-bottom:4px">$29<span style="font-size:14px;font-weight:400;color:var(--text3)">/mo</span></div>
+            <div style="font-size:12px;color:var(--text3);margin-bottom:16px">For agencies and teams managing multiple clients</div>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px;font-size:13px">
+              <div style="display:flex;gap:8px;color:var(--text2)"><span style="color:var(--green)">✓</span> Everything in Pro</div>
+              <div style="display:flex;gap:8px;color:var(--text2)"><span style="color:var(--green)">✓</span> White-label your QR platform</div>
+              <div style="display:flex;gap:8px;color:var(--text2)"><span style="color:var(--green)">✓</span> Full REST API access</div>
+              <div style="display:flex;gap:8px;color:var(--text2)"><span style="color:var(--green)">✓</span> Shared team workspaces</div>
+              <div style="display:flex;gap:8px;color:var(--text2)"><span style="color:var(--green)">✓</span> 365-day analytics history</div>
+            </div>
+            <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="showToast('success','Redirecting to PayHere checkout…')">Upgrade to Team →</button>
+          </div>
+          <!-- PayHere info -->
+          <div class="card card-sm">
+            <div class="card-title">Payment method</div>
+            <div style="display:flex;align-items:center;gap:12px;padding:8px 0">
+              <div style="width:40px;height:26px;background:var(--surface3);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--text3)">VISA</div>
+              <div>
+                <div style="font-size:13px;font-weight:500;color:var(--text)">•••• •••• •••• 4242</div>
+                <div style="font-size:11px;color:var(--text3)">Expires 08/2028 · via PayHere</div>
+              </div>
+              <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showToast('success','Opening PayHere portal…')">Update</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Invoice history -->
+      <div class="card">
+        <div class="section-row">
+          <span class="section-title">Invoice history</span>
+          <button class="btn btn-ghost btn-sm" onclick="showToast('success','All invoices downloaded')">Download all</button>
+        </div>
+        <table class="invoice-table">
+          <thead>
+            <tr>
+              <th>Invoice</th>
+              <th>Date</th>
+              <th>Plan</th>
+              <th>Amount</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="invoice-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════
+         PAGE: API DOCS
+    ═══════════════════════════════════════ -->
+    <div id="page-apidocs" class="page" style="padding:0;height:calc(100vh - 56px);display:none">
+      <div class="docs-layout" style="height:100%">
+
+        <!-- Docs sidebar nav -->
+        <div class="docs-nav">
+          <div class="docs-nav-section">
+            <div class="docs-nav-label">Getting started</div>
+            <div class="docs-nav-item active" onclick="scrollDoc('intro',this)">Introduction</div>
+            <div class="docs-nav-item" onclick="scrollDoc('auth-section',this)">Authentication</div>
+            <div class="docs-nav-item" onclick="scrollDoc('base-url',this)">Base URL & versioning</div>
+            <div class="docs-nav-item" onclick="scrollDoc('errors',this)">Error handling</div>
+            <div class="docs-nav-item" onclick="scrollDoc('ratelimit',this)">Rate limits</div>
+          </div>
+          <div class="docs-nav-section">
+            <div class="docs-nav-label">QR Codes</div>
+            <div class="docs-nav-item" onclick="scrollDoc('qr-list',this)"><span class="method-tag get">GET</span>/qr</div>
+            <div class="docs-nav-item" onclick="scrollDoc('qr-create',this)"><span class="method-tag post">POST</span>/qr</div>
+            <div class="docs-nav-item" onclick="scrollDoc('qr-get',this)"><span class="method-tag get">GET</span>/qr/:id</div>
+            <div class="docs-nav-item" onclick="scrollDoc('qr-update',this)"><span class="method-tag put">PUT</span>/qr/:id</div>
+            <div class="docs-nav-item" onclick="scrollDoc('qr-delete',this)"><span class="method-tag del">DEL</span>/qr/:id</div>
+          </div>
+          <div class="docs-nav-section">
+            <div class="docs-nav-label">Analytics</div>
+            <div class="docs-nav-item" onclick="scrollDoc('ana-summary',this)"><span class="method-tag get">GET</span>/analytics/summary</div>
+            <div class="docs-nav-item" onclick="scrollDoc('ana-timeseries',this)"><span class="method-tag get">GET</span>/analytics/timeseries</div>
+            <div class="docs-nav-item" onclick="scrollDoc('ana-geo',this)"><span class="method-tag get">GET</span>/analytics/geo</div>
+            <div class="docs-nav-item" onclick="scrollDoc('ana-devices',this)"><span class="method-tag get">GET</span>/analytics/devices</div>
+          </div>
+          <div class="docs-nav-section">
+            <div class="docs-nav-label">Webhooks</div>
+            <div class="docs-nav-item" onclick="scrollDoc('webhooks',this)">Overview</div>
+            <div class="docs-nav-item" onclick="scrollDoc('webhook-events',this)">Event types</div>
+            <div class="docs-nav-item" onclick="scrollDoc('webhook-verify',this)">Signature verification</div>
+          </div>
+          <div class="docs-nav-section">
+            <div class="docs-nav-label">API Keys</div>
+            <div class="docs-nav-item" onclick="scrollDoc('api-keys',this)">Manage keys</div>
+          </div>
+        </div>
+
+        <!-- Docs main content -->
+        <div class="docs-content" id="docs-scroll">
+
+          <!-- INTRO -->
+          <div class="docs-section" id="intro">
+            <div class="docs-h1">Scnr REST API</div>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+              <span class="chip" style="background:var(--green-l);color:var(--green);padding:4px 10px;border-radius:20px;font-weight:600;font-size:12px">● v1 — Stable</span>
+              <span style="font-size:12px;color:var(--text3)">Base URL: <code style="font-family:monospace;color:var(--coral)">https://api.scnr.app/v1</code></span>
+            </div>
+            <div class="docs-p">The Scnr API gives you programmatic access to everything in the dashboard — create and manage QR codes, fetch real-time analytics, and listen to scan events via webhooks. The API is available on the <strong style="color:var(--text)">Team plan</strong> and above.</div>
+            <div class="alert-box alert-info">
+              <span class="alert-icon">ℹ</span>
+              <span>All requests must include your API key in the <code style="font-family:monospace">Authorization</code> header. Keys are scoped to read, write, or admin. <a href="#">Generate your first key →</a></span>
+            </div>
+          </div>
+
+          <!-- AUTH -->
+          <div class="docs-section" id="auth-section">
+            <div class="docs-h2"><span class="method-tag post" style="font-size:11px">AUTH</span> Authentication</div>
+            <div class="docs-p">Scnr uses Bearer token authentication. Pass your API key in every request header:</div>
+            <div class="code-block">
+              <button class="code-copy" onclick="copyCode(this)">Copy</button>
+              <pre><span class="hl-k">Authorization</span>: Bearer <span class="hl-s">sk_live_your_api_key_here</span></pre>
+            </div>
+            <div class="docs-p">Keys are prefixed with <code style="font-family:monospace;color:var(--amber)">sk_live_</code> for production and <code style="font-family:monospace;color:var(--blue)">sk_test_</code> for testing. Never expose keys in client-side code or public repositories.</div>
+            <div class="alert-box alert-warn">
+              <span class="alert-icon">⚠</span>
+              <span>Treat your API key like a password. If compromised, rotate it immediately from your <a href="#">API Keys settings</a>. Scnr will never ask for your key via email or chat.</span>
+            </div>
+          </div>
+
+          <!-- BASE URL -->
+          <div class="docs-section" id="base-url">
+            <div class="docs-h2">Base URL & versioning</div>
+            <div class="docs-p">All endpoints are versioned under <code style="font-family:monospace;color:var(--coral)">/v1</code>. We will never make breaking changes to v1 — when a new version ships, v1 continues working with a deprecation notice.</div>
+            <div class="code-block">
+              <button class="code-copy" onclick="copyCode(this)">Copy</button>
+              <pre><span class="hl-c"># Production</span>
+<span class="hl-n">https://api.scnr.app/v1</span>
+
+<span class="hl-c"># Example full endpoint</span>
+<span class="hl-n">https://api.scnr.app/v1/qr</span></pre>
+            </div>
+          </div>
+
+          <!-- ERRORS -->
+          <div class="docs-section" id="errors">
+            <div class="docs-h2">Error handling</div>
+            <div class="docs-p">All errors return a consistent JSON shape with a machine-readable <code style="font-family:monospace;color:var(--amber)">code</code> and a human-readable <code style="font-family:monospace;color:var(--amber)">message</code>.</div>
+            <div class="code-block">
+              <button class="code-copy" onclick="copyCode(this)">Copy</button>
+              <pre><span class="hl-c">// 400 Bad Request</span>
+{
+  <span class="hl-k">"error"</span>: {
+    <span class="hl-k">"code"</span>:    <span class="hl-s">"INVALID_URL"</span>,
+    <span class="hl-k">"message"</span>: <span class="hl-s">"destination_url must start with https://"</span>,
+    <span class="hl-k">"field"</span>:   <span class="hl-s">"destination_url"</span>
+  }
+}</pre>
+            </div>
+            <table class="param-table">
+              <thead><tr><th>HTTP Status</th><th>Code</th><th>Meaning</th></tr></thead>
+              <tbody>
+                <tr><td><span class="param-type">400</span></td><td><span class="param-name">INVALID_PARAMS</span></td><td class="param-desc">Missing or malformed request body</td></tr>
+                <tr><td><span class="param-type">401</span></td><td><span class="param-name">UNAUTHORIZED</span></td><td class="param-desc">Missing or invalid API key</td></tr>
+                <tr><td><span class="param-type">403</span></td><td><span class="param-name">FORBIDDEN</span></td><td class="param-desc">Key lacks required scope</td></tr>
+                <tr><td><span class="param-type">404</span></td><td><span class="param-name">NOT_FOUND</span></td><td class="param-desc">Resource does not exist or belongs to another user</td></tr>
+                <tr><td><span class="param-type">429</span></td><td><span class="param-name">RATE_LIMITED</span></td><td class="param-desc">Too many requests — see Retry-After header</td></tr>
+                <tr><td><span class="param-type">500</span></td><td><span class="param-name">SERVER_ERROR</span></td><td class="param-desc">Something went wrong on our end</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- RATE LIMITS -->
+          <div class="docs-section" id="ratelimit">
+            <div class="docs-h2">Rate limits</div>
+            <div class="docs-p">Rate limits are applied per API key. Responses include <code style="font-family:monospace;color:var(--amber)">X-RateLimit-*</code> headers so you can track usage.</div>
+            <table class="param-table">
+              <thead><tr><th>Plan</th><th>Requests / minute</th><th>Requests / day</th></tr></thead>
+              <tbody>
+                <tr><td>Free</td><td class="param-desc">API not available</td><td class="param-desc">—</td></tr>
+                <tr><td style="color:var(--amber)">Pro</td><td class="param-desc">API not available</td><td class="param-desc">—</td></tr>
+                <tr><td style="color:var(--purple)">Team</td><td><span class="param-type">60 req/min</span></td><td><span class="param-type">10,000 req/day</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- QR LIST -->
+          <div class="docs-section" id="qr-list">
+            <div class="docs-h2"><span class="method-tag get">GET</span> /qr — List QR codes</div>
+            <div class="docs-p">Returns a paginated list of all QR codes belonging to the authenticated user.</div>
+            <div class="endpoint-card open">
+              <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                <div class="endpoint-left">
+                  <span class="method-tag get">GET</span>
+                  <span class="endpoint-path">/v1/qr</span>
+                  <span class="endpoint-desc">List all QR codes</span>
+                </div>
+                <span class="endpoint-chevron">▼</span>
+              </div>
+              <div class="endpoint-body">
+                <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px">Query parameters</div>
+                <table class="param-table" style="margin-bottom:16px">
+                  <thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+                  <tbody>
+                    <tr><td><span class="param-name">limit</span></td><td><span class="param-type">integer</span></td><td><span class="param-opt">optional</span></td><td class="param-desc">Number of results per page. Default: 20, max: 100</td></tr>
+                    <tr><td><span class="param-name">offset</span></td><td><span class="param-type">integer</span></td><td><span class="param-opt">optional</span></td><td class="param-desc">Pagination offset. Default: 0</td></tr>
+                    <tr><td><span class="param-name">active</span></td><td><span class="param-type">boolean</span></td><td><span class="param-opt">optional</span></td><td class="param-desc">Filter by active status. Omit to return all</td></tr>
+                  </tbody>
+                </table>
+                <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px">Example request</div>
+                <div class="code-block">
+                  <button class="code-copy" onclick="copyCode(this)">Copy</button>
+                  <pre><span class="hl-n">curl</span> https://api.scnr.app/v1/qr?limit=10&active=true \
+  -H <span class="hl-s">"Authorization: Bearer sk_live_xxxx"</span></pre>
+                </div>
+                <div class="response-tabs">
+                  <button class="resp-tab active">200 OK</button>
+                  <button class="resp-tab" onclick="this.parentElement.querySelectorAll('.resp-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active')">401</button>
+                </div>
+                <div class="code-block">
+                  <button class="code-copy" onclick="copyCode(this)">Copy</button>
+                  <pre>{
+  <span class="hl-k">"data"</span>: [
+    {
+      <span class="hl-k">"id"</span>:              <span class="hl-s">"qr_x9Km4p"</span>,
+      <span class="hl-k">"slug"</span>:           <span class="hl-s">"x9Km4p"</span>,
+      <span class="hl-k">"short_url"</span>:      <span class="hl-s">"https://scnr.app/x9Km4p"</span>,
+      <span class="hl-k">"destination_url"</span>:<span class="hl-s">"https://yoursite.com/menu"</span>,
+      <span class="hl-k">"title"</span>:          <span class="hl-s">"Restaurant Menu"</span>,
+      <span class="hl-k">"is_active"</span>:      <span class="hl-v">true</span>,
+      <span class="hl-k">"type"</span>:           <span class="hl-s">"url"</span>,
+      <span class="hl-k">"total_scans"</span>:    <span class="hl-v">18420</span>,
+      <span class="hl-k">"created_at"</span>:     <span class="hl-s">"2026-02-14T10:32:00Z"</span>,
+      <span class="hl-k">"updated_at"</span>:     <span class="hl-s">"2026-03-18T08:11:00Z"</span>
+    }
+  ],
+  <span class="hl-k">"meta"</span>: {
+    <span class="hl-k">"total"</span>:  <span class="hl-v">7</span>,
+    <span class="hl-k">"limit"</span>:  <span class="hl-v">10</span>,
+    <span class="hl-k">"offset"</span>: <span class="hl-v">0</span>
+  }
+}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- QR CREATE -->
+          <div class="docs-section" id="qr-create">
+            <div class="docs-h2"><span class="method-tag post">POST</span> /qr — Create QR code</div>
+            <div class="docs-p">Creates a new QR code. The slug is auto-generated (7 chars, collision-safe). The QR image is returned as both SVG and PNG base64.</div>
+            <div class="endpoint-card">
+              <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                <div class="endpoint-left">
+                  <span class="method-tag post">POST</span>
+                  <span class="endpoint-path">/v1/qr</span>
+                  <span class="endpoint-desc">Create a new QR code</span>
+                </div>
+                <span class="endpoint-chevron">▼</span>
+              </div>
+              <div class="endpoint-body">
+                <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px">Request body</div>
+                <table class="param-table" style="margin-bottom:16px">
+                  <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+                  <tbody>
+                    <tr><td><span class="param-name">destination_url</span></td><td><span class="param-type">string</span></td><td><span class="param-req">required</span></td><td class="param-desc">Must start with https://. Max 2048 chars.</td></tr>
+                    <tr><td><span class="param-name">title</span></td><td><span class="param-type">string</span></td><td><span class="param-opt">optional</span></td><td class="param-desc">Human-readable label. Max 100 chars.</td></tr>
+                    <tr><td><span class="param-name">type</span></td><td><span class="param-type">enum</span></td><td><span class="param-opt">optional</span></td><td class="param-desc">url · vcard · wifi · text · email. Default: url</td></tr>
+                    <tr><td><span class="param-name">style.dot_color</span></td><td><span class="param-type">string</span></td><td><span class="param-opt">optional</span></td><td class="param-desc">Hex color for QR dots. Default: #000000</td></tr>
+                    <tr><td><span class="param-name">style.bg_color</span></td><td><span class="param-type">string</span></td><td><span class="param-opt">optional</span></td><td class="param-desc">Hex color for background. Default: #FFFFFF</td></tr>
+                    <tr><td><span class="param-name">style.error_correction</span></td><td><span class="param-type">enum</span></td><td><span class="param-opt">optional</span></td><td class="param-desc">L · M · Q · H. Default: M. Use H for logos.</td></tr>
+                    <tr><td><span class="param-name">is_dynamic</span></td><td><span class="param-type">boolean</span></td><td><span class="param-opt">optional</span></td><td class="param-desc">Enable analytics + editable destination. Default: true</td></tr>
+                  </tbody>
+                </table>
+                <div class="code-block">
+                  <button class="code-copy" onclick="copyCode(this)">Copy</button>
+                  <pre><span class="hl-n">curl</span> -X POST https://api.scnr.app/v1/qr \
+  -H <span class="hl-s">"Authorization: Bearer sk_live_xxxx"</span> \
+  -H <span class="hl-s">"Content-Type: application/json"</span> \
+  -d <span class="hl-s">'{
+    "destination_url": "https://yoursite.com/menu",
+    "title": "Restaurant Menu",
+    "style": { "dot_color": "#E85D3A", "bg_color": "#FFFFFF" },
+    "is_dynamic": true
+  }'</span></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- QR GET / UPDATE / DELETE (collapsed) -->
+          <div class="docs-section" id="qr-get">
+            <div class="docs-h2"><span class="method-tag get">GET</span> /qr/:id — Get QR code</div>
+            <div class="endpoint-card">
+              <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                <div class="endpoint-left"><span class="method-tag get">GET</span><span class="endpoint-path">/v1/qr/{id}</span><span class="endpoint-desc">Get a single QR code by ID</span></div>
+                <span class="endpoint-chevron">▼</span>
+              </div>
+              <div class="endpoint-body">
+                <div class="docs-p">Returns the full QR code object including style config and total scan count.</div>
+                <div class="code-block"><button class="code-copy" onclick="copyCode(this)">Copy</button><pre><span class="hl-n">curl</span> https://api.scnr.app/v1/qr/qr_x9Km4p \
+  -H <span class="hl-s">"Authorization: Bearer sk_live_xxxx"</span></pre></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="docs-section" id="qr-update">
+            <div class="docs-h2"><span class="method-tag put">PUT</span> /qr/:id — Update QR code</div>
+            <div class="endpoint-card">
+              <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                <div class="endpoint-left"><span class="method-tag put">PUT</span><span class="endpoint-path">/v1/qr/{id}</span><span class="endpoint-desc">Update destination or style</span></div>
+                <span class="endpoint-chevron">▼</span>
+              </div>
+              <div class="endpoint-body">
+                <div class="docs-p">Update any field except <code style="font-family:monospace;color:var(--amber)">slug</code> (immutable). Changing <code style="font-family:monospace;color:var(--amber)">destination_url</code> takes effect within 5 minutes as the Cloudflare KV cache expires.</div>
+                <table class="param-table"><thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead><tbody>
+                  <tr><td><span class="param-name">destination_url</span></td><td><span class="param-type">string</span></td><td class="param-desc">New redirect destination</td></tr>
+                  <tr><td><span class="param-name">title</span></td><td><span class="param-type">string</span></td><td class="param-desc">Update the display label</td></tr>
+                  <tr><td><span class="param-name">is_active</span></td><td><span class="param-type">boolean</span></td><td class="param-desc">Deactivate returns 410 on scan</td></tr>
+                  <tr><td><span class="param-name">style</span></td><td><span class="param-type">object</span></td><td class="param-desc">Regenerates the QR image</td></tr>
+                </tbody></table>
+              </div>
+            </div>
+          </div>
+
+          <div class="docs-section" id="qr-delete">
+            <div class="docs-h2"><span class="method-tag del">DEL</span> /qr/:id — Delete QR code</div>
+            <div class="endpoint-card">
+              <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                <div class="endpoint-left"><span class="method-tag del">DEL</span><span class="endpoint-path">/v1/qr/{id}</span><span class="endpoint-desc">Permanently deactivate a QR</span></div>
+                <span class="endpoint-chevron">▼</span>
+              </div>
+              <div class="endpoint-body">
+                <div class="alert-box alert-warn"><span class="alert-icon">⚠</span><span>QR codes are never fully deleted — the slug must remain reserved so printed codes don't resolve to a wrong URL. Deletion sets <code style="font-family:monospace">is_active=false</code> and returns 410 on scan.</span></div>
+                <div class="code-block"><button class="code-copy" onclick="copyCode(this)">Copy</button><pre><span class="hl-n">curl</span> -X DELETE https://api.scnr.app/v1/qr/qr_x9Km4p \
+  -H <span class="hl-s">"Authorization: Bearer sk_live_xxxx"</span>
+
+<span class="hl-c">// 200 OK</span>
+{ <span class="hl-k">"deleted"</span>: <span class="hl-v">true</span>, <span class="hl-k">"id"</span>: <span class="hl-s">"qr_x9Km4p"</span> }</pre></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ANALYTICS -->
+          <div class="docs-section" id="ana-summary">
+            <div class="docs-h2"><span class="method-tag get">GET</span> /analytics/summary</div>
+            <div class="endpoint-card">
+              <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                <div class="endpoint-left"><span class="method-tag get">GET</span><span class="endpoint-path">/v1/analytics/{slug}/summary</span><span class="endpoint-desc">Totals, velocity, unique count</span></div>
+                <span class="endpoint-chevron">▼</span>
+              </div>
+              <div class="endpoint-body">
+                <div class="code-block"><button class="code-copy" onclick="copyCode(this)">Copy</button><pre>{
+  <span class="hl-k">"slug"</span>:          <span class="hl-s">"x9Km4p"</span>,
+  <span class="hl-k">"total_scans"</span>:   <span class="hl-v">18420</span>,
+  <span class="hl-k">"unique_scans"</span>:  <span class="hl-v">4821</span>,
+  <span class="hl-k">"mobile_pct"</span>:    <span class="hl-v">71.2</span>,
+  <span class="hl-k">"velocity"</span>:      <span class="hl-v">23.4</span>,  <span class="hl-c">// % change vs previous period</span>
+  <span class="hl-k">"first_scan_at"</span>: <span class="hl-s">"2026-02-14T10:32:00Z"</span>,
+  <span class="hl-k">"last_scan_at"</span>:  <span class="hl-s">"2026-03-21T14:08:22Z"</span>
+}</pre></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="docs-section" id="ana-timeseries">
+            <div class="docs-h2"><span class="method-tag get">GET</span> /analytics/timeseries</div>
+            <div class="endpoint-card">
+              <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                <div class="endpoint-left"><span class="method-tag get">GET</span><span class="endpoint-path">/v1/analytics/{slug}/timeseries</span><span class="endpoint-desc">Daily scan counts over a range</span></div>
+                <span class="endpoint-chevron">▼</span>
+              </div>
+              <div class="endpoint-body">
+                <table class="param-table" style="margin-bottom:14px"><thead><tr><th>Param</th><th>Type</th><th>Default</th></tr></thead><tbody>
+                  <tr><td><span class="param-name">days</span></td><td><span class="param-type">integer</span></td><td class="param-desc">30. Max: 365 (Team), 90 (Pro)</td></tr>
+                  <tr><td><span class="param-name">timezone</span></td><td><span class="param-type">string</span></td><td class="param-desc">UTC. IANA format e.g. Asia/Colombo</td></tr>
+                </tbody></table>
+                <div class="code-block"><button class="code-copy" onclick="copyCode(this)">Copy</button><pre>{
+  <span class="hl-k">"data"</span>: [
+    { <span class="hl-k">"date"</span>: <span class="hl-s">"2026-03-20"</span>, <span class="hl-k">"total"</span>: <span class="hl-v">580</span>, <span class="hl-k">"unique"</span>: <span class="hl-v">162</span> },
+    { <span class="hl-k">"date"</span>: <span class="hl-s">"2026-03-21"</span>, <span class="hl-k">"total"</span>: <span class="hl-v">600</span>, <span class="hl-k">"unique"</span>: <span class="hl-v">171</span> }
+  ]
+}</pre></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="docs-section" id="ana-geo">
+            <div class="docs-h2"><span class="method-tag get">GET</span> /analytics/geo</div>
+            <div class="endpoint-card">
+              <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                <div class="endpoint-left"><span class="method-tag get">GET</span><span class="endpoint-path">/v1/analytics/{slug}/geo</span><span class="endpoint-desc">Country breakdown</span></div>
+                <span class="endpoint-chevron">▼</span>
+              </div>
+              <div class="endpoint-body">
+                <div class="code-block"><button class="code-copy" onclick="copyCode(this)">Copy</button><pre>{
+  <span class="hl-k">"data"</span>: [
+    { <span class="hl-k">"country"</span>: <span class="hl-s">"LK"</span>, <span class="hl-k">"scans"</span>: <span class="hl-v">8420</span>, <span class="hl-k">"pct"</span>: <span class="hl-v">45.7</span> },
+    { <span class="hl-k">"country"</span>: <span class="hl-s">"US"</span>, <span class="hl-k">"scans"</span>: <span class="hl-v">4210</span>, <span class="hl-k">"pct"</span>: <span class="hl-v">22.9</span> }
+  ]
+}</pre></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="docs-section" id="ana-devices">
+            <div class="docs-h2"><span class="method-tag get">GET</span> /analytics/devices</div>
+            <div class="endpoint-card">
+              <div class="endpoint-header" onclick="toggleEndpoint(this)">
+                <div class="endpoint-left"><span class="method-tag get">GET</span><span class="endpoint-path">/v1/analytics/{slug}/devices</span><span class="endpoint-desc">Device, OS, and browser split</span></div>
+                <span class="endpoint-chevron">▼</span>
+              </div>
+              <div class="endpoint-body">
+                <div class="code-block"><button class="code-copy" onclick="copyCode(this)">Copy</button><pre>{
+  <span class="hl-k">"devices"</span>:  { <span class="hl-s">"mobile"</span>: <span class="hl-v">71</span>, <span class="hl-s">"desktop"</span>: <span class="hl-v">27</span>, <span class="hl-s">"tablet"</span>: <span class="hl-v">2</span> },
+  <span class="hl-k">"os"</span>:       { <span class="hl-s">"Android"</span>: <span class="hl-v">42</span>, <span class="hl-s">"iOS"</span>: <span class="hl-v">31</span>, <span class="hl-s">"Windows"</span>: <span class="hl-v">18</span> },
+  <span class="hl-k">"browsers"</span>: { <span class="hl-s">"Chrome"</span>: <span class="hl-v">52</span>, <span class="hl-s">"Safari"</span>: <span class="hl-v">28</span>, <span class="hl-s">"Firefox"</span>: <span class="hl-v">12</span> }
+}</pre></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- WEBHOOKS -->
+          <div class="docs-section" id="webhooks">
+            <div class="docs-h2">Webhooks — Overview</div>
+            <div class="docs-p">Scnr can POST to your server in real time when a QR is scanned, created, updated, or deactivated. Configure your endpoint URL in the dashboard under Settings → Webhooks.</div>
+            <div class="alert-box alert-info"><span class="alert-icon">ℹ</span><span>Webhook deliveries are retried up to 5 times with exponential backoff if your server returns a non-200 status. Your endpoint must respond within 5 seconds.</span></div>
+          </div>
+
+          <div class="docs-section" id="webhook-events">
+            <div class="docs-h2">Event types</div>
+            <table class="param-table">
+              <thead><tr><th>Event</th><th>Trigger</th></tr></thead>
+              <tbody>
+                <tr><td><span class="param-name">qr.scanned</span></td><td class="param-desc">Every scan — includes country, device, is_unique flag</td></tr>
+                <tr><td><span class="param-name">qr.created</span></td><td class="param-desc">New QR code created via dashboard or API</td></tr>
+                <tr><td><span class="param-name">qr.updated</span></td><td class="param-desc">Destination URL or style changed</td></tr>
+                <tr><td><span class="param-name">qr.deactivated</span></td><td class="param-desc">QR set to inactive</td></tr>
+                <tr><td><span class="param-name">scan.milestone</span></td><td class="param-desc">QR hits 100, 1K, 10K, 100K total scans</td></tr>
+              </tbody>
+            </table>
+            <div class="code-block"><button class="code-copy" onclick="copyCode(this)">Copy</button><pre><span class="hl-c">// POST to your endpoint</span>
+{
+  <span class="hl-k">"event"</span>:      <span class="hl-s">"qr.scanned"</span>,
+  <span class="hl-k">"created_at"</span>: <span class="hl-s">"2026-03-21T14:08:22Z"</span>,
+  <span class="hl-k">"data"</span>: {
+    <span class="hl-k">"slug"</span>:      <span class="hl-s">"x9Km4p"</span>,
+    <span class="hl-k">"country"</span>:  <span class="hl-s">"LK"</span>,
+    <span class="hl-k">"device"</span>:   <span class="hl-s">"mobile"</span>,
+    <span class="hl-k">"is_unique"</span>:<span class="hl-v">true</span>,
+    <span class="hl-k">"browser"</span>:  <span class="hl-s">"Chrome"</span>
+  }
+}</pre></div>
+          </div>
+
+          <div class="docs-section" id="webhook-verify">
+            <div class="docs-h2">Signature verification</div>
+            <div class="docs-p">Every webhook POST includes an <code style="font-family:monospace;color:var(--amber)">X-Scnr-Signature</code> header. Verify it to confirm the request came from Scnr and not a third party.</div>
+            <div class="code-block"><button class="code-copy" onclick="copyCode(this)">Copy</button><pre><span class="hl-c">// Node.js verification</span>
+<span class="hl-k">const</span> crypto = <span class="hl-n">require</span>(<span class="hl-s">'crypto'</span>)
+
+<span class="hl-k">function</span> <span class="hl-n">verifyWebhook</span>(body, signature, secret) {
+  <span class="hl-k">const</span> expected = crypto
+    .<span class="hl-n">createHmac</span>(<span class="hl-s">'sha256'</span>, secret)
+    .<span class="hl-n">update</span>(body)
+    .<span class="hl-n">digest</span>(<span class="hl-s">'hex'</span>)
+  <span class="hl-k">return</span> crypto.<span class="hl-n">timingSafeEqual</span>(
+    Buffer.<span class="hl-n">from</span>(expected),
+    Buffer.<span class="hl-n">from</span>(signature)
+  )
+}</pre></div>
+          </div>
+
+          <!-- API KEYS -->
+          <div class="docs-section" id="api-keys">
+            <div class="docs-h2">API Keys</div>
+            <div class="docs-p">Generate and manage API keys below. Keys are only shown once at creation — store them securely. You can create up to 5 keys per account.</div>
+            <div id="api-keys-list" style="margin-bottom:16px"></div>
+            <button class="btn btn-primary" onclick="generateNewKey()">+ Generate new key</button>
+          </div>
+
+        </div><!-- end docs-content -->
+      </div><!-- end docs-layout -->
+    </div>
+
+  </div><!-- end .content -->
+</div><!-- end .main -->
+
+<!-- TOASTS -->
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+// ── DATA ──────────────────────────────────────────────────
+const QR_DATA = [
+  { slug:'x9Km4p', title:'Restaurant Menu', dest:'https://restaurant.lk/menu', scans:18420, unique:4821, active:true, country:'🇱🇰', pct:82 },
+  { slug:'bR3nVq', title:'Business Card',   dest:'https://ashan.me',            scans:9210,  unique:2840, active:true, country:'🇺🇸', pct:64 },
+  { slug:'mZ7wYt', title:'Product Launch',  dest:'https://shop.example.com',    scans:7840,  unique:1920, active:true, country:'🇬🇧', pct:55 },
+  { slug:'kP2sLf', title:'Event Tickets',   dest:'https://tickets.io/event123', scans:5211,  unique:5211, active:true, country:'🇩🇪', pct:38 },
+  { slug:'dN8jXc', title:'WiFi Login',      dest:'WIFI:S:CafeNetwork;T:WPA;P:pass123;;', scans:4200, unique:4200, active:true, country:'🇸🇬', pct:30 },
+  { slug:'hQ5eWr', title:'Old Campaign',    dest:'https://old.example.com',     scans:3210,  unique:900,  active:false,country:'🇺🇸', pct:22 },
+  { slug:'pL6tYm', title:'PDF Brochure',    dest:'https://example.com/brochure.pdf', scans:200, unique:200, active:true, country:'🇦🇺', pct:5 },
+];
+const COUNTRIES = [
+  { flag:'🇱🇰', name:'Sri Lanka',     count:18420, pct:88 },
+  { flag:'🇺🇸', name:'United States', count:12841, pct:68 },
+  { flag:'🇬🇧', name:'United Kingdom',count:8200,  pct:48 },
+  { flag:'🇩🇪', name:'Germany',       count:4820,  pct:30 },
+  { flag:'🇸🇬', name:'Singapore',     count:3600,  pct:22 },
+];
+const SCAN_DAYS = [120,145,98,210,188,240,195,280,260,310,290,340,320,280,380,360,410,390,440,420,480,460,510,490,540,520,570,550,600,580];
+
+let currentFg = '#1A1916', currentBg = '#FFFFFF';
+let previewTimeout;
+let currentQRType = 'url';
+let liveInterval, scanCounter = 48291;
+
+// ── NAVIGATION ──────────────────────────────────────────
+function showPage(id, navEl) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  if (navEl) navEl.classList.add('active');
+
+  const titles = { dashboard:'Dashboard', analytics:'Analytics', create:'Create QR', profile:'Profile & Settings', billing:'Billing', apidocs:'API Docs' };
+  const subs   = { dashboard:'Live · Updated just now', analytics:'Detailed scan insights', create:'Generate a new QR code', profile:'Manage your account', billing:'Subscription & invoices', apidocs:'Team plan · REST API v1' };
+  document.getElementById('page-title').textContent = titles[id] || id;
+  document.getElementById('page-sub').textContent = subs[id] || '';
+  document.getElementById('live-indicator').style.display = id === 'dashboard' ? 'inline-block' : 'none';
+  document.getElementById('topbar-date').style.display = ['dashboard','analytics'].includes(id) ? 'flex' : 'none';
+
+  // API docs page needs full height, no padding
+  const content = document.querySelector('.content');
+  if (id === 'apidocs') {
+    content.style.padding = '0';
+    content.style.overflow = 'hidden';
+    document.getElementById('page-apidocs').style.display = 'flex';
+  } else {
+    content.style.padding = '28px';
+    content.style.overflow = 'auto';
+    if (document.getElementById('page-apidocs')) document.getElementById('page-apidocs').style.display = 'none';
+    document.getElementById('page-' + id).style.display = 'block';
+  }
+
+  if (id === 'create') { setTimeout(updatePreview, 100); }
+  if (id === 'analytics') { setTimeout(buildAnalytics, 50); }
+  if (id === 'billing') { setTimeout(buildBilling, 50); }
+  if (id === 'apidocs') { setTimeout(buildApiKeys, 50); }
+}
+
+// ── DASHBOARD BUILD ──────────────────────────────────────
+function buildDashboard() {
+  buildMainChart(30);
+  buildQRTable('qr-table-main', 5);
+  buildCountryList('country-list-main', 5);
+  buildLiveFeed();
+  startLiveFeed();
+}
+
+function buildMainChart(days) {
+  const data = SCAN_DAYS.slice(-days);
+  const max = Math.max(...data);
+  const chart = document.getElementById('main-chart');
+  chart.innerHTML = '';
+  const labels = getDayLabels(days);
+  const step = Math.max(1, Math.floor(days / 7));
+  data.forEach((v, i) => {
+    const col = document.createElement('div');
+    col.className = 'bar-col';
+    const h = Math.max(8, Math.round((v / max) * 90));
+    const isHi = v === max || v > max * 0.85;
+    col.innerHTML = `
+      <div class="bar-fill${isHi?' hi':''}" style="height:${h}px" title="${v.toLocaleString()} scans"></div>
+      <span class="bar-label">${i % step === 0 ? labels[i] : ''}</span>
+    `;
+    chart.appendChild(col);
+  });
+}
+
+function getDayLabels(days) {
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return Array.from({length:days}, (_,i) => {
+    const d = new Date(); d.setDate(d.getDate() - (days - 1 - i));
+    return months[d.getMonth()] + ' ' + d.getDate();
+  });
+}
+
+function setRange(btn, days) {
+  document.querySelectorAll('.active-range').forEach(b => { b.classList.remove('active-range'); b.style.background = ''; });
+  btn.classList.add('active-range'); btn.style.background = 'var(--surface3)';
+  buildMainChart(days);
+  const labels = getDayLabels(days);
+  document.getElementById('chart-start').textContent = labels[0];
+  document.getElementById('chart-end').textContent = labels[days-1];
+}
+
+function buildQRTable(tableId, limit) {
+  const tbl = document.getElementById(tableId);
+  const rows = QR_DATA.slice(0, limit);
+  tbl.innerHTML = `
+    <tr>
+      <th>QR Code</th>
+      <th>Scans</th>
+      <th>Unique</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+    ${rows.map(qr => `
+      <tr>
+        <td><div style="display:flex;align-items:center;gap:10px">
+          <div class="qr-thumb"><canvas id="thumb-${qr.slug}" width="32" height="32"></canvas></div>
+          <div><div class="qr-row-name">${qr.title}</div><div class="qr-row-slug">scnr.app/${qr.slug}</div></div>
+        </div></td>
+        <td><div style="font-weight:600">${qr.scans.toLocaleString()}</div><div class="mini-bar"><div class="mini-fill" style="width:${qr.pct}%"></div></div></td>
+        <td style="color:var(--text2)">${qr.unique.toLocaleString()}</td>
+        <td><span class="status-pill ${qr.active?'status-active':'status-inactive'}">${qr.active?'● Active':'● Inactive'}</span></td>
+        <td><button class="btn btn-ghost btn-sm" onclick="showPage('analytics',document.querySelectorAll('.nav-item')[1])">Stats →</button></td>
+      </tr>
+    `).join('')}
+  `;
+  rows.forEach(qr => setTimeout(() => renderThumb('thumb-' + qr.slug, qr.dest, '#1A1916', '#FFFFFF'), 100));
+}
+
+function buildCountryList(id, limit) {
+  const el = document.getElementById(id);
+  el.innerHTML = COUNTRIES.slice(0, limit).map(c => `
+    <div class="country-row">
+      <span class="c-flag">${c.flag}</span>
+      <span class="c-name">${c.name}</span>
+      <div class="c-bar-track"><div class="c-bar-fill" style="width:${c.pct}%"></div></div>
+      <span class="c-count">${c.count.toLocaleString()}</span>
+    </div>
+  `).join('');
+}
+
+const FEED_EVENTS = [
+  {flag:'🇱🇰',loc:'Colombo, LK',device:'📱 iPhone 15',qr:'Restaurant Menu',time:'just now'},
+  {flag:'🇺🇸',loc:'New York, US',device:'💻 Chrome / Mac',qr:'Business Card',time:'2s ago'},
+  {flag:'🇬🇧',loc:'London, GB',device:'📱 Samsung S24',qr:'Product Launch',time:'8s ago'},
+  {flag:'🇩🇪',loc:'Berlin, DE',device:'💻 Firefox / Win',qr:'Event Tickets',time:'14s ago'},
+  {flag:'🇸🇬',loc:'Singapore',device:'📱 Pixel 8',qr:'WiFi Login',time:'21s ago'},
+  {flag:'🇦🇺',loc:'Sydney, AU',device:'💻 Safari / Mac',qr:'PDF Brochure',time:'35s ago'},
+  {flag:'🇯🇵',loc:'Tokyo, JP',device:'📱 iPhone 14',qr:'Business Card',time:'42s ago'},
+  {flag:'🇮🇳',loc:'Mumbai, IN',device:'📱 Android',qr:'Restaurant Menu',time:'58s ago'},
+];
+
+function buildLiveFeed() {
+  const feed = document.getElementById('live-feed');
+  feed.innerHTML = FEED_EVENTS.slice(0,6).map((e,i) => `
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);animation:fadeIn 0.3s ${i*0.05}s ease both">
+      <span style="font-size:18px">${e.flag}</span>
+      <div style="flex:1">
+        <span style="font-size:13px;font-weight:500;color:var(--text)">${e.loc}</span>
+        <span style="font-size:12px;color:var(--text3);margin-left:8px">${e.device}</span>
+      </div>
+      <span style="font-size:12px;color:var(--text2);background:var(--surface2);padding:2px 8px;border-radius:4px">${e.qr}</span>
+      <span style="font-size:11px;color:var(--text3);min-width:48px;text-align:right">${e.time}</span>
+    </div>
+  `).join('');
+}
+
+function startLiveFeed() {
+  if (liveInterval) clearInterval(liveInterval);
+  liveInterval = setInterval(() => {
+    if (Math.random() > 0.4) {
+      scanCounter += Math.floor(Math.random()*3)+1;
+      const el = document.getElementById('d-total');
+      if (el) { el.textContent = scanCounter.toLocaleString(); el.style.animation='none'; el.offsetHeight; el.style.animation='tick 0.2s ease'; }
+    }
+  }, 3000);
+}
+
+// ── ANALYTICS BUILD ──────────────────────────────────────
+function buildAnalytics() {
+  buildCountryList('country-list-analytics', 5);
+  buildAnalyticsChart();
+  buildHeatmap();
+  buildBrowserOS();
+  buildQRTable('qr-analytics-table', 7);
+}
+
+function buildAnalyticsChart() {
+  const svg = document.getElementById('analytics-chart');
+  if (!svg) return;
+  const W=600, H=110, pad=10;
+  const total = SCAN_DAYS;
+  const unique = total.map(v => Math.round(v * 0.28));
+  const maxV = Math.max(...total);
+
+  function pts(data) {
+    return data.map((v,i) => {
+      const x = pad + (i/(data.length-1))*(W-pad*2);
+      const y = H - pad - (v/maxV)*(H-pad*2);
+      return `${x},${y}`;
+    }).join(' ');
+  }
+  function area(data) {
+    const p = data.map((v,i) => {
+      const x = pad + (i/(data.length-1))*(W-pad*2);
+      const y = H - pad - (v/maxV)*(H-pad*2);
+      return `${x},${y}`;
+    });
+    return `M${p[0]} L${p.join(' L')} L${W-pad},${H-pad} L${pad},${H-pad} Z`;
+  }
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="ag1" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="var(--coral)" stop-opacity="0.2"/>
+        <stop offset="100%" stop-color="var(--coral)" stop-opacity="0"/>
+      </linearGradient>
+      <linearGradient id="ag2" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="var(--blue)" stop-opacity="0.15"/>
+        <stop offset="100%" stop-color="var(--blue)" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <path d="${area(total)}" fill="url(#ag1)"/>
+    <path d="${area(unique)}" fill="url(#ag2)"/>
+    <polyline points="${pts(total)}" fill="none" stroke="var(--coral)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="${pts(unique)}" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 3"/>
+  `;
+}
+
+function buildHeatmap() {
+  const weights = [2,1,1,1,2,3,4,4,3,3,3,2,3,4,4,3,4,4,3,3,2,2,2,2];
+  document.getElementById('heatmap').innerHTML = weights.map((w,i) => `
+    <div class="hm-cell hm-${w}" title="${i}:00 — ${['low','moderate','high','peak'][w-1]} activity">
+      ${i}
+    </div>
+  `).join('');
+}
+
+function buildBrowserOS() {
+  const browsers=[{n:'Chrome',p:52},{n:'Safari',p:28},{n:'Firefox',p:12},{n:'Edge',p:6},{n:'Other',p:2}];
+  const os=[{n:'Android',p:42},{n:'iOS',p:31},{n:'Windows',p:18},{n:'macOS',p:7},{n:'Other',p:2}];
+  function row(d) { return d.map(r=>`<div class="country-row"><span class="c-name">${r.n}</span><div class="c-bar-track"><div class="c-bar-fill" style="width:${r.p}%"></div></div><span class="c-count">${r.p}%</span></div>`).join(''); }
+  document.getElementById('browser-list').innerHTML = row(browsers);
+  document.getElementById('os-list').innerHTML = row(os);
+}
+
+// ── QR GENERATION ────────────────────────────────────────
+function renderQR(canvasId, text, fg, bg, size) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = bg || '#FFFFFF';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (!text || text.length < 3) return;
+  try {
+    const holder = document.createElement('div');
+    holder.style.cssText = 'position:fixed;left:-9999px;visibility:hidden';
+    document.body.appendChild(holder);
+    new QRCode(holder, {
+      text, width: canvas.width, height: canvas.height,
+      colorDark: fg || '#000000',
+      colorLight: bg || '#FFFFFF',
+      correctLevel: QRCode.CorrectLevel.M
+    });
+    setTimeout(() => {
+      const src = holder.querySelector('canvas') || holder.querySelector('img');
+      if (src) {
+        if (src.tagName==='IMG') { const img=new Image(); img.onload=()=>ctx.drawImage(img,0,0,canvas.width,canvas.height); img.src=src.src; }
+        else ctx.drawImage(src, 0, 0, canvas.width, canvas.height);
+      }
+      document.body.removeChild(holder);
+    }, 60);
+  } catch(e) { console.warn('QR error',e); }
+}
+
+function renderThumb(canvasId, text, fg, bg) {
+  renderQR(canvasId, text, fg, bg, 32);
+}
+
+function updatePreview() {
+  clearTimeout(previewTimeout);
+  previewTimeout = setTimeout(() => {
+    let content = '';
+    const type = currentQRType;
+    if (type==='url') content = document.getElementById('qr-url')?.value || '';
+    else if (type==='vcard') content = 'BEGIN:VCARD\nVERSION:3.0\nFN:Preview\nEND:VCARD';
+    else if (type==='wifi') { const s=document.getElementById('wifi-ssid')?.value||''; const p=document.getElementById('wifi-pass')?.value||''; const t=document.getElementById('wifi-sec')?.value||'WPA'; content=`WIFI:S:${s};T:${t};P:${p};;`; }
+    else if (type==='text') content = document.getElementById('qr-text-content')?.value || '';
+    else if (type==='email') { const to=document.getElementById('email-to')?.value||''; const sub=document.getElementById('email-subject')?.value||''; content=`mailto:${to}?subject=${encodeURIComponent(sub)}`; }
+
+    const ec = document.getElementById('ec-level')?.value || 'M';
+    document.getElementById('preview-ec').textContent = {M:'M (15%)',H:'H (30%)',L:'L (7%)',Q:'Q (25%)'}[ec];
+    document.getElementById('preview-type').textContent = type.toUpperCase();
+    document.getElementById('preview-mode').textContent = document.getElementById('dynamic-toggle')?.classList.contains('on') ? 'Dynamic' : 'Static';
+
+    if (content && content.length > 3) {
+      const dest = type==='url' ? content : `[${type.toUpperCase()}]`;
+      const short = dest.replace(/^https?:\/\/(www\.)?/,'').split('/')[0];
+      document.getElementById('preview-dest').textContent = '→ ' + (short.length>40 ? short.slice(0,40)+'…' : short);
+      document.getElementById('preview-slug').textContent = 'scnr.app/' + randomSlug();
+      renderQR('preview-canvas', content, currentFg, currentBg, 180);
+    } else {
+      document.getElementById('preview-dest').textContent = 'Enter content to generate QR';
+      document.getElementById('preview-slug').textContent = 'scnr.app/———';
+    }
+  }, 250);
+}
+
+function updateVCard() { updatePreview(); }
+function updateWifi() { updatePreview(); }
+function updateEmail() { updatePreview(); }
+
+function randomSlug() {
+  const chars='23456789abcdefghjkmnpqrstuvwxyz';
+  return Array.from({length:7},()=>chars[Math.floor(Math.random()*chars.length)]).join('');
+}
+
+function setQRType(btn, type) {
+  currentQRType = type;
+  document.querySelectorAll('.qr-type-tab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  ['url','vcard','wifi','text','email'].forEach(t => {
+    const el = document.getElementById('fields-'+t);
+    if (el) el.style.display = t===type ? 'block' : 'none';
+  });
+  updatePreview();
+}
+
+function setFgColor(hex, el) {
+  currentFg = hex;
+  document.getElementById('fg-preview').style.background = hex;
+  document.getElementById('fg-color').value = hex;
+  document.querySelectorAll('.color-row:first-of-type .color-swatch').forEach(s=>s.classList.remove('selected'));
+  if (el) el.classList.add('selected');
+  updatePreview();
+}
+function fgColorPicker(v) { currentFg=v; document.getElementById('fg-preview').style.background=v; updatePreview(); }
+
+function setBgColor(hex, el) {
+  currentBg = hex;
+  document.getElementById('bg-preview').style.background = hex;
+  document.getElementById('bg-color').value = hex;
+  document.querySelectorAll('.color-row:last-of-type .color-swatch').forEach(s=>s.classList.remove('selected'));
+  if (el) el.classList.add('selected');
+  updatePreview();
+}
+function bgColorPicker(v) { currentBg=v; document.getElementById('bg-preview').style.background=v; updatePreview(); }
+
+function setDotStyle(el, style) {
+  document.querySelectorAll('.style-opt').forEach(s=>s.classList.remove('selected'));
+  el.classList.add('selected');
+  updatePreview();
+}
+
+function createQR() {
+  const url = document.getElementById('qr-url')?.value || '';
+  if (currentQRType==='url' && (!url || !url.startsWith('http'))) {
+    document.getElementById('url-error').style.display = 'block';
+    document.getElementById('qr-url').classList.add('error');
+    return;
+  }
+  document.getElementById('url-error').style.display = 'none';
+  document.getElementById('qr-url')?.classList.remove('error');
+  showToast('success','QR code created successfully!');
+  setTimeout(()=>showPage('dashboard',document.querySelector('.nav-item')), 1000);
+}
+
+function resetCreateForm() {
+  document.getElementById('qr-url').value='';
+  document.getElementById('qr-title').value='';
+  updatePreview();
+}
+
+function downloadPreview(fmt) {
+  const canvas = document.getElementById('preview-canvas');
+  if (!canvas) return;
+  const a = document.createElement('a');
+  a.download = `scnr-qr.${fmt==='print'?'png':fmt}`;
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+  showToast('success', `Downloaded as ${fmt.toUpperCase()}`);
+}
+
+// ── PROFILE ──────────────────────────────────────────────
+function saveSettings(btn, section) {
+  const orig = btn.textContent;
+  btn.textContent = 'Saving…';
+  btn.disabled = true;
+  setTimeout(() => {
+    btn.textContent = '✓ Saved';
+    btn.style.color = 'var(--green)';
+    setTimeout(() => { btn.textContent = orig; btn.disabled=false; btn.style.color=''; }, 2000);
+    showToast('success', section === 'profile' ? 'Profile updated' : 'Preferences saved');
+  }, 800);
+}
+
+// ── TOASTS ───────────────────────────────────────────────
+function showToast(type, message) {
+  const wrap = document.getElementById('toast-wrap');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `<span class="toast-icon">${type==='success'?'✓':'!'}</span><span>${message}</span>`;
+  wrap.appendChild(toast);
+  setTimeout(() => { toast.style.opacity='0'; toast.style.transform='translateY(8px)'; toast.style.transition='all 0.3s'; setTimeout(()=>toast.remove(),300); }, 3000);
+}
+
+// ── INIT ─────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  buildDashboard();
+  setTimeout(() => {
+    QR_DATA.forEach(qr => {
+      if (document.getElementById('thumb-'+qr.slug)) renderThumb('thumb-'+qr.slug, qr.dest, '#1A1916', '#FFFFFF');
+    });
+  }, 200);
+});
+
+// ── BILLING ──────────────────────────────────────────────
+const INVOICES = [
+  { id:'INV-2026-03', date:'Mar 21, 2026', plan:'Pro',  amount:'$7.00', status:'paid',  period:'Mar 21 – Apr 21' },
+  { id:'INV-2026-02', date:'Feb 21, 2026', plan:'Pro',  amount:'$7.00', status:'paid',  period:'Feb 21 – Mar 21' },
+  { id:'INV-2026-01', date:'Jan 21, 2026', plan:'Pro',  amount:'$7.00', status:'paid',  period:'Jan 21 – Feb 21' },
+  { id:'INV-2025-12', date:'Dec 21, 2025', plan:'Free', amount:'$0.00', status:'paid',  period:'Dec 21 – Jan 21' },
+  { id:'INV-2025-11', date:'Nov 21, 2025', plan:'Free', amount:'$0.00', status:'paid',  period:'Nov 21 – Dec 21' },
+];
+
+function buildBilling() {
+  const tbody = document.getElementById('invoice-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = INVOICES.map(inv => `
+    <tr>
+      <td><span style="font-family:monospace;font-size:12px;color:var(--text)">${inv.id}</span></td>
+      <td style="color:var(--text2)">${inv.date}</td>
+      <td><span class="chip" style="background:var(--amber-l);color:var(--amber);font-size:11px;padding:3px 8px;border-radius:4px">${inv.plan}</span></td>
+      <td style="font-weight:600;color:var(--text)">${inv.amount}</td>
+      <td><span class="invoice-status ${inv.status==='paid'?'inv-paid':inv.status==='pending'?'inv-pending':'inv-failed'}">${inv.status==='paid'?'● Paid':inv.status==='pending'?'● Pending':'✕ Failed'}</span></td>
+      <td style="text-align:right"><button class="btn btn-ghost btn-sm" onclick="showToast('success','Invoice ${inv.id} downloaded')">↓ PDF</button></td>
+    </tr>
+  `).join('');
+}
+
+function confirmCancel() {
+  if (confirm('Cancel your Pro subscription? Your plan stays active until April 21, 2026.')) {
+    showToast('success','Cancellation scheduled for Apr 21, 2026');
+  }
+}
+
+// ── API DOCS ──────────────────────────────────────────────
+const API_KEYS_DATA = [
+  { name:'Production key', val:'sk_live_x9Km4p_••••••••••••••••••••', created:'Mar 1, 2026',  scope:'Read + Write', last:'2 min ago' },
+  { name:'Test key',       val:'sk_test_bR3nVq_••••••••••••••••••••', created:'Feb 14, 2026', scope:'Read only',    last:'Never' },
+];
+
+function buildApiKeys() {
+  const el = document.getElementById('api-keys-list');
+  if (!el) return;
+  el.innerHTML = API_KEYS_DATA.map((k,i) => `
+    <div class="key-card">
+      <div class="key-icon">🔑</div>
+      <div class="key-info">
+        <div class="key-name">${k.name}
+          <span style="background:var(--surface3);color:var(--text3);font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;margin-left:6px">${k.scope}</span>
+        </div>
+        <div class="key-val" onclick="copyKeyVal('${k.val}',this)" title="Click to copy">${k.val}</div>
+        <div class="key-meta">Created ${k.created} · Last used: ${k.last}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <button class="btn btn-ghost btn-sm" onclick="copyKeyVal('${k.val}',this)">Copy</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="revokeKey(${i},this)">Revoke</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function copyKeyVal(val, btn) {
+  navigator.clipboard?.writeText(val.replace(/•+/g,'DEMO_KEY_HERE'));
+  showToast('success','API key copied to clipboard');
+  if (btn && btn.tagName==='BUTTON') { const o=btn.textContent; btn.textContent='✓ Copied'; setTimeout(()=>btn.textContent=o,1500); }
+}
+
+function revokeKey(i, btn) {
+  if (confirm('Revoke this key? Apps using it will stop working immediately.')) {
+    API_KEYS_DATA.splice(i,1);
+    buildApiKeys();
+    showToast('success','API key revoked');
+  }
+}
+
+function generateNewKey() {
+  API_KEYS_DATA.unshift({ name:'New key — ' + new Date().toLocaleDateString(), val:'sk_live_NEW_••••••••••••••••••••', created:'Today', scope:'Read + Write', last:'Never' });
+  buildApiKeys();
+  showToast('success','New API key generated — copy it now, it won\'t be shown again');
+}
+
+function toggleEndpoint(header) {
+  header.closest('.endpoint-card').classList.toggle('open');
+}
+
+function scrollDoc(id, navItem) {
+  const el = document.getElementById(id);
+  if (el) {
+    const docsScroll = document.getElementById('docs-scroll');
+    if (docsScroll) docsScroll.scrollTo({ top: el.offsetTop - 20, behavior:'smooth' });
+  }
+  document.querySelectorAll('.docs-nav-item').forEach(n=>n.classList.remove('active'));
+  if (navItem) navItem.classList.add('active');
+}
+
+function copyCode(btn) {
+  const pre = btn.nextElementSibling;
+  const text = pre ? pre.textContent : '';
+  navigator.clipboard?.writeText(text);
+  btn.textContent = 'Copied!';
+  btn.style.color = 'var(--green)';
+  setTimeout(()=>{ btn.textContent='Copy'; btn.style.color=''; }, 1800);
+}
+</script>
+</body>
+</html>
