@@ -5,6 +5,7 @@ import cors from "cors";
 import admin from "firebase-admin";
 import crypto from "crypto";
 import { customAlphabet } from "nanoid";
+import logger from "./logger";
 
 // ────────────────────────────────────────────────────────────────
 // Initialize Firebase Admin
@@ -154,7 +155,7 @@ async function purgeWorkerCache(slug: string) {
       headers: { Authorization: `Bearer ${secret}` },
     });
   } catch (err) {
-    console.error(`Failed to purge worker cache for ${slug}:`, err);
+    logger.error(`Failed to purge worker cache for ${slug}:`, err);
   }
 }
 
@@ -244,6 +245,17 @@ async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
+  // ── Logging Middleware ───────────────────────────────────────
+  app.use((req, res, next) => {
+    // Log basic request structure
+    logger.http(`${req.method} ${req.originalUrl}`, {
+      ip: req.ip || req.headers["x-forwarded-for"],
+      userAgent: req.headers["user-agent"],
+    });
+    next();
+  });
+
+  // ── Middleware ───────────────────────────────────────────────
   app.use(cors());
 
   // ── Auth Middleware ────────────────────────────────────────────
@@ -1105,8 +1117,8 @@ async function startServer() {
         recurrence: "1 Month",
         duration: "Forever",
       });
-    } catch (error) {
-      console.error("Checkout error:", error);
+    } catch (error: any) {
+      logger.error("Checkout error", { error: error.message || error });
       res.status(500).json({ error: "Failed to create checkout" });
     }
   });
@@ -1148,7 +1160,7 @@ async function startServer() {
         .toUpperCase();
 
       if (localMd5 !== md5sig) {
-        console.error("PayHere webhook: hash mismatch");
+        logger.error("PayHere webhook: hash mismatch", { provider: "payhere" });
         return res.status(400).send("Hash mismatch");
       }
 
@@ -1172,13 +1184,13 @@ async function startServer() {
                   : PLAN_LIMITS[plan].qr_codes,
               payhere_order_id: orderId,
             });
-          console.log(`Plan upgraded: ${uid} → ${plan}`);
+          logger.info(`Plan upgraded: ${uid} → ${plan}`, { uid, plan });
         }
       }
 
       res.status(200).send("OK");
-    } catch (error) {
-      console.error("PayHere webhook error:", error);
+    } catch (error: any) {
+      logger.error("PayHere webhook error", { error: error.message || error });
       res.status(500).send("Error");
     }
   });
@@ -1220,8 +1232,8 @@ async function startServer() {
           scanned_at: admin.firestore.FieldValue.serverTimestamp(),
         });
         res.status(201).json({ success: true });
-      } catch (error) {
-        console.error("Internal scan error:", error);
+      } catch (error: any) {
+        logger.error("Internal scan error", { error: error.message || error });
         res.status(500).json({ error: "Failed to record scan" });
       }
     },
@@ -1258,12 +1270,12 @@ async function startServer() {
 
       // Fire analytics async — don't block the redirect
       captureAnalytics(req, slug).catch((err) =>
-        console.error("Analytics capture failed:", err),
+        logger.error("Analytics capture failed", { error: err.message || err }),
       );
 
       return res.redirect(302, qrData.destination_url);
-    } catch (error) {
-      console.error("Redirect error:", error);
+    } catch (error: any) {
+      logger.error("Redirect error", { error: error.message || error });
       next();
     }
   });
@@ -1332,7 +1344,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    logger.info(`Server running on http://localhost:${PORT}`);
   });
 }
 
