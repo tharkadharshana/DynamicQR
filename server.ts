@@ -24,9 +24,9 @@ const db = getFirestore(clientApp, firebaseConfig.firestoreDatabaseId);
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
-  app.use(cors());
+  app.use(cors({ origin: process.env.APP_URL }));
   app.use(express.json());
   app.use(cors());
 
@@ -180,6 +180,50 @@ async function startServer() {
 
   const ALPHABET = "23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ";
   const generateSlug = customAlphabet(ALPHABET, 7);
+
+  // PayHere Webhook
+  app.post('/api/billing/notify', express.urlencoded({ extended: true }), async (req, res) => {
+    try {
+      const {
+        merchant_id,
+        order_id,
+        payhere_amount,
+        payhere_currency,
+        status_code,
+        md5sig,
+        custom_1: uid,
+        custom_2: plan
+      } = req.body;
+
+      const merchant_secret = process.env.PAYHERE_SECRET;
+      if (!merchant_secret) return res.status(500).send('Config Missing');
+
+      // Verify Signature
+      const hashedSecret = crypto.createHash('md5').update(merchant_secret).digest('hex').toUpperCase();
+      const hashString = `${merchant_id}${order_id}${payhere_amount}${payhere_currency}${status_code}${hashedSecret}`;
+      const localSig = crypto.createHash('md5').update(hashString).digest('hex').toUpperCase();
+
+      if (localSig !== md5sig) {
+        console.error('PayHere Signature Mismatch');
+        return res.status(401).send('Invalid Signature');
+      }
+
+      if (status_code === '2') {
+        // Success - Upgrade Plan
+        await setDoc(doc(db, 'users', uid), { plan }, { merge: true });
+        console.log(`User ${uid} upgraded to ${plan}`);
+      } else if (status_code === '0') {
+        console.log(`Payment pending for user ${uid}`);
+      } else {
+        console.log(`Payment failed for user ${uid} (Status ${status_code})`);
+      }
+
+      res.send('OK');
+    } catch (error) {
+      console.error('Billing Notify Error:', error);
+      res.status(500).send('Error');
+    }
+  });
   async function createUniqueSlug(): Promise<string> {
     let slug: string, exists: boolean, attempts = 0;
     do {
@@ -200,6 +244,23 @@ async function startServer() {
       const decoded = await admin.auth().verifyIdToken(token);
       
       const { destination_url, title, style, rate_limit, is_dynamic, qr_type, content_data } = req.body;
+      const uid = decoded.uid;
+
+      // Plan Limit Enforcement
+      const userDoc = await getDoc(doc(db, 'users', uid));
+      const plan = userDoc.exists() ? userDoc.data()?.plan || 'free' : 'free';
+      const plans: Record<string, any> = {
+        free: { qr_codes: 3 },
+        pro: { qr_codes: 50 },
+        team: { qr_codes: Infinity }
+      };
+      const limits = plans[plan] || plans.free;
+
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid), where('is_active', '==', true)));
+      if (limits.qr_codes !== Infinity && qrSnapshot.size >= limits.qr_codes) {
+        return res.status(403).json({ error: 'Plan limit reached. Upgrade to create more QRs.' });
+      }
+
       const slug = await createUniqueSlug();
       
       const defaultStyle = { dot_color: '#000000', bg_color: '#ffffff' };
@@ -269,6 +330,64 @@ async function startServer() {
     } catch (error) {
       console.error('QR creation error:', error);
       res.status(500).json({ error: 'Failed' });
+    }
+  });
+
+  // List user's QR codes
+  app.get('/api/qr', authenticate, async (req, res) => {
+    try {
+      const uid = (req as any).user.uid;
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid), where('is_active', '==', true)));
+      const qrs = qrSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      res.json(qrs);
+    } catch (error) {
+      console.error('QR list error:', error);
+      res.status(500).json({ error: 'Failed to list QR codes' });
+    }
+  });
+
+  // Get single QR code
+  app.get('/api/qr/:slug', authenticate, requireOwnership, async (req, res) => {
+    try {
+      const { slug } = req.params;
+      const qrDoc = await getDoc(doc(db, 'qr_codes', slug));
+      res.json(qrDoc.data());
+    } catch (error) {
+      console.error('QR fetch error:', error);
+      res.status(500).json({ error: 'Failed to fetch QR code' });
+    }
+  });
+
+  // Update QR code
+  app.put('/api/qr/:slug', authenticate, requireOwnership, async (req, res) => {
+    try {
+      const { slug } = req.params;
+      const { destination_url, title, style, is_active } = req.body;
+      const updateData: any = {};
+      
+      if (destination_url !== undefined) updateData.destination_url = destination_url;
+      if (title !== undefined) updateData.title = title;
+      if (style !== undefined) updateData.style = style;
+      if (is_active !== undefined) updateData.is_active = is_active;
+      
+      await updateDoc(doc(db, 'qr_codes', slug), updateData);
+      res.json({ success: true, slug });
+    } catch (error) {
+      console.error('QR update error:', error);
+      res.status(500).json({ error: 'Failed to update QR code' });
+    }
+  });
+
+  // Delete QR code (soft delete)
+  app.delete('/api/qr/:slug', authenticate, requireOwnership, async (req, res) => {
+    try {
+      const { slug } = req.params;
+      // Soft delete by setting is_active to false
+      await updateDoc(doc(db, 'qr_codes', slug), { is_active: false });
+      res.json({ success: true, message: 'QR deleted' });
+    } catch (error) {
+      console.error('QR delete error:', error);
+      res.status(500).json({ error: 'Failed to delete QR code' });
     }
   });
 
@@ -942,15 +1061,18 @@ async function startServer() {
 
 // Analytics Capture Logic
 async function captureAnalyticsFromPayload(payload: any) {
-  const { slug, ip, ua, country, asn, colo, tls, lang, is_eu } = payload;
+  const { slug, ip, ua, country, asn, colo, tls, lang, is_eu, is_unique: payloadIsUnique } = payload;
   if (isBot(ua)) return;
 
   const today = new Date().toISOString().slice(0, 10);
-  const fingerprint = `${ip}:${ua.slice(0, 100)}:${today}`;
+  const fingerprint = `${ip}:${ua.slice(0, 100)}:${today}:${process.env.HASH_SALT || ''}`;
   const visitorHash = crypto.createHash('sha256').update(fingerprint).digest('hex');
 
-  const snapshot = await getDocs(query(collection(db, 'scan_events'), where('slug', '==', slug), where('visitor_hash', '==', visitorHash)));
-  const isUnique = snapshot.empty;
+  let isUnique = payloadIsUnique;
+  if (isUnique === undefined) {
+    const snapshot = await getDocs(query(collection(db, 'scan_events'), where('slug', '==', slug), where('visitor_hash', '==', visitorHash)));
+    isUnique = snapshot.empty;
+  }
 
   const parsed = parseUA(ua);
   const now = new Date();

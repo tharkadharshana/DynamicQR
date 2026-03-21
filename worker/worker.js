@@ -41,17 +41,41 @@ export default {
 
     // 3. Extract rich Cloudflare properties & Headers
     const cf = request.cf || {};
+    const ip = request.headers.get('CF-Connecting-IP') || '';
+    const ua = request.headers.get('User-Agent') || '';
+    const today = new Date().toISOString().slice(0, 10);
+    
+    // Compute visitor hash for uniqueness
+    const fingerprint = `${ip}:${ua.slice(0, 100)}:${today}:${env.HASH_SALT || ''}`;
+    const msgUint8 = new TextEncoder().encode(fingerprint);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const visitorHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    
+    const visitorKey = `uniq:${slug}:${visitorHash}`;
+    let isUnique = false;
+    
+    const existing = await env.QR_CACHE.get(visitorKey);
+    if (!existing) {
+      isUnique = true;
+      const now = new Date();
+      const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+      const ttl = Math.floor((endOfDay.getTime() - now.getTime()) / 1000);
+      ctx.waitUntil(env.QR_CACHE.put(visitorKey, "1", { expirationTtl: Math.max(ttl, 60) }));
+    }
+
     const payload = {
       slug,
-      ip: request.headers.get('CF-Connecting-IP') || '',
-      ua: request.headers.get('User-Agent') || '',
+      ip,
+      ua,
       referer: request.headers.get('Referer') || '',
       lang: request.headers.get('Accept-Language') || '',
       country: cf.country || 'Unknown',
       asn: cf.asn || null,
       colo: cf.colo || 'Unknown',
       tls: cf.tlsVersion || 'Unknown',
-      is_eu: cf.isEUCountry || false
+      is_eu: cf.isEUCountry || false,
+      is_unique: isUnique
     };
 
     // 4. Send Analytics async
