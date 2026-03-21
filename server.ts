@@ -8,7 +8,7 @@ import { getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc, updateD
 import crypto from 'crypto';
 import { customAlphabet } from 'nanoid';
 import QRCode from 'qrcode';
-import logger from "./logger";
+import logger from "./logger.ts";
 import fs from 'fs';
 
 // Load Firebase config
