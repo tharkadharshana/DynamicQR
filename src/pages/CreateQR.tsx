@@ -75,35 +75,20 @@ export default function CreateQR() {
           updated_at: serverTimestamp(),
         });
       } else {
-        // Create
-        let slug = '';
-        let success = false;
-        let attempts = 0;
+        // Create via exact schema backend API
+        const token = await auth.currentUser.getIdToken();
+        const res = await fetch('/api/qr', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(formData)
+        });
         
-        while (!success && attempts < 10) {
-          slug = generateSlug();
-          try {
-            const docRef = doc(db, 'qr_codes', slug);
-            // We use setDoc instead of addDoc to specify the document ID
-            // We can't check if it exists because of security rules, so we just try to create it.
-            // Wait, we need to import setDoc
-            await setDoc(docRef, {
-              ...formData,
-              slug,
-              user_uid: auth.currentUser.uid,
-              type: 'url',
-              created_at: serverTimestamp(),
-              updated_at: serverTimestamp(),
-            });
-            success = true;
-          } catch (e: any) {
-            // If it fails due to permissions, it might mean the document already exists
-            // because our rules will prevent overwriting.
-            attempts++;
-          }
+        if (!res.ok) {
+          throw new Error('Failed to create QR code on the server');
         }
-
-        if (!success) throw new Error('Failed to generate unique slug');
       }
       navigate('/');
     } catch (error) {
