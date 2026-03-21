@@ -8,6 +8,7 @@ export default function Layout() {
 
   const navItems = [
     { name: 'My QR Codes', path: '/', icon: QrCode },
+    { name: 'Pricing', path: '/pricing', icon: BarChart3 },
     { name: 'Settings', path: '/settings', icon: Settings },
   ];
 

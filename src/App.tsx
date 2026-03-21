@@ -8,6 +8,11 @@ import Dashboard from './pages/Dashboard';
 import CreateQR from './pages/CreateQR';
 import Analytics from './pages/Analytics';
 import Landing from './pages/Landing';
+import Pricing from './pages/Pricing';
+import SettingsPage from './pages/Settings';
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import TermsConditions from './pages/TermsConditions';
+import RefundPolicy from './pages/RefundPolicy';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
@@ -34,11 +39,16 @@ export default function App() {
             <Route path="create" element={<CreateQR />} />
             <Route path="edit/:id" element={<CreateQR />} />
             <Route path="analytics/:slug" element={<Analytics />} />
+            <Route path="pricing" element={<Pricing />} />
+            <Route path="settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         ) : (
           <>
             <Route path="/login" element={<Landing />} />
+            <Route path="/legal/privacy-policy" element={<PrivacyPolicy />} />
+            <Route path="/legal/terms-and-conditions" element={<TermsConditions />} />
+            <Route path="/legal/refund-policy" element={<RefundPolicy />} />
             <Route path="*" element={<Navigate to="/login" replace />} />
           </>
         )}
