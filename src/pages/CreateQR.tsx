@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import QRCode from 'qrcode';
+import QRCodeStyling from 'qr-code-styling';
 
 export default function CreateQR() {
   const { id } = useParams();
@@ -23,16 +23,35 @@ export default function CreateQR() {
       dot_color: '#1A1916',
       bg_color: '#FFFFFF',
       dot_style: 'square',
-      error_correction: 'M'
+      corner_style: 'square',
+      error_correction: 'M',
+      output_size: 400,
+      logo_url: ''
     },
-    rate_limit: {
-      enabled: false,
-      max_scans: 100,
-      period: 'total'
+    options: {
+      password_protect: false,
+      password: '',
+      expiry_date_enabled: false,
+      expiry_date: '',
+      scan_limit_enabled: false,
+      scan_limit: 100
     }
   });
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const qrCodeRef = useRef<QRCodeStyling | null>(null);
+
+  useEffect(() => {
+    qrCodeRef.current = new QRCodeStyling({
+      width: 180,
+      height: 180,
+      margin: 0,
+      type: "canvas",
+    });
+    if (canvasRef.current) {
+      qrCodeRef.current.append(canvasRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     if (id) {
@@ -54,9 +73,19 @@ export default function CreateQR() {
               dot_color: data.style?.dot_color || '#1A1916',
               bg_color: data.style?.bg_color || '#FFFFFF',
               dot_style: data.style?.dot_style || 'square',
-              error_correction: data.style?.error_correction || 'M'
+              corner_style: data.style?.corner_style || 'square',
+              error_correction: data.style?.error_correction || 'M',
+              output_size: data.style?.output_size || 400,
+              logo_url: data.style?.logo_url || ''
             },
-            rate_limit: data.rate_limit || { enabled: false, max_scans: 100, period: 'total' }
+            options: data.options || {
+              password_protect: false,
+              password: '',
+              expiry_date_enabled: false,
+              expiry_date: '',
+              scan_limit_enabled: false,
+              scan_limit: 100
+            }
           });
         }
       };
@@ -71,7 +100,7 @@ export default function CreateQR() {
   }, [qrType]);
 
   useEffect(() => {
-    if (canvasRef.current) {
+    if (qrCodeRef.current) {
       let content = '';
       if (isDynamic) {
         content = formData.slug ? `${window.location.origin}/${formData.slug}` : `${window.location.origin}/preview`;
@@ -89,17 +118,70 @@ export default function CreateQR() {
         }
       }
 
-      QRCode.toCanvas(canvasRef.current, content, {
-        width: 180,
-        margin: 1,
-        color: {
-          dark: formData.style.dot_color,
-          light: formData.style.bg_color,
+      let dotType: any = 'square';
+      if (formData.style.dot_style === 'dots') dotType = 'dots';
+      if (formData.style.dot_style === 'rounded') dotType = 'rounded';
+      if (formData.style.dot_style === 'diamond') dotType = 'classy';
+      if (formData.style.dot_style === 'star') dotType = 'classy-rounded';
+
+      let cornerType: any = 'square';
+      if (formData.style.corner_style === 'dot') cornerType = 'dot';
+      if (formData.style.corner_style === 'rounded') cornerType = 'extra-rounded';
+
+      qrCodeRef.current.update({
+        data: content,
+        image: formData.style.logo_url || undefined,
+        dotsOptions: {
+          color: formData.style.dot_color,
+          type: dotType as any
         },
-        errorCorrectionLevel: formData.style.error_correction as any
-      }).catch(err => console.error(err));
+        cornersSquareOptions: {
+          type: cornerType as any,
+          color: formData.style.dot_color
+        },
+        cornersDotOptions: {
+          type: cornerType === 'extra-rounded' ? 'dot' : cornerType as any,
+          color: formData.style.dot_color
+        },
+        backgroundOptions: {
+          color: formData.style.bg_color,
+        },
+        imageOptions: {
+          crossOrigin: 'anonymous',
+          margin: 5,
+          imageSize: 0.4
+        },
+        qrOptions: {
+          errorCorrectionLevel: formData.style.error_correction as any
+        }
+      });
     }
   }, [formData.destination_url, formData.style, qrType, formData.content_data, isDynamic, formData.slug]);
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    if (file.size > 1024 * 1024) {
+      alert("Logo must be less than 1MB");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (event.target?.result) {
+        setFormData({
+          ...formData,
+          style: {
+            ...formData.style,
+            logo_url: event.target.result as string,
+            error_correction: 'H' // Auto set to H
+          }
+        });
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSubmit = async () => {
     if (qrType === 'url' && (!formData.destination_url || !formData.destination_url.startsWith('http'))) {
@@ -133,11 +215,13 @@ export default function CreateQR() {
           }
         }
 
-        const qrSvg = await QRCode.toString(content, {
-          type: 'svg',
-          color: { dark: formData.style.dot_color, light: formData.style.bg_color },
-          margin: 1
-        });
+        let qrSvg = '';
+        if (qrCodeRef.current) {
+          const rawSvg = await qrCodeRef.current.getRawData('svg');
+          if (rawSvg) {
+            qrSvg = await (rawSvg as Blob).text();
+          }
+        }
 
         await updateDoc(docRef, {
           ...formData,
@@ -175,11 +259,9 @@ export default function CreateQR() {
   };
 
   const downloadPreview = (fmt: string) => {
-    if (!canvasRef.current) return;
-    const a = document.createElement('a');
-    a.download = `scnr-qr.${fmt === 'print' ? 'png' : fmt}`;
-    a.href = canvasRef.current.toDataURL('image/png');
-    a.click();
+    if (!qrCodeRef.current) return;
+    const extension = fmt === 'print' ? 'png' : fmt;
+    qrCodeRef.current.download({ name: 'scnr-qr', extension: extension as any });
   };
 
   const getShortUrl = () => {
@@ -306,7 +388,19 @@ export default function CreateQR() {
 
             {/* Style */}
             <div className="card mb16">
-              <div className="card-title">Style</div>
+              <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ background: '#E85D3A', color: 'white', width: '24px', height: '24px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'bold' }}>2</span>
+                  <span style={{ textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text3)', fontSize: '13px' }}>STYLE</span>
+                </div>
+                <button 
+                  className="btn btn-ghost" 
+                  style={{ padding: '4px 12px', fontSize: '13px', border: '1px solid var(--border)', borderRadius: '6px' }} 
+                  onClick={() => setFormData({...formData, style: { dot_color: '#1A1916', bg_color: '#FFFFFF', dot_style: 'square', corner_style: 'square', error_correction: 'M', output_size: 400, logo_url: '' }})}
+                >
+                  Reset style
+                </button>
+              </div>
 
               <div className="form-section">
                 <label className="form-label">Foreground color</label>
@@ -356,64 +450,167 @@ export default function CreateQR() {
                 </div>
               </div>
 
-              <div className="form-section">
-                <label className="form-label">Error correction</label>
-                <select 
-                  className="form-input" 
-                  value={formData.style.error_correction}
-                  onChange={(e) => setFormData({...formData, style: {...formData.style, error_correction: e.target.value}})}
-                >
-                  <option value="M">M — Medium (15% recovery)</option>
-                  <option value="H">H — High (30% recovery, required for logos)</option>
-                  <option value="L">L — Low (7% recovery, smallest QR)</option>
-                  <option value="Q">Q — Quartile (25% recovery)</option>
-                </select>
+              <div style={{ display: 'flex', gap: '16px' }}>
+                <div className="form-section" style={{ flex: 2 }}>
+                  <label className="form-label">Dot style</label>
+                  <div className="style-grid">
+                    <div className={`style-opt ${formData.style.dot_style === 'square' ? 'selected' : ''}`} onClick={() => setFormData({...formData, style: {...formData.style, dot_style: 'square'}})} title="Square">
+                      <svg viewBox="0 0 28 28" fill="var(--text2)"><rect x="2" y="2" width="6" height="6"/><rect x="20" y="2" width="6" height="6"/><rect x="2" y="20" width="6" height="6"/><rect x="11" y="2" width="6" height="6"/><rect x="2" y="11" width="6" height="6"/><rect x="20" y="20" width="6" height="6"/><rect x="11" y="20" width="6" height="6"/><rect x="20" y="11" width="6" height="6"/><rect x="11" y="11" width="6" height="6"/></svg>
+                    </div>
+                    <div className={`style-opt ${formData.style.dot_style === 'dots' ? 'selected' : ''}`} onClick={() => setFormData({...formData, style: {...formData.style, dot_style: 'dots'}})} title="Dots">
+                      <svg viewBox="0 0 28 28" fill="var(--text2)"><circle cx="5" cy="5" r="3"/><circle cx="23" cy="5" r="3"/><circle cx="5" cy="23" r="3"/><circle cx="14" cy="5" r="3"/><circle cx="5" cy="14" r="3"/><circle cx="23" cy="23" r="3"/><circle cx="14" cy="23" r="3"/><circle cx="23" cy="14" r="3"/><circle cx="14" cy="14" r="3"/></svg>
+                    </div>
+                    <div className={`style-opt ${formData.style.dot_style === 'rounded' ? 'selected' : ''}`} onClick={() => setFormData({...formData, style: {...formData.style, dot_style: 'rounded'}})} title="Rounded">
+                      <svg viewBox="0 0 28 28" fill="var(--text2)"><rect x="2" y="2" width="6" height="6" rx="2"/><rect x="20" y="2" width="6" height="6" rx="2"/><rect x="2" y="20" width="6" height="6" rx="2"/><rect x="11" y="2" width="6" height="6" rx="2"/><rect x="2" y="11" width="6" height="6" rx="2"/><rect x="20" y="20" width="6" height="6" rx="2"/><rect x="11" y="20" width="6" height="6" rx="2"/><rect x="20" y="11" width="6" height="6" rx="2"/><rect x="11" y="11" width="6" height="6" rx="2"/></svg>
+                    </div>
+                    <div className={`style-opt ${formData.style.dot_style === 'diamond' ? 'selected' : ''}`} onClick={() => setFormData({...formData, style: {...formData.style, dot_style: 'diamond'}})} title="Diamond">
+                      <svg viewBox="0 0 28 28" fill="var(--text2)"><polygon points="5,2 8,5 5,8 2,5"/><polygon points="23,2 26,5 23,8 20,5"/><polygon points="5,20 8,23 5,26 2,23"/><polygon points="14,2 17,5 14,8 11,5"/><polygon points="5,11 8,14 5,17 2,14"/><polygon points="23,20 26,23 23,26 20,23"/><polygon points="14,20 17,23 14,26 11,23"/><polygon points="23,11 26,14 23,17 20,14"/><polygon points="14,11 17,14 14,17 11,14"/></svg>
+                    </div>
+                    <div className={`style-opt ${formData.style.dot_style === 'star' ? 'selected' : ''}`} onClick={() => setFormData({...formData, style: {...formData.style, dot_style: 'star'}})} title="Star">
+                      <svg viewBox="0 0 28 28" fill="var(--text2)"><text x="2" y="9" fontSize="8">★</text><text x="20" y="9" fontSize="8">★</text><text x="11" y="9" fontSize="8">★</text><text x="2" y="18" fontSize="8">★</text><text x="20" y="18" fontSize="8">★</text><text x="11" y="18" fontSize="8">★</text><text x="2" y="27" fontSize="8">★</text><text x="20" y="27" fontSize="8">★</text><text x="11" y="27" fontSize="8">★</text></svg>
+                    </div>
+                  </div>
+                </div>
+                <div className="form-section" style={{ flex: 1 }}>
+                  <label className="form-label">Corner style</label>
+                  <div className="style-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+                    <div className={`style-opt ${formData.style.corner_style === 'square' ? 'selected' : ''}`} onClick={() => setFormData({...formData, style: {...formData.style, corner_style: 'square'}})} title="Square">
+                      <svg viewBox="0 0 28 28" fill="none" stroke="var(--text2)" strokeWidth="2"><rect x="4" y="4" width="20" height="20"/><rect x="8" y="8" width="12" height="12" fill="var(--text2)" stroke="none"/></svg>
+                    </div>
+                    <div className={`style-opt ${formData.style.corner_style === 'dot' ? 'selected' : ''}`} onClick={() => setFormData({...formData, style: {...formData.style, corner_style: 'dot'}})} title="Dot">
+                      <svg viewBox="0 0 28 28" fill="none" stroke="var(--text2)" strokeWidth="2"><rect x="4" y="4" width="20" height="20" rx="10"/><circle cx="14" cy="14" r="6" fill="var(--text2)" stroke="none"/></svg>
+                    </div>
+                    <div className={`style-opt ${formData.style.corner_style === 'rounded' ? 'selected' : ''}`} onClick={() => setFormData({...formData, style: {...formData.style, corner_style: 'rounded'}})} title="Rounded">
+                      <svg viewBox="0 0 28 28" fill="none" stroke="var(--text2)" strokeWidth="2"><rect x="4" y="4" width="20" height="20" rx="6"/><rect x="8" y="8" width="12" height="12" rx="3" fill="var(--text2)" stroke="none"/></svg>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div className="toggle-wrap">
+              <div className="form-section">
+                <label className="form-label">Center logo <span style={{ color: 'var(--text3)', fontWeight: 'normal' }}>(optional — auto-sets error correction to H)</span></label>
+                <div 
+                  style={{ border: '1px dashed var(--border2)', borderRadius: '8px', padding: '24px', textAlign: 'center', cursor: 'pointer', position: 'relative' }} 
+                  onClick={() => document.getElementById('logo-upload')?.click()}
+                >
+                  {formData.style.logo_url ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                      <img src={formData.style.logo_url} alt="Logo" style={{ maxHeight: '60px', maxWidth: '100%', marginBottom: '12px' }} />
+                      <div style={{ fontSize: '13px', color: 'var(--text2)' }}>Click to replace logo</div>
+                      <button 
+                        className="btn btn-ghost" 
+                        style={{ position: 'absolute', top: '8px', right: '8px', padding: '4px 8px', fontSize: '12px' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFormData({...formData, style: {...formData.style, logo_url: ''}});
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: '24px', marginBottom: '8px' }}>🖼️</div>
+                      <div style={{ fontWeight: 500, marginBottom: '4px' }}>Drop logo here or click to upload</div>
+                      <div style={{ fontSize: '12px', color: 'var(--text3)' }}>PNG, SVG, or JPG · Max 1MB · Will be centered at 22% size</div>
+                    </>
+                  )}
+                  <input type="file" id="logo-upload" style={{ display: 'none' }} accept="image/png, image/jpeg, image/svg+xml" onChange={handleLogoUpload} />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '16px' }}>
+                <div className="form-section" style={{ flex: 1 }}>
+                  <label className="form-label">Error correction</label>
+                  <select 
+                    className="form-input" 
+                    value={formData.style.error_correction}
+                    onChange={(e) => setFormData({...formData, style: {...formData.style, error_correction: e.target.value}})}
+                  >
+                    <option value="M">M — Medium (15% recovery)</option>
+                    <option value="H">H — High (30% recovery, required for logos)</option>
+                    <option value="L">L — Low (7% recovery, smallest QR)</option>
+                    <option value="Q">Q — Quartile (25% recovery)</option>
+                  </select>
+                </div>
+                <div className="form-section" style={{ flex: 1 }}>
+                  <label className="form-label">Output size</label>
+                  <select 
+                    className="form-input" 
+                    value={formData.style.output_size}
+                    onChange={(e) => setFormData({...formData, style: {...formData.style, output_size: parseInt(e.target.value)}})}
+                  >
+                    <option value={400}>Standard (400px)</option>
+                    <option value={800}>High Res (800px)</option>
+                    <option value={1200}>Ultra (1200px)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Options */}
+            <div className="card mb16">
+              <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ background: '#E85D3A', color: 'white', width: '24px', height: '24px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'bold' }}>3</span>
+                <span style={{ textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text3)', fontSize: '13px' }}>OPTIONS</span>
+              </div>
+
+              <div className="toggle-wrap" style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 500, marginBottom: '4px' }}>Dynamic QR</div>
+                  <div style={{ fontSize: '13px', color: 'var(--text3)' }}>Editable destination + scan analytics</div>
+                </div>
                 <button 
                   className={`toggle ${isDynamic ? 'on' : ''}`} 
                   onClick={() => setIsDynamic(!isDynamic)}
                 ></button>
-                <span className="toggle-label">Dynamic QR (editable destination + analytics)</span>
               </div>
-            </div>
 
-            {/* Advanced Settings */}
-            <div className="card mb16">
-              <div className="card-title">Advanced Settings</div>
-              <div className="toggle-wrap mb16">
+              <div className="toggle-wrap" style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 500, marginBottom: '4px' }}>Password protect</div>
+                  <div style={{ fontSize: '13px', color: 'var(--text3)' }}>Require a PIN before redirecting</div>
+                </div>
                 <button 
-                  className={`toggle ${formData.rate_limit.enabled ? 'on' : ''}`} 
-                  onClick={() => setFormData({...formData, rate_limit: {...formData.rate_limit, enabled: !formData.rate_limit.enabled}})}
+                  className={`toggle ${formData.options.password_protect ? 'on' : ''}`} 
+                  onClick={() => setFormData({...formData, options: {...formData.options, password_protect: !formData.options.password_protect}})}
                 ></button>
-                <span className="toggle-label">Enable Rate Limiting</span>
               </div>
+              {formData.options.password_protect && (
+                <div className="form-section" style={{ padding: '0 0 16px 0' }}>
+                  <input type="text" className="form-input" placeholder="Enter PIN or password" value={formData.options.password} onChange={(e) => setFormData({...formData, options: {...formData.options, password: e.target.value}})} />
+                </div>
+              )}
 
-              {formData.rate_limit.enabled && (
-                <div style={{ display: 'flex', gap: '16px', background: 'var(--surface2)', padding: '16px', borderRadius: '8px' }}>
-                  <div className="form-section" style={{ flex: 1, marginBottom: 0 }}>
-                    <label className="form-label">Max Scans</label>
-                    <input 
-                      type="number" 
-                      className="form-input" 
-                      min="1"
-                      value={formData.rate_limit.max_scans}
-                      onChange={(e) => setFormData({...formData, rate_limit: {...formData.rate_limit, max_scans: parseInt(e.target.value) || 1}})}
-                    />
-                  </div>
-                  <div className="form-section" style={{ flex: 1, marginBottom: 0 }}>
-                    <label className="form-label">Period</label>
-                    <select 
-                      className="form-input"
-                      value={formData.rate_limit.period}
-                      onChange={(e) => setFormData({...formData, rate_limit: {...formData.rate_limit, period: e.target.value}})}
-                    >
-                      <option value="total">Total (Lifetime)</option>
-                      <option value="daily">Per Day</option>
-                      <option value="monthly">Per Month</option>
-                    </select>
-                  </div>
+              <div className="toggle-wrap" style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 500, marginBottom: '4px' }}>Expiry date</div>
+                  <div style={{ fontSize: '13px', color: 'var(--text3)' }}>QR deactivates automatically after this date</div>
+                </div>
+                <button 
+                  className={`toggle ${formData.options.expiry_date_enabled ? 'on' : ''}`} 
+                  onClick={() => setFormData({...formData, options: {...formData.options, expiry_date_enabled: !formData.options.expiry_date_enabled}})}
+                ></button>
+              </div>
+              {formData.options.expiry_date_enabled && (
+                <div className="form-section" style={{ padding: '0 0 16px 0' }}>
+                  <input type="datetime-local" className="form-input" value={formData.options.expiry_date} onChange={(e) => setFormData({...formData, options: {...formData.options, expiry_date: e.target.value}})} />
+                </div>
+              )}
+
+              <div className="toggle-wrap" style={{ padding: '16px 0' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 500, marginBottom: '4px' }}>Scan limit</div>
+                  <div style={{ fontSize: '13px', color: 'var(--text3)' }}>Deactivate after N total scans</div>
+                </div>
+                <button 
+                  className={`toggle ${formData.options.scan_limit_enabled ? 'on' : ''}`} 
+                  onClick={() => setFormData({...formData, options: {...formData.options, scan_limit_enabled: !formData.options.scan_limit_enabled}})}
+                ></button>
+              </div>
+              {formData.options.scan_limit_enabled && (
+                <div className="form-section" style={{ padding: '0 0 0 0' }}>
+                  <input type="number" className="form-input" placeholder="e.g. 100" value={formData.options.scan_limit} onChange={(e) => setFormData({...formData, options: {...formData.options, scan_limit: parseInt(e.target.value) || 0}})} />
                 </div>
               )}
             </div>
@@ -428,31 +625,83 @@ export default function CreateQR() {
               >
                 {loading ? 'Saving...' : (id ? 'Update QR Code →' : 'Create QR Code →')}
               </button>
+              <button 
+                className="btn btn-ghost" 
+                onClick={() => {
+                  setQrType('url');
+                  setIsDynamic(true);
+                  setFormData({
+                    title: '',
+                    destination_url: '',
+                    slug: '',
+                    qr_type: 'url',
+                    content_data: {},
+                    style: {
+                      dot_color: '#1A1916',
+                      bg_color: '#FFFFFF',
+                      dot_style: 'square',
+                      corner_style: 'square',
+                      error_correction: 'M',
+                      output_size: 400,
+                      logo_url: ''
+                    },
+                    options: {
+                      password_protect: false,
+                      password: '',
+                      expiry_date_enabled: false,
+                      expiry_date: '',
+                      scan_limit_enabled: false,
+                      scan_limit: 100
+                    }
+                  });
+                }}
+              >
+                Reset
+              </button>
             </div>
           </div>
 
           {/* Right: Preview */}
-          <div className="preview-pane">
-            <div className="preview-sticky">
-              <div className="preview-card">
-                <div className="preview-header">
-                  <div className="preview-dots"><span></span><span></span><span></span></div>
-                  <div className="preview-url" id="preview-dest">{getShortUrl()}</div>
-                </div>
-                <div className="preview-qr-wrap">
-                  <canvas ref={canvasRef} width="180" height="180" style={{ display: 'block', margin: '0 auto' }}></canvas>
-                </div>
-                <div className="preview-meta">
-                  <div className="meta-row"><span>Type</span><span id="preview-type">{qrType.toUpperCase()}</span></div>
-                  <div className="meta-row"><span>Mode</span><span id="preview-mode">{isDynamic ? 'Dynamic' : 'Static'}</span></div>
-                  <div className="meta-row"><span>Error correction</span><span id="preview-ec">{formData.style.error_correction}</span></div>
-                  <div className="meta-row"><span>Short URL</span><span id="preview-slug" style={{ color: 'var(--blue)' }}>{window.location.host}/{formData.slug || '———'}</span></div>
-                </div>
+          <div className="qr-preview-card">
+            <div className="card-title">Live preview</div>
+            <div className="qr-preview-frame">
+              <div ref={canvasRef} id="preview-canvas"></div>
+            </div>
+            <div className="qr-preview-slug" id="preview-slug">
+              {isDynamic ? `scnr.app/${formData.slug || '———'}` : 'Static QR'}
+            </div>
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text3)', marginBottom: '4px' }}>Destination</div>
+              <div style={{ fontSize: '13px', color: 'var(--text2)', wordBreak: 'break-all', lineHeight: '1.5' }} id="preview-dest">
+                {getShortUrl()}
               </div>
-              <div className="download-row">
-                <button className="btn btn-ghost" onClick={() => downloadPreview('png')}>PNG</button>
-                <button className="btn btn-ghost" onClick={() => downloadPreview('svg')}>SVG</button>
-                <button className="btn btn-ghost" onClick={() => downloadPreview('print')}>Print PDF</button>
+            </div>
+            <div className="divider"></div>
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text3)', marginBottom: '8px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Download</div>
+              <div className="dl-row">
+                <button className="dl-btn" onClick={() => downloadPreview('png')}>PNG</button>
+                <button className="dl-btn" onClick={() => downloadPreview('svg')}>SVG</button>
+                <button className="dl-btn" onClick={() => downloadPreview('print')}>Print PDF</button>
+              </div>
+            </div>
+            <div className="divider"></div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                <span style={{ color: 'var(--text3)' }}>Type</span>
+                <span style={{ color: 'var(--text)', fontWeight: 500 }} id="preview-type">{qrType.toUpperCase()}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                <span style={{ color: 'var(--text3)' }}>Mode</span>
+                <span className="chip" style={{ background: isDynamic ? 'var(--coral-ll)' : 'var(--surface3)', color: isDynamic ? 'var(--coral)' : 'var(--text2)' }} id="preview-mode">
+                  {isDynamic ? 'Dynamic' : 'Static'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                <span style={{ color: 'var(--text3)' }}>Error correction</span>
+                <span style={{ color: 'var(--text)', fontWeight: 500 }} id="preview-ec">
+                  {formData.style.error_correction} ({formData.style.error_correction === 'M' ? '15%' : formData.style.error_correction === 'H' ? '30%' : formData.style.error_correction === 'L' ? '7%' : '25%'})
+                </span>
               </div>
             </div>
           </div>
