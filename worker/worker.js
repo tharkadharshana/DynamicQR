@@ -32,17 +32,21 @@ export default {
     
     let config = await env.QR_CACHE.get(slug, { type: "json" });
 
+    // For better debugging and faster updates during testing, we'll check KV but fallback quickly.
+    // In production, increased TTL is better.
     if (!config) {
-      const res = await fetch(`${apiUrl}/internal/slug/${slug}`, {
+      console.log(`Cache miss for ${slug}, fetching from origin...`);
+      const res = await fetch(`${apiUrl.replace(/\/$/, '')}/internal/slug/${slug}`, {
         headers: { "x-internal-secret": internalSecret },
-        signal: AbortSignal.timeout(3000)
+        signal: AbortSignal.timeout(5000)
       });
       if (res.status === 404) return new Response("QR Not Found", { status: 404 });
-      if (!res.ok) return new Response("Service Unavailable", { status: 503 });
+      if (!res.ok) return new Response("Service Unavailable (Origin error)", { status: 503 });
       
       config = await res.json();
       config.scan_count = config.total_scans || 0;
-      ctx.waitUntil(env.QR_CACHE.put(slug, JSON.stringify(config), { expirationTtl: 300 }));
+      // Set a lower TTL (60s) for more responsive updates while user is testing
+      ctx.waitUntil(env.QR_CACHE.put(slug, JSON.stringify(config), { expirationTtl: 60 }));
     }
 
     // --- GATE ENGINE ---
@@ -144,15 +148,20 @@ export default {
     };
 
     if (apiUrl) {
+      const scanUrl = `${apiUrl.replace(/\/$/, '')}/internal/scan`;
       ctx.waitUntil(
-        fetch(`${apiUrl}/internal/scan`, {
+        fetch(scanUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "x-internal-secret": internalSecret
           },
           body: JSON.stringify(payload)
-        }).catch(err => {})
+        }).then(r => {
+          if (!r.ok) console.error(`Analytics failed: ${r.status}`);
+        }).catch(err => {
+          console.error(`Analytics network error: ${err.message}`);
+        })
       );
     }
 

@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, BarChart, Bar
 } from 'recharts';
+import { auth } from '../firebase';
 
 const COLORS = ['#1A1916', '#E85D3A', '#4D9EFF', '#3DCC7E', '#9B7FFF', '#F5A623', '#D0021B'];
 
@@ -24,16 +25,25 @@ export default function Analytics() {
   useEffect(() => {
     const fetchAnalytics = async () => {
       try {
+        const user = auth.currentUser;
+        if (!user) {
+          console.log("No user found, waiting...");
+          return;
+        }
+
+        const token = await user.getIdToken();
+        const headers = { 'Authorization': `Bearer ${token}` };
+
         const [sumRes, tsRes, devRes, ctryRes, browserRes, osRes, refRes, recentRes, advRes] = await Promise.all([
-          fetch(`/api/analytics/${slug}/summary`).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/timeseries?days=30`).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/devices`).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/countries`).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/browsers`).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/os`).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/referrers`).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/recent`).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/advanced`).then(r => r.json()),
+          fetch(`/api/analytics/${slug}/summary`, { headers }).then(r => r.json()),
+          fetch(`/api/analytics/${slug}/timeseries?days=30`, { headers }).then(r => r.json()),
+          fetch(`/api/analytics/${slug}/devices`, { headers }).then(r => r.json()),
+          fetch(`/api/analytics/${slug}/countries`, { headers }).then(r => r.json()),
+          fetch(`/api/analytics/${slug}/browsers`, { headers }).then(r => r.json()),
+          fetch(`/api/analytics/${slug}/os`, { headers }).then(r => r.json()),
+          fetch(`/api/analytics/${slug}/referrers`, { headers }).then(r => r.json()),
+          fetch(`/api/analytics/${slug}/recent`, { headers }).then(r => r.json()),
+          fetch(`/api/analytics/${slug}/advanced`, { headers }).then(r => r.json()),
         ]);
 
         setSummary(sumRes);
@@ -53,7 +63,7 @@ export default function Analytics() {
     };
 
     fetchAnalytics();
-  }, [slug]);
+  }, [slug, auth.currentUser]);
 
   if (loading) return <div className="flex justify-center items-center h-64">Loading analytics...</div>;
   if (!summary) return <div className="text-center py-12 text-zinc-500">No data available.</div>;

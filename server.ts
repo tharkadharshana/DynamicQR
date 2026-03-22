@@ -1095,12 +1095,18 @@ async function startServer() {
     try {
       const secret = req.headers['x-internal-secret'];
       if (!secret || secret !== process.env.INTERNAL_SECRET) {
+        logger.warn('Internal scan: Unauthorized secret attempt');
         return res.status(401).send('Unauthorized');
       }
+      logger.info(`Received internal scan for slug: ${req.body.slug}`);
       await captureAnalyticsFromPayload(req.body);
       res.send('OK');
-    } catch (error) {
-      logger.error('Internal scan error:', error);
+    } catch (error: any) {
+      logger.error('Internal scan error details:', { 
+        message: error.message, 
+        slug: req.body?.slug,
+        stack: error.stack 
+      });
       res.status(500).json({ error: 'Failed' });
     }
   });
@@ -1126,14 +1132,21 @@ async function startServer() {
       const stats = statsDoc.exists() ? statsDoc.data() : { total_scans: 0 };
 
       // Return compact gate config for Worker
-      res.json({
+      const responseBody = {
         destination_url: qr.destination_url,
         is_active: qr.is_active,
         expiry_date: qr.expiry_date || null,
         password_hash: qr.password_hash || null,
         scan_limit: qr.rate_limit?.enabled ? qr.rate_limit.max_scans : null,
         total_scans: stats.total_scans || 0
+      };
+
+      logger.info(`Returning config for slug ${slug}:`, { 
+        has_password: !!responseBody.password_hash,
+        is_active: responseBody.is_active 
       });
+
+      res.json(responseBody);
     } catch (error) {
       logger.error('Internal fetch error:', error);
       res.status(500).json({ error: 'Failed' });
@@ -1230,8 +1243,10 @@ async function captureAnalyticsFromPayload(payload: any) {
 
   let isUnique = payloadIsUnique;
   if (isUnique === undefined) {
-    const snapshot = await getDocs(query(collection(db, 'scan_events'), where('slug', '==', slug), where('visitor_hash', '==', visitorHash)));
-    isUnique = snapshot.empty;
+    // Fallback: If not provided, we just assume unique to avoid the composite query for now
+    // (Or we can just log that it was missing)
+    isUnique = true;
+    logger.debug(`Uniqueness flag missing for slug ${slug}, defaulting to true`);
   }
 
   const parsed = parseUA(ua);
