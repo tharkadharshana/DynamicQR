@@ -1,0 +1,226 @@
+{
+	"info": {
+		"name": "DynamicQR API Collection",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "QR Management",
+			"item": [
+				{
+					"name": "Create QR",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{accessToken}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"destination_url\": \"https://example.com\",\n  \"title\": \"My New QR\",\n  \"qr_type\": \"url\",\n  \"is_dynamic\": true\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{baseUrl}}/api/qr" }
+					}
+				},
+				{
+					"name": "List QRs",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{accessToken}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/qr" }
+					}
+				},
+				{
+					"name": "Get QR by Slug",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{accessToken}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/qr/:slug" },
+						"variable": [ { "key": "slug", "value": "testqik88" } ]
+					}
+				},
+				{
+					"name": "Update QR",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{accessToken}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"title\": \"Updated Title\",\n  \"is_active\": true\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{baseUrl}}/api/qr/:slug" },
+						"variable": [ { "key": "slug", "value": "testqik88" } ]
+					}
+				},
+				{
+					"name": "Delete QR",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{accessToken}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/qr/:slug" },
+						"variable": [ { "key": "slug", "value": "testqik88" } ]
+					}
+				}
+			]
+		},
+		{
+			"name": "Analytics",
+			"item": [
+				{
+					"name": "Summary Analytics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{accessToken}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/analytics/:slug/summary" },
+						"variable": [ { "key": "slug", "value": "testqik88" } ]
+					}
+				},
+				{
+					"name": "Timeseries Analytics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{accessToken}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/analytics/:slug/timeseries?days=30" },
+						"variable": [ { "key": "slug", "value": "testqik88" } ]
+					}
+				},
+				{
+					"name": "Device Breakdown",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{accessToken}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/analytics/:slug/devices" },
+						"variable": [ { "key": "slug", "value": "testqik88" } ]
+					}
+				},
+				{
+					"name": "Country Breakdown",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{accessToken}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/analytics/:slug/countries" },
+						"variable": [ { "key": "slug", "value": "testqik88" } ]
+					}
+				},
+				{
+					"name": "Account Analytics Overview",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{accessToken}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/analytics/account/:uid" },
+						"variable": [ { "key": "uid", "value": "your-firebase-uid" } ]
+					}
+				}
+			]
+		},
+		{
+			"name": "Billing & User Info",
+			"item": [
+				{
+					"name": "Get User Plan",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{accessToken}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/api/user/plan" }
+					}
+				},
+				{
+					"name": "Create Checkout",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Authorization", "value": "Bearer {{accessToken}}" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"plan\": \"pro\"\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{baseUrl}}/api/billing/checkout" }
+					}
+				}
+			]
+		},
+		{
+			"name": "Internal (Worker)",
+			"item": [
+				{
+					"name": "Get Slug Config",
+					"request": {
+						"method": "GET",
+						"header": [
+							{ "key": "x-internal-secret", "value": "{{internalSecret}}" }
+						],
+						"url": { "raw": "{{baseUrl}}/internal/slug/:slug" },
+						"variable": [ { "key": "slug", "value": "testqik88" } ]
+					}
+				},
+				{
+					"name": "Submit Scan Analytics",
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "x-internal-secret", "value": "{{internalSecret}}" },
+							{ "key": "Content-Type", "value": "application/json" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"slug\": \"testqik88\",\n  \"ip\": \"8.8.8.8\",\n  \"ua\": \"Mozilla/5.0...\",\n  \"country\": \"US\",\n  \"is_unique\": true\n}",
+							"options": { "raw": { "language": "json" } }
+						},
+						"url": { "raw": "{{baseUrl}}/internal/scan" }
+					}
+				}
+			]
+		},
+		{
+			"name": "Public Redirects",
+			"item": [
+				{
+					"name": "Gateway Redirect",
+					"request": {
+						"method": "GET",
+						"url": { "raw": "{{baseUrl}}/:slug" },
+						"variable": [ { "key": "slug", "value": "testqik88" } ]
+					}
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": { "type": "text/javascript", "exec": [ "" ] }
+		},
+		{
+			"listen": "test",
+			"script": { "type": "text/javascript", "exec": [ "" ] }
+		}
+	],
+	"variable": [
+		{ "key": "baseUrl", "value": "http://localhost:3000", "type": "string" },
+		{ "key": "accessToken", "value": "your-firebase-id-token", "type": "string" },
+		{ "key": "internalSecret", "value": "d7a8b9c0e1f2g3h4i5j6k7l8m9n0p1q2", "type": "string" }
+	]
+}
