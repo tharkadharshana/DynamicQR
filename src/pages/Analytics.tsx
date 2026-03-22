@@ -9,8 +9,11 @@ import { auth } from '../firebase';
 const COLORS = ['#1A1916', '#E85D3A', '#4D9EFF', '#3DCC7E', '#9B7FFF', '#F5A623', '#D0021B'];
 
 export default function Analytics() {
-  const { slug } = useParams();
+  const { slug: initialSlug } = useParams();
   const navigate = useNavigate();
+  const [qrCodes, setQrCodes] = useState<any[]>([]);
+  const [selectedSlugs, setSelectedSlugs] = useState<string[]>(initialSlug ? [initialSlug] : []);
+  const [showMultiSelect, setShowMultiSelect] = useState(false);
   const [summary, setSummary] = useState<any>(null);
   const [timeseries, setTimeseries] = useState<any[]>([]);
   const [devices, setDevices] = useState<any[]>([]);
@@ -23,7 +26,28 @@ export default function Analytics() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const fetchQRs = async () => {
+      try {
+        const user = auth.currentUser;
+        if (!user) return;
+        const token = await user.getIdToken();
+        const res = await fetch('/api/qr', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setQrCodes(data);
+        }
+      } catch (error) {
+        console.error("Error fetching QRs:", error);
+      }
+    };
+    fetchQRs();
+  }, [auth.currentUser]);
+
+  useEffect(() => {
     const fetchAnalytics = async () => {
+      setLoading(true);
       try {
         const user = auth.currentUser;
         if (!user) {
@@ -34,16 +58,28 @@ export default function Analytics() {
         const token = await user.getIdToken();
         const headers = { 'Authorization': `Bearer ${token}` };
 
-        const [sumRes, tsRes, devRes, ctryRes, browserRes, osRes, refRes, recentRes, advRes] = await Promise.all([
-          fetch(`/api/analytics/${slug}/summary`, { headers }).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/timeseries?days=30`, { headers }).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/devices`, { headers }).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/countries`, { headers }).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/browsers`, { headers }).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/os`, { headers }).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/referrers`, { headers }).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/recent`, { headers }).then(r => r.json()),
-          fetch(`/api/analytics/${slug}/advanced`, { headers }).then(r => r.json()),
+        // If no specific slugs selected, or "all" is intended, use account endpoints without slugs filter
+        // If specific slugs selected, use account endpoints with slugs filter
+        // If exactly one slug selected, use the specific slug endpoint (for advanced data)
+        
+        let baseUrl = `/api/analytics/account/${user.uid}`;
+        let queryParams = '';
+
+        if (selectedSlugs.length === 1) {
+          baseUrl = `/api/analytics/${selectedSlugs[0]}`;
+        } else if (selectedSlugs.length > 1) {
+          queryParams = `?slugs=${selectedSlugs.join(',')}`;
+        }
+
+        const [sumRes, tsRes, devRes, ctryRes, browserRes, osRes, refRes, recentRes] = await Promise.all([
+          fetch(`${baseUrl}/summary${queryParams}`, { headers }).then(r => r.json()),
+          fetch(`${baseUrl}/timeseries${queryParams}${queryParams ? '&' : '?'}days=30`, { headers }).then(r => r.json()),
+          fetch(`${baseUrl}/devices${queryParams}`, { headers }).then(r => r.json()),
+          fetch(`${baseUrl}/countries${queryParams}`, { headers }).then(r => r.json()),
+          fetch(`${baseUrl}/browsers${queryParams}`, { headers }).then(r => r.json()),
+          fetch(`${baseUrl}/os${queryParams}`, { headers }).then(r => r.json()),
+          fetch(`${baseUrl}/referrers${queryParams}`, { headers }).then(r => r.json()),
+          fetch(`${baseUrl}/recent${queryParams}`, { headers }).then(r => r.json()),
         ]);
 
         setSummary(sumRes);
@@ -54,7 +90,13 @@ export default function Analytics() {
         setOsData(osRes);
         setReferrers(refRes);
         setRecentScans(recentRes);
-        setAdvanced(advRes);
+        
+        if (selectedSlugs.length === 1) {
+          const advRes = await fetch(`${baseUrl}/advanced`, { headers }).then(r => r.json());
+          setAdvanced(advRes);
+        } else {
+          setAdvanced(null);
+        }
       } catch (error) {
         console.error("Error fetching analytics:", error);
       } finally {
@@ -63,17 +105,89 @@ export default function Analytics() {
     };
 
     fetchAnalytics();
-  }, [slug, auth.currentUser]);
+  }, [selectedSlugs, auth.currentUser]);
 
-  if (loading) return <div className="flex justify-center items-center h-64">Loading analytics...</div>;
-  if (!summary) return <div className="text-center py-12 text-zinc-500">No data available.</div>;
+  const toggleSlug = (slug: string) => {
+    setSelectedSlugs(prev => {
+      if (prev.includes(slug)) {
+        return prev.filter(s => s !== slug);
+      } else {
+        return [...prev, slug];
+      }
+    });
+  };
+
+  if (loading && !summary) return <div className="flex justify-center items-center h-64">Loading analytics...</div>;
 
   return (
     <div className="content" style={{ padding: '28px', overflow: 'auto', height: '100%' }}>
       <div className="page active">
-        <div style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}>← Back</button>
+        <div style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}>← Back</button>
+            <h1 style={{ fontSize: '20px', fontWeight: 600, margin: 0 }}>Analytics</h1>
+          </div>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ position: 'relative' }}>
+              <button 
+                className="btn btn-outline btn-sm"
+                onClick={() => setShowMultiSelect(!showMultiSelect)}
+                style={{ minWidth: '200px', justifyContent: 'space-between' }}
+              >
+                {selectedSlugs.length === 0 ? 'All QR Codes' : 
+                 selectedSlugs.length === 1 ? (qrCodes.find(q => q.slug === selectedSlugs[0])?.title || selectedSlugs[0]) :
+                 `${selectedSlugs.length} QRs Selected`}
+                <span style={{ marginLeft: '8px' }}>▼</span>
+              </button>
+
+              {showMultiSelect && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: 0,
+                  marginTop: '4px',
+                  background: 'var(--bg)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '8px',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                  zIndex: 100,
+                  width: '240px',
+                  maxHeight: '300px',
+                  overflowY: 'auto',
+                  padding: '8px'
+                }}>
+                  <div 
+                    style={{ padding: '8px', borderBottom: '1px solid var(--border)', marginBottom: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}
+                    onClick={() => {
+                      setSelectedSlugs([]);
+                      setShowMultiSelect(false);
+                    }}
+                  >
+                    Select All
+                  </div>
+                  {qrCodes.map(qr => (
+                    <label key={qr.slug} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 8px', cursor: 'pointer', fontSize: '13px' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={selectedSlugs.includes(qr.slug)}
+                        onChange={() => toggleSlug(qr.slug)}
+                      />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {qr.title || qr.slug}
+                      </span>
+                    </label>
+                  ))}
+                  <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border)', textAlign: 'right' }}>
+                    <button className="btn btn-primary btn-xs" onClick={() => setShowMultiSelect(false)}>Done</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
+
+        {loading && <div style={{ position: 'absolute', top: '80px', right: '40px', fontSize: '12px', color: 'var(--coral)' }}>Updating...</div>}
 
         {/* Big stats */}
         <div className="stats-row mb24">

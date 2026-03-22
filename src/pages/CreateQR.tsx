@@ -269,115 +269,102 @@ export default function CreateQR() {
         <div className="create-layout">
           {/* Left: Form */}
           <div>
-            {/* QR type selector */}
-            <div className="card mb16">
-              <div className="card-title">QR code type</div>
-              <div className="qr-type-tabs">
-                <button className={`qr-type-tab ${qrType === 'url' ? 'active' : ''}`} onClick={() => { setQrType('url'); setFormData({...formData, qr_type: 'url'}); }}>URL</button>
-                <button className={`qr-type-tab ${qrType === 'vcard' ? 'active' : ''}`} onClick={() => { setQrType('vcard'); setFormData({...formData, qr_type: 'vcard'}); }}>vCard</button>
-                <button className={`qr-type-tab ${qrType === 'wifi' ? 'active' : ''}`} onClick={() => { setQrType('wifi'); setFormData({...formData, qr_type: 'wifi'}); }}>WiFi</button>
-                <button className={`qr-type-tab ${qrType === 'text' ? 'active' : ''}`} onClick={() => { setQrType('text'); setFormData({...formData, qr_type: 'text'}); }}>Text</button>
-                <button className={`qr-type-tab ${qrType === 'email' ? 'active' : ''}`} onClick={() => { setQrType('email'); setFormData({...formData, qr_type: 'email'}); }}>Email</button>
+              {/* QR Name field */}
+              <div className="form-section">
+                <label className="form-label">QR Name *</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  placeholder="e.g. Restaurant Menu QR" 
+                  value={formData.title}
+                  onChange={(e) => setFormData({...formData, title: e.target.value})}
+                  required
+                />
               </div>
 
-              {/* URL fields */}
-              {qrType === 'url' && (
-                <div id="fields-url">
-                  <div className="form-section">
-                    <label className="form-label">Destination URL *</label>
-                    <input 
-                      type="url" 
-                      className={`form-input ${urlError ? 'error' : ''}`} 
-                      placeholder="https://yourwebsite.com" 
-                      value={formData.destination_url}
-                      onChange={(e) => setFormData({...formData, destination_url: e.target.value})}
-                    />
-                    {urlError && <div className="error-msg" style={{ display: 'block' }}>Please enter a valid URL starting with https://</div>}
-                  </div>
-                  <div className="form-section">
-                    <label className="form-label">QR Code title</label>
-                    <input 
-                      type="text" 
-                      className="form-input" 
-                      placeholder="e.g. Restaurant Menu QR" 
-                      value={formData.title}
-                      onChange={(e) => setFormData({...formData, title: e.target.value})}
-                    />
-                  </div>
+              {/* QR type selector */}
+              <div className="card mb16">
+                <div className="card-title">QR code type</div>
+                <div className="qr-type-tabs">
+                  <button className={`qr-type-tab ${qrType === 'url' ? 'active' : ''}`} onClick={() => { setQrType('url'); setFormData({...formData, qr_type: 'url'}); }}>URL</button>
+                  <button className={`qr-type-tab ${qrType === 'vcard' ? 'active' : ''}`} onClick={() => { setQrType('vcard'); setFormData({...formData, qr_type: 'vcard'}); }}>vCard</button>
+                  <button className={`qr-type-tab ${qrType === 'wifi' ? 'active' : ''}`} onClick={() => { setQrType('wifi'); setFormData({...formData, qr_type: 'wifi'}); }}>WiFi</button>
+                  <button className={`qr-type-tab ${qrType === 'text' ? 'active' : ''}`} onClick={() => { setQrType('text'); setFormData({...formData, qr_type: 'text'}); }}>Text</button>
+                  <button className={`qr-type-tab ${qrType === 'email' ? 'active' : ''}`} onClick={() => { setQrType('email'); setFormData({...formData, qr_type: 'email'}); }}>Email</button>
                 </div>
-              )}
 
-              {/* vCard fields */}
-              {qrType === 'vcard' && (
-                <div id="fields-vcard">
-                  <div className="grid-2 mb16" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                    <div className="form-section" style={{ marginBottom: 0 }}>
-                      <label className="form-label">First name</label>
-                      <input type="text" className="form-input" placeholder="Ashan" value={formData.content_data?.first_name || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, first_name: e.target.value}})} />
-                    </div>
-                    <div className="form-section" style={{ marginBottom: 0 }}>
-                      <label className="form-label">Last name</label>
-                      <input type="text" className="form-input" placeholder="Kumar" value={formData.content_data?.last_name || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, last_name: e.target.value}})} />
+                {/* URL fields */}
+                {qrType === 'url' && (
+                  <div id="fields-url">
+                    <div className="form-section">
+                      <label className="form-label">Destination URL *</label>
+                      <input 
+                        type="url" 
+                        className={`form-input ${urlError ? 'error' : ''}`} 
+                        placeholder="https://yourwebsite.com" 
+                        value={formData.destination_url}
+                        onChange={(e) => setFormData({...formData, destination_url: e.target.value})}
+                      />
+                      {urlError && <div className="error-msg" style={{ display: 'block' }}>Please enter a valid URL starting with https://</div>}
                     </div>
                   </div>
-                  <div className="form-section"><label className="form-label">Phone</label><input type="tel" className="form-input" placeholder="+94 77 123 4567" value={formData.content_data?.phone || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, phone: e.target.value}})} /></div>
-                  <div className="form-section"><label className="form-label">Email</label><input type="email" className="form-input" placeholder="ashan@email.com" value={formData.content_data?.email || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, email: e.target.value}})} /></div>
-                  <div className="form-section"><label className="form-label">Company</label><input type="text" className="form-input" placeholder="Company name" value={formData.content_data?.company || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, company: e.target.value}})} /></div>
-                  <div className="form-section"><label className="form-label">Website</label><input type="url" className="form-input" placeholder="https://yoursite.com" value={formData.content_data?.website || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, website: e.target.value}})} /></div>
-                  <div className="form-section">
-                    <label className="form-label">QR Code title</label>
-                    <input type="text" className="form-input" placeholder="e.g. My Contact Info" value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} />
-                  </div>
-                </div>
-              )}
+                )}
 
-              {/* WiFi fields */}
-              {qrType === 'wifi' && (
-                <div id="fields-wifi">
-                  <div className="form-section"><label className="form-label">Network name (SSID)</label><input type="text" className="form-input" placeholder="MyHomeWiFi" value={formData.content_data?.ssid || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, ssid: e.target.value}})} /></div>
-                  <div className="form-section"><label className="form-label">Password</label><input type="text" className="form-input" placeholder="password123" value={formData.content_data?.password || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, password: e.target.value}})} /></div>
-                  <div className="form-section">
-                    <label className="form-label">Security type</label>
-                    <select className="form-input" value={formData.content_data?.encryption || 'WPA'} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, encryption: e.target.value}})}>
-                      <option value="WPA">WPA/WPA2</option>
-                      <option value="WEP">WEP</option>
-                      <option value="">None (open)</option>
-                    </select>
+                {/* vCard fields */}
+                {qrType === 'vcard' && (
+                  <div id="fields-vcard">
+                    <div className="grid-2 mb16" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                      <div className="form-section" style={{ marginBottom: 0 }}>
+                        <label className="form-label">First name</label>
+                        <input type="text" className="form-input" placeholder="Ashan" value={formData.content_data?.first_name || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, first_name: e.target.value}})} />
+                      </div>
+                      <div className="form-section" style={{ marginBottom: 0 }}>
+                        <label className="form-label">Last name</label>
+                        <input type="text" className="form-input" placeholder="Kumar" value={formData.content_data?.last_name || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, last_name: e.target.value}})} />
+                      </div>
+                    </div>
+                    <div className="form-section"><label className="form-label">Phone</label><input type="tel" className="form-input" placeholder="+94 77 123 4567" value={formData.content_data?.phone || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, phone: e.target.value}})} /></div>
+                    <div className="form-section"><label className="form-label">Email</label><input type="email" className="form-input" placeholder="ashan@email.com" value={formData.content_data?.email || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, email: e.target.value}})} /></div>
+                    <div className="form-section"><label className="form-label">Company</label><input type="text" className="form-input" placeholder="Company name" value={formData.content_data?.company || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, company: e.target.value}})} /></div>
+                    <div className="form-section"><label className="form-label">Website</label><input type="url" className="form-input" placeholder="https://yoursite.com" value={formData.content_data?.website || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, website: e.target.value}})} /></div>
                   </div>
-                  <div className="form-section">
-                    <label className="form-label">QR Code title</label>
-                    <input type="text" className="form-input" placeholder="e.g. Guest WiFi" value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} />
-                  </div>
-                </div>
-              )}
+                )}
 
-              {/* Text fields */}
-              {qrType === 'text' && (
-                <div id="fields-text">
-                  <div className="form-section">
-                    <label className="form-label">Text content</label>
-                    <textarea className="form-input" placeholder="Enter any text, message, or note..." rows={4} value={formData.content_data?.text || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, text: e.target.value}})}></textarea>
+                {/* WiFi fields */}
+                {qrType === 'wifi' && (
+                  <div id="fields-wifi">
+                    <div className="form-section"><label className="form-label">Network name (SSID)</label><input type="text" className="form-input" placeholder="MyHomeWiFi" value={formData.content_data?.ssid || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, ssid: e.target.value}})} /></div>
+                    <div className="form-section"><label className="form-label">Password</label><input type="text" className="form-input" placeholder="password123" value={formData.content_data?.password || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, password: e.target.value}})} /></div>
+                    <div className="form-section">
+                      <label className="form-label">Security type</label>
+                      <select className="form-input" value={formData.content_data?.encryption || 'WPA'} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, encryption: e.target.value}})}>
+                        <option value="WPA">WPA/WPA2</option>
+                        <option value="WEP">WEP</option>
+                        <option value="">None (open)</option>
+                      </select>
+                    </div>
                   </div>
-                  <div className="form-section">
-                    <label className="form-label">QR Code title</label>
-                    <input type="text" className="form-input" placeholder="e.g. Secret Message" value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} />
-                  </div>
-                </div>
-              )}
+                )}
 
-              {/* Email fields */}
-              {qrType === 'email' && (
-                <div id="fields-email">
-                  <div className="form-section"><label className="form-label">Recipient email</label><input type="email" className="form-input" placeholder="hello@example.com" value={formData.content_data?.email || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, email: e.target.value}})} /></div>
-                  <div className="form-section"><label className="form-label">Subject</label><input type="text" className="form-input" placeholder="Subject line" value={formData.content_data?.subject || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, subject: e.target.value}})} /></div>
-                  <div className="form-section"><label className="form-label">Body (optional)</label><textarea className="form-input" placeholder="Message body..." rows={3} value={formData.content_data?.body || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, body: e.target.value}})}></textarea></div>
-                  <div className="form-section">
-                    <label className="form-label">QR Code title</label>
-                    <input type="text" className="form-input" placeholder="e.g. Contact Support" value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} />
+                {/* Text fields */}
+                {qrType === 'text' && (
+                  <div id="fields-text">
+                    <div className="form-section">
+                      <label className="form-label">Text content</label>
+                      <textarea className="form-input" placeholder="Enter any text, message, or note..." rows={4} value={formData.content_data?.text || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, text: e.target.value}})}></textarea>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+
+                {/* Email fields */}
+                {qrType === 'email' && (
+                  <div id="fields-email">
+                    <div className="form-section"><label className="form-label">Recipient email</label><input type="email" className="form-input" placeholder="hello@example.com" value={formData.content_data?.email || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, email: e.target.value}})} /></div>
+                    <div className="form-section"><label className="form-label">Subject</label><input type="text" className="form-input" placeholder="Subject line" value={formData.content_data?.subject || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, subject: e.target.value}})} /></div>
+                    <div className="form-section"><label className="form-label">Body (optional)</label><textarea className="form-input" placeholder="Message body..." rows={3} value={formData.content_data?.body || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, body: e.target.value}})}></textarea></div>
+                  </div>
+                )}
+              </div>
 
             {/* Style */}
             <div className="card mb16">

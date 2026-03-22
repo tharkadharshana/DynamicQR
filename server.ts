@@ -827,9 +827,15 @@ async function startServer() {
       if (decodedUser.uid !== uid) {
         return res.status(403).send('Forbidden');
       }
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      const slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
+      const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
+      
+      if (requestedSlugs) {
+        slugs = slugs.filter(s => requestedSlugs.includes(s));
+      }
+
       if (slugs.length === 0) {
         return res.json({ total_scans: 0, unique_visitors: 0, total_qrs: 0, active_qrs: 0 });
       }
@@ -874,10 +880,15 @@ async function startServer() {
         return res.status(403).send('Forbidden');
       }
       const days = parseInt(req.query.days as string) || 30;
+      const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
 
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      const slugs = qrSnapshot.docs.map(doc => doc.data().slug);
+      let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
+      if (requestedSlugs) {
+        slugs = slugs.filter(s => requestedSlugs.includes(s));
+      }
+
       const dailyStats: Record<string, any> = {};
       
       for (let i = days - 1; i >= 0; i--) {
@@ -922,9 +933,15 @@ async function startServer() {
       if (decodedUser.uid !== uid) {
         return res.status(403).send('Forbidden');
       }
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      const slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
+      const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
+      
+      if (requestedSlugs) {
+        slugs = slugs.filter(s => requestedSlugs.includes(s));
+      }
+
       let mobile = 0, desktop = 0, tablet = 0;
       
       if (slugs.length > 0) {
@@ -967,9 +984,15 @@ async function startServer() {
       if (decodedUser.uid !== uid) {
         return res.status(403).send('Forbidden');
       }
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      const slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
+      const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
+      
+      if (requestedSlugs) {
+        slugs = slugs.filter(s => requestedSlugs.includes(s));
+      }
+
       const countries: Record<string, number> = {};
       
       if (slugs.length > 0) {
@@ -1003,6 +1026,151 @@ async function startServer() {
     }
   });
 
+  app.get('/api/analytics/account/:uid/browsers', authenticate, async (req, res) => {
+    try {
+      const { uid } = req.params;
+      const decodedUser = (req as any).user;
+      if (decodedUser.uid !== uid) return res.status(403).send('Forbidden');
+      
+      const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
+      
+      if (requestedSlugs) {
+        slugs = slugs.filter(s => requestedSlugs.includes(s));
+      }
+
+      const browsers: Record<string, number> = {};
+      if (slugs.length > 0) {
+        const chunks = [];
+        for (let i = 0; i < slugs.length; i += 30) chunks.push(slugs.slice(i, i + 30));
+        for (const chunk of chunks) {
+          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          statsSnapshot.forEach(doc => {
+            const data = doc.data();
+            const b = data.browsers || {};
+            for (const [browser, count] of Object.entries(b)) {
+              browsers[browser] = (browsers[browser] || 0) + (count as number);
+            }
+          });
+        }
+      }
+      const result = Object.entries(browsers).map(([browser, count]) => ({ browser, count })).sort((a, b) => b.count - a.count);
+      res.json(result);
+    } catch (error) {
+      logger.error('Account browsers error:', error);
+      res.status(500).json({ error: 'Failed to fetch account browsers' });
+    }
+  });
+
+  app.get('/api/analytics/account/:uid/os', authenticate, async (req, res) => {
+    try {
+      const { uid } = req.params;
+      const decodedUser = (req as any).user;
+      if (decodedUser.uid !== uid) return res.status(403).send('Forbidden');
+      
+      const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
+      
+      if (requestedSlugs) {
+        slugs = slugs.filter(s => requestedSlugs.includes(s));
+      }
+
+      const os: Record<string, number> = {};
+      if (slugs.length > 0) {
+        const chunks = [];
+        for (let i = 0; i < slugs.length; i += 30) chunks.push(slugs.slice(i, i + 30));
+        for (const chunk of chunks) {
+          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          statsSnapshot.forEach(doc => {
+            const data = doc.data();
+            const o = data.os || {};
+            for (const [name, count] of Object.entries(o)) {
+              os[name] = (os[name] || 0) + (count as number);
+            }
+          });
+        }
+      }
+      const result = Object.entries(os).map(([os, count]) => ({ os, count })).sort((a, b) => b.count - a.count);
+      res.json(result);
+    } catch (error) {
+      logger.error('Account OS error:', error);
+      res.status(500).json({ error: 'Failed to fetch account OS' });
+    }
+  });
+
+  app.get('/api/analytics/account/:uid/referrers', authenticate, async (req, res) => {
+    try {
+      const { uid } = req.params;
+      const decodedUser = (req as any).user;
+      if (decodedUser.uid !== uid) return res.status(403).send('Forbidden');
+      
+      const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
+      
+      if (requestedSlugs) {
+        slugs = slugs.filter(s => requestedSlugs.includes(s));
+      }
+
+      const referrers: Record<string, number> = {};
+      if (slugs.length > 0) {
+        const chunks = [];
+        for (let i = 0; i < slugs.length; i += 30) chunks.push(slugs.slice(i, i + 30));
+        for (const chunk of chunks) {
+          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          statsSnapshot.forEach(doc => {
+            const data = doc.data();
+            const r = data.referrers || {};
+            for (const [referrer, count] of Object.entries(r)) {
+              referrers[referrer] = (referrers[referrer] || 0) + (count as number);
+            }
+          });
+        }
+      }
+      const result = Object.entries(referrers).map(([referrer, count]) => ({ referrer, count })).sort((a, b) => b.count - a.count);
+      res.json(result);
+    } catch (error) {
+      logger.error('Account referrers error:', error);
+      res.status(500).json({ error: 'Failed to fetch account referrers' });
+    }
+  });
+
+  app.get('/api/analytics/account/:uid/summary', authenticate, async (req, res) => {
+    try {
+      const { uid } = req.params;
+      const decodedUser = (req as any).user;
+      if (decodedUser.uid !== uid) return res.status(403).send('Forbidden');
+      
+      const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
+      
+      if (requestedSlugs) {
+        slugs = slugs.filter(s => requestedSlugs.includes(s));
+      }
+
+      let total_scans = 0, unique_visitors = 0;
+      if (slugs.length > 0) {
+        const chunks = [];
+        for (let i = 0; i < slugs.length; i += 30) chunks.push(slugs.slice(i, i + 30));
+        for (const chunk of chunks) {
+          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          statsSnapshot.forEach(doc => {
+            const data = doc.data();
+            total_scans += (data.total_scans || 0);
+            unique_visitors += (data.unique_scans || 0);
+          });
+        }
+      }
+      res.json({ total_scans, unique_visitors, total_qrs: slugs.length });
+    } catch (error) {
+      logger.error('Account summary error:', error);
+      res.status(500).json({ error: 'Failed to fetch account summary' });
+    }
+  });
+
   app.get('/api/analytics/account/:uid/recent', authenticate, async (req, res) => {
     try {
       const { uid } = req.params;
@@ -1011,9 +1179,15 @@ async function startServer() {
       if (decodedUser.uid !== uid) {
         return res.status(403).send('Forbidden');
       }
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      const slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
+      const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
+      
+      if (requestedSlugs) {
+        slugs = slugs.filter(s => requestedSlugs.includes(s));
+      }
+
       if (slugs.length === 0) return res.json([]);
       
       const recentScans: any[] = [];
