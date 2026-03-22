@@ -3,25 +3,42 @@ import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import cors from 'cors';
 import admin from 'firebase-admin';
-import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, writeBatch, query, where, orderBy, limit, serverTimestamp, increment, documentId } from 'firebase/firestore';
 import crypto from 'crypto';
 import { customAlphabet } from 'nanoid';
 import QRCode from 'qrcode';
 import logger from "./logger.ts";
 import fs from 'fs';
 
-// Load Firebase config
-const firebaseConfig = JSON.parse(fs.readFileSync('./firebase-applet-config.json', 'utf-8'));
+// Initialize Firebase Admin
+admin.initializeApp();
+const db = admin.firestore();
 
-// Initialize Firebase Admin for Auth
-admin.initializeApp({
-  projectId: firebaseConfig.projectId,
+// Shim to keep existing call patterns working
+const getDoc = (ref: any) => ref.get().then((snap: any) => {
+  if (snap && typeof snap.exists === 'boolean') {
+    const originalExists = snap.exists;
+    (snap as any).exists = () => originalExists;
+  }
+  return snap;
 });
-
-// Initialize Firebase Client SDK for Firestore
-const clientApp = initializeApp(firebaseConfig);
-const db = getFirestore(clientApp, firebaseConfig.firestoreDatabaseId);
+const getDocs = (query: any) => query.get();
+const setDoc = (ref: any, data: any, opts?: any) => opts?.merge ? ref.set(data, { merge: true }) : ref.set(data);
+const updateDoc = (ref: any, data: any) => ref.update(data);
+const addDoc = (col: any, data: any) => col.add(data);
+const writeBatch = (_db: any) => db.batch();
+const serverTimestamp = () => admin.firestore.FieldValue.serverTimestamp();
+const increment = (n: number) => admin.firestore.FieldValue.increment(n);
+const collection = (_db: any, name: string) => db.collection(name);
+const doc = (_db: any, col: string, id: string) => db.collection(col).doc(id);
+const query = (colRef: any, ...constraints: any[]) => {
+  let q = colRef;
+  for (const c of constraints) q = c(q);
+  return q;
+};
+const where = (field: any, op: any, val: any) => (q: any) => q.where(field, op, val);
+const orderBy = (field: string, dir?: any) => (q: any) => q.orderBy(field, dir || 'asc');
+const limit = (n: number) => (q: any) => q.limit(n);
+const documentId = () => admin.firestore.FieldPath.documentId();
 
 async function startServer() {
   const app = express();
