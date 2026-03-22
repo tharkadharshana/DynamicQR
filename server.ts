@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
@@ -11,13 +12,24 @@ import logger from "./logger.ts";
 import fs from 'fs';
 
 // Initialize Firebase Admin
-const firebaseConfig = JSON.parse(fs.readFileSync('./firebase-applet-config.json', 'utf-8'));
+let firebaseConfig: any = {};
+try {
+  if (fs.existsSync('./firebase-applet-config.json')) {
+    firebaseConfig = JSON.parse(fs.readFileSync('./firebase-applet-config.json', 'utf-8'));
+  }
+} catch (err) {
+  logger.warn('Could not read firebase-applet-config.json, falling back to env vars');
+}
+
+const projectId = process.env.FIREBASE_PROJECT_ID || firebaseConfig.projectId;
+const dbId = process.env.FIRESTORE_DATABASE_ID || firebaseConfig.firestoreDatabaseId;
+
 if (!admin.apps.length) {
   admin.initializeApp({
-    projectId: firebaseConfig.projectId,
+    projectId: projectId,
   });
 }
-const db = getFirestore(firebaseConfig.firestoreDatabaseId);
+const db = getFirestore(dbId);
 
 // Shim to keep existing call patterns working
 const getDoc = (ref: any) => ref.get().then((snap: any) => {
@@ -71,10 +83,17 @@ async function startServer() {
   const PORT = Number(process.env.PORT) || 3000;
 
   logger.info(`Starting server in ${process.env.NODE_ENV} mode`);
+  
+  // CORS configuration
   const corsOrigin = process.env.APP_URL || '*';
   logger.info(`CORS Origin: ${corsOrigin}`);
-
-  app.use(cors({ origin: corsOrigin }));
+  
+  app.use(cors({ 
+    origin: corsOrigin,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-internal-secret']
+  }));
   app.use(express.json());
 
   // Middlewares
@@ -89,9 +108,13 @@ async function startServer() {
       const decoded = await admin.auth().verifyIdToken(token);
       (req as any).user = decoded;
       next();
-    } catch (error) {
-      logger.error(`Auth error for ${req.path}:`, error);
-      res.status(401).send('Unauthorized');
+    } catch (error: any) {
+      logger.error(`Auth error for ${req.path}:`, { 
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      });
+      res.status(401).send(`Unauthorized: ${error.message || 'Invalid token'}`);
     }
   };
 
@@ -283,10 +306,17 @@ async function startServer() {
       const { destination_url, title, style, rate_limit, is_dynamic, qr_type, content_data, expiry_date, password } = req.body;
       const uid = user.uid;
 
-      logger.info(`Creating QR for user ${uid}, type: ${qr_type}`);
+      logger.info(`Starting QR creation for user ${uid}`, { type: qr_type, is_dynamic });
 
-      // Plan Limit Enforcement
-      const userDoc = await getDoc(doc(db, 'users', uid));
+      // 1. Plan Limit Enforcement
+      let userDoc;
+      try {
+        userDoc = await getDoc(doc(db, 'users', uid));
+      } catch (err: any) {
+        logger.error('Failed to fetch user doc for plan check', { error: err.message });
+        throw new Error(`User lookup failed: ${err.message}`);
+      }
+      
       const plan = userDoc.exists() ? userDoc.data()?.plan || 'free' : 'free';
       const plans: Record<string, any> = {
         free: { qr_codes: 3 },
@@ -295,8 +325,16 @@ async function startServer() {
       };
       const limits = plans[plan] || plans.free;
 
-      // Single field query to avoid index issues
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      logger.info(`Checking limits for plan: ${plan}`, { limits });
+
+      let qrSnapshot;
+      try {
+        qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      } catch (err: any) {
+        logger.error('Failed to fetch user QRs for limit check', { error: err.message });
+        throw new Error(`QR lookup failed: ${err.message}`);
+      }
+      
       const activeCount = qrSnapshot.docs.filter((doc: any) => doc.data().is_active !== false).length;
       
       if (limits.qr_codes !== Infinity && activeCount >= limits.qr_codes) {
@@ -304,8 +342,15 @@ async function startServer() {
         return res.status(403).json({ error: 'Plan limit reached. Upgrade to create more QRs.' });
       }
 
-      const slug = await createUniqueSlug();
-      logger.info(`Generated slug: ${slug}`);
+      // 2. Slug Generation
+      let slug;
+      try {
+        slug = await createUniqueSlug();
+        logger.info(`Successfully generated unique slug: ${slug}`);
+      } catch (err: any) {
+        logger.error('Slug generation failed', { error: err.message });
+        throw new Error(`Slug generation failed: ${err.message}`);
+      }
       
       const defaultStyle = { dot_color: '#000000', bg_color: '#ffffff' };
       const activeStyle = style || defaultStyle;
@@ -327,19 +372,25 @@ async function startServer() {
         }
       }
 
-      // Generate raw SVG
-      const qrSvg = await QRCode.toString(qrContent, {
-        type: 'svg',
-        color: { dark: activeStyle.dot_color, light: activeStyle.bg_color },
-        margin: 1
-      });
+      // 3. SVG Generation
+      let qrSvg;
+      try {
+        qrSvg = await QRCode.toString(qrContent, {
+          type: 'svg',
+          color: { dark: activeStyle.dot_color, light: activeStyle.bg_color },
+          margin: 1
+        });
+        logger.info('Successfully generated QR SVG');
+      } catch (err: any) {
+        logger.error('QR SVG generation failed', { error: err.message });
+        throw new Error(`QR Image generation failed: ${err.message}`);
+      }
 
       let passwordHash = null;
       if (password) {
         passwordHash = crypto.createHash('sha256').update(password + slug).digest('hex');
       }
 
-      // EXACT SCHEMA for /qr_codes/{slug}
       const qrDoc = {
         slug,
         user_uid: user.uid,
@@ -357,7 +408,6 @@ async function startServer() {
         created_at: serverTimestamp()
       };
 
-      // EXACT SCHEMA for /qr_stats/{slug} initialization
       const statsDoc = {
         total_scans: 0,
         unique_scans: 0,
@@ -372,19 +422,26 @@ async function startServer() {
         last_scan_at: null
       };
 
-      const batch = writeBatch(db);
-      batch.set(doc(db, 'qr_codes', slug), qrDoc);
-      batch.set(doc(db, 'qr_stats', slug), statsDoc);
-      await batch.commit();
+      // 4. Firestore Commit
+      try {
+        const batch = writeBatch(db);
+        batch.set(doc(db, 'qr_codes', slug), qrDoc);
+        batch.set(doc(db, 'qr_stats', slug), statsDoc);
+        await batch.commit();
+        logger.info(`Successfully saved QR and stats for ${slug}`);
+      } catch (err: any) {
+        logger.error('Firestore batch commit failed', { error: err.message });
+        throw new Error(`Database save failed: ${err.message}`);
+      }
 
       res.status(201).json(qrDoc);
-    } catch (error) {
+    } catch (error: any) {
       logger.error('QR creation error details:', {
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : null,
+        message: error.message,
+        stack: error.stack,
         error
       });
-      res.status(500).json({ error: 'Failed' });
+      res.status(500).json({ error: error.message || 'Failed to create QR' });
     }
   });
 
