@@ -3,6 +3,7 @@ import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import cors from 'cors';
 import admin from 'firebase-admin';
+import { getFirestore, FieldValue, FieldPath } from 'firebase-admin/firestore';
 import crypto from 'crypto';
 import { customAlphabet } from 'nanoid';
 import QRCode from 'qrcode';
@@ -10,24 +11,49 @@ import logger from "./logger.ts";
 import fs from 'fs';
 
 // Initialize Firebase Admin
-admin.initializeApp();
-const db = admin.firestore();
+const firebaseConfig = JSON.parse(fs.readFileSync('./firebase-applet-config.json', 'utf-8'));
+if (!admin.apps.length) {
+  admin.initializeApp({
+    projectId: firebaseConfig.projectId,
+  });
+}
+const db = getFirestore(firebaseConfig.firestoreDatabaseId);
 
 // Shim to keep existing call patterns working
 const getDoc = (ref: any) => ref.get().then((snap: any) => {
   if (snap && typeof snap.exists === 'boolean') {
     const originalExists = snap.exists;
-    (snap as any).exists = () => originalExists;
+    try {
+      Object.defineProperty(snap, 'exists', {
+        value: () => originalExists,
+        configurable: true
+      });
+    } catch (e) {
+      // Fallback if defineProperty fails
+      (snap as any).exists = () => originalExists;
+    }
   }
   return snap;
 });
+
+async function testConnection() {
+  try {
+    // Test connection to the specific database
+    await db.collection('test_connection').doc('ping').get();
+    logger.info("Firestore connection successful to database: " + firebaseConfig.firestoreDatabaseId);
+  } catch (error) {
+    logger.error("Firestore connection test error:", error);
+  }
+}
+testConnection();
+
 const getDocs = (query: any) => query.get();
 const setDoc = (ref: any, data: any, opts?: any) => opts?.merge ? ref.set(data, { merge: true }) : ref.set(data);
 const updateDoc = (ref: any, data: any) => ref.update(data);
 const addDoc = (col: any, data: any) => col.add(data);
 const writeBatch = (_db: any) => db.batch();
-const serverTimestamp = () => admin.firestore.FieldValue.serverTimestamp();
-const increment = (n: number) => admin.firestore.FieldValue.increment(n);
+const serverTimestamp = () => FieldValue.serverTimestamp();
+const increment = (n: number) => FieldValue.increment(n);
 const collection = (_db: any, name: string) => db.collection(name);
 const doc = (_db: any, col: string, id: string) => db.collection(col).doc(id);
 const query = (colRef: any, ...constraints: any[]) => {
@@ -38,26 +64,33 @@ const query = (colRef: any, ...constraints: any[]) => {
 const where = (field: any, op: any, val: any) => (q: any) => q.where(field, op, val);
 const orderBy = (field: string, dir?: any) => (q: any) => q.orderBy(field, dir || 'asc');
 const limit = (n: number) => (q: any) => q.limit(n);
-const documentId = () => admin.firestore.FieldPath.documentId();
+const documentId = () => FieldPath.documentId();
 
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
-  app.use(cors({ origin: process.env.APP_URL }));
+  logger.info(`Starting server in ${process.env.NODE_ENV} mode`);
+  const corsOrigin = process.env.APP_URL || '*';
+  logger.info(`CORS Origin: ${corsOrigin}`);
+
+  app.use(cors({ origin: corsOrigin }));
   app.use(express.json());
 
   // Middlewares
   const authenticate = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
       const authHeader = req.headers.authorization;
-      if (!authHeader?.startsWith('Bearer ')) return res.status(401).send('Unauthorized');
+      if (!authHeader?.startsWith('Bearer ')) {
+        logger.warn(`Missing or invalid auth header for ${req.path}`);
+        return res.status(401).send('Unauthorized');
+      }
       const token = authHeader.split('Bearer ')[1];
       const decoded = await admin.auth().verifyIdToken(token);
       (req as any).user = decoded;
       next();
     } catch (error) {
-      logger.error('Auth error:', error);
+      logger.error(`Auth error for ${req.path}:`, error);
       res.status(401).send('Unauthorized');
     }
   };
@@ -88,14 +121,9 @@ async function startServer() {
   });
 
   // User Plan API
-  app.get('/api/user/plan', async (req, res) => {
+  app.get('/api/user/plan', authenticate, async (req, res) => {
     try {
-      const authHeader = req.headers.authorization;
-      if (!authHeader?.startsWith('Bearer ')) return res.status(401).send('Unauthorized');
-      const token = authHeader.split('Bearer ')[1];
-      const decoded = await admin.auth().verifyIdToken(token);
-      
-      const uid = decoded.uid;
+      const uid = (req as any).user.uid;
       
       // Get user's plan from Firestore (or default to free)
       const userDoc = await getDoc(doc(db, 'users', uid));
@@ -127,15 +155,11 @@ async function startServer() {
   });
 
   // Billing Checkout API
-  app.post('/api/billing/checkout', async (req, res) => {
+  app.post('/api/billing/checkout', authenticate, async (req, res) => {
     try {
-      const authHeader = req.headers.authorization;
-      if (!authHeader?.startsWith('Bearer ')) return res.status(401).send('Unauthorized');
-      const token = authHeader.split('Bearer ')[1];
-      const decoded = await admin.auth().verifyIdToken(token);
-      
+      const user = (req as any).user;
       const { plan } = req.body;
-      const uid = decoded.uid;
+      const uid = user.uid;
       
       const prices: Record<string, number> = {
         pro: 7,
@@ -174,9 +198,9 @@ async function startServer() {
         items: `${plan.toUpperCase()} Plan Subscription`,
         currency,
         amount,
-        first_name: decoded.name?.split(' ')[0] || 'User',
-        last_name: decoded.name?.split(' ').slice(1).join(' ') || '',
-        email: decoded.email || '',
+        first_name: user.name?.split(' ')[0] || 'User',
+        last_name: user.name?.split(' ').slice(1).join(' ') || '',
+        email: user.email || '',
         phone: '0000000000',
         address: 'N/A',
         city: 'N/A',
@@ -253,15 +277,13 @@ async function startServer() {
   }
 
   // ── EXACT SCHEMA CREATION for qr_codes AND qr_stats ─────────
-  app.post('/api/qr', async (req, res) => {
+  app.post('/api/qr', authenticate, async (req, res) => {
     try {
-      const authHeader = req.headers.authorization;
-      if (!authHeader?.startsWith('Bearer ')) return res.status(401).send('Unauthorized');
-      const token = authHeader.split('Bearer ')[1];
-      const decoded = await admin.auth().verifyIdToken(token);
-      
+      const user = (req as any).user;
       const { destination_url, title, style, rate_limit, is_dynamic, qr_type, content_data, expiry_date, password } = req.body;
-      const uid = decoded.uid;
+      const uid = user.uid;
+
+      logger.info(`Creating QR for user ${uid}, type: ${qr_type}`);
 
       // Plan Limit Enforcement
       const userDoc = await getDoc(doc(db, 'users', uid));
@@ -273,12 +295,17 @@ async function startServer() {
       };
       const limits = plans[plan] || plans.free;
 
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid), where('is_active', '==', true)));
-      if (limits.qr_codes !== Infinity && qrSnapshot.size >= limits.qr_codes) {
+      // Single field query to avoid index issues
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      const activeCount = qrSnapshot.docs.filter((doc: any) => doc.data().is_active !== false).length;
+      
+      if (limits.qr_codes !== Infinity && activeCount >= limits.qr_codes) {
+        logger.warn(`User ${uid} reached plan limit (${activeCount}/${limits.qr_codes})`);
         return res.status(403).json({ error: 'Plan limit reached. Upgrade to create more QRs.' });
       }
 
       const slug = await createUniqueSlug();
+      logger.info(`Generated slug: ${slug}`);
       
       const defaultStyle = { dot_color: '#000000', bg_color: '#ffffff' };
       const activeStyle = style || defaultStyle;
@@ -315,7 +342,7 @@ async function startServer() {
       // EXACT SCHEMA for /qr_codes/{slug}
       const qrDoc = {
         slug,
-        user_uid: decoded.uid,
+        user_uid: user.uid,
         destination_url: destination_url || '',
         qr_type: qr_type || 'url',
         content_data: content_data || null,
@@ -352,7 +379,11 @@ async function startServer() {
 
       res.status(201).json(qrDoc);
     } catch (error) {
-      logger.error('QR creation error:', error);
+      logger.error('QR creation error details:', {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : null,
+        error
+      });
       res.status(500).json({ error: 'Failed' });
     }
   });
@@ -361,9 +392,24 @@ async function startServer() {
   app.get('/api/qr', authenticate, async (req, res) => {
     try {
       const uid = (req as any).user.uid;
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid), where('is_active', '==', true)));
-      const qrs = qrSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      res.json(qrs);
+      // Single field query to avoid index issues
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      
+      const qrs = await Promise.all(qrSnapshot.docs
+        .map(async (docSnap: any) => {
+          const data = docSnap.data();
+          if (data.is_active === false) return null;
+          
+          // Fetch stats for each QR to satisfy dashboard requirements
+          const statsSnap = await getDoc(doc(db, 'qr_stats', data.slug));
+          return {
+            id: docSnap.id,
+            ...data,
+            stats: statsSnap.exists() ? statsSnap.data() : null
+          };
+        }));
+
+      res.json(qrs.filter(qr => qr !== null));
     } catch (error) {
       logger.error('QR list error:', error);
       res.status(500).json({ error: 'Failed to list QR codes' });
@@ -1106,7 +1152,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*all', (req, res) => {
+    app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
