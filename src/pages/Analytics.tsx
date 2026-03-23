@@ -131,9 +131,9 @@ export default function Analytics() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}>← Back</button>
             <div>
-              <h1 style={{ fontSize: '20px', fontWeight: 600, margin: 0 }}>
+              <div style={{ fontFamily: 'var(--font-h)', fontSize: '20px', fontWeight: 600, color: 'var(--text)', letterSpacing: '-0.3px' }}>
                 {qrDetails?.title || (selectedSlugs.length === 1 ? selectedSlugs[0] : 'Analytics')}
-              </h1>
+              </div>
               {selectedSlugs.length === 1 && (
                 <div style={{ fontSize: '12px', color: 'var(--text3)', marginTop: '2px' }}>
                   qr.tharkak.com/{selectedSlugs[0]}
@@ -217,7 +217,14 @@ export default function Analytics() {
           </div>
           <div className="stat-card">
             <div className="stat-label">Avg scans / day</div>
-            <div className="stat-val">{Math.round((summary.total_scans || 0) / 30).toLocaleString()}</div>
+            <div className="stat-val">{(() => {
+              const total = summary?.total_scans || 0;
+              if (!total) return 0;
+              const days = summary?.first_scan
+                ? Math.max(1, Math.ceil((Date.now() - new Date(summary.first_scan + 'T00:00').getTime()) / 86400000))
+                : 1;
+              return Math.round(total / days).toLocaleString();
+            })()}</div>
             <span className="stat-change up">↑ 0%</span>
           </div>
           <div className="stat-card">
@@ -248,7 +255,7 @@ export default function Analytics() {
                   <XAxis 
                     dataKey="date" 
                     tickFormatter={(val) => {
-                      const d = new Date(val);
+                      const d = new Date(val + 'T00:00');
                       return `${d.getMonth()+1}/${d.getDate()}`;
                     }}
                     stroke="var(--text3)"

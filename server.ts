@@ -581,11 +581,16 @@ async function startServer() {
       
       const last_scan = data.last_scan_at?.toDate() || null;
 
+      // Derive first scan date from the days map (earliest key)
+      const daysMap = data.days || {};
+      const dayKeys = Object.keys(daysMap).sort(); // "2026-03-20", "2026-03-21", ...
+      const first_scan = dayKeys.length > 0 ? dayKeys[0] : null;
+
       res.json({
         total_scans,
         unique_visitors,
         mobile_pct,
-        first_scan: null,
+        first_scan,
         last_scan
       });
     } catch (error) {
@@ -858,12 +863,23 @@ async function startServer() {
         chunks.push(slugs.slice(i, i + 30));
       }
 
+      // Find earliest scan date across all QRs
+      let earliest_day: string | null = null;
+
       for (const chunk of chunks) {
         const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
         statsSnapshot.forEach(doc => {
           const data = doc.data();
           total_scans += (data.total_scans || 0);
           unique_visitors += (data.unique_scans || 0);
+          
+          // ADD THIS:
+          const days = Object.keys(data.days || {}).sort();
+          if (days.length > 0) {
+            if (!earliest_day || days[0] < earliest_day) {
+              earliest_day = days[0];
+            }
+          }
         });
       }
 
@@ -873,7 +889,8 @@ async function startServer() {
         total_scans,
         unique_visitors,
         total_qrs: slugs.length,
-        active_qrs
+        active_qrs,
+        first_scan: earliest_day
       });
     } catch (error) {
       logger.error('Account analytics error:', error);

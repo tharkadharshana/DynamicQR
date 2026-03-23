@@ -12,6 +12,7 @@ export default function AccountAnalytics() {
   const [accountStats, setAccountStats] = useState<any>(null);
   const [accountTimeseries, setAccountTimeseries] = useState<any[]>([]);
   const [qrPerformance, setQrPerformance] = useState<any[]>([]);
+  const [accountCountries, setAccountCountries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -23,15 +24,17 @@ export default function AccountAnalytics() {
         const token = await auth.currentUser.getIdToken();
         const headers = { 'Authorization': `Bearer ${token}` };
 
-        const [stats, timeseries, performance] = await Promise.all([
+        const [stats, timeseries, performance, countries] = await Promise.all([
           fetch(`/api/analytics/account/${auth.currentUser.uid}`, { headers }).then(res => res.json()),
           fetch(`/api/analytics/account/${auth.currentUser.uid}/timeseries?days=30`, { headers }).then(res => res.json()),
-          fetch(`/api/analytics/account/${auth.currentUser.uid}/performance`, { headers }).then(res => res.json())
+          fetch(`/api/analytics/account/${auth.currentUser.uid}/performance`, { headers }).then(res => res.json()),
+          fetch(`/api/analytics/account/${auth.currentUser.uid}/countries`, { headers }).then(res => res.json()),
         ]);
 
         setAccountStats(stats);
         setAccountTimeseries(timeseries);
         setQrPerformance(performance || []);
+        setAccountCountries(countries || []);
       } catch (err) {
         console.error("Failed to fetch account analytics", err);
       } finally {
@@ -63,7 +66,14 @@ export default function AccountAnalytics() {
           </div>
           <div className="stat-card">
             <div className="stat-label">Avg scans / day</div>
-            <div className="stat-val">{Math.round((accountStats?.total_scans || 0) / 30).toLocaleString()}</div>
+            <div className="stat-val">{(() => {
+              const total = accountStats?.total_scans || 0;
+              if (!total) return 0;
+              const days = accountStats?.first_scan
+                ? Math.max(1, Math.ceil((Date.now() - new Date(accountStats.first_scan + 'T00:00').getTime()) / 86400000))
+                : 1;
+              return Math.round(total / days).toLocaleString();
+            })()}</div>
             <span className="stat-change neutral">--</span>
           </div>
           <div className="stat-card">
@@ -73,8 +83,8 @@ export default function AccountAnalytics() {
           </div>
         </div>
 
-        {/* Line chart */}
-        <div className="grid-21 mb16" style={{ gridTemplateColumns: '1fr' }}>
+        {/* Line chart + Countries */}
+        <div className="grid-21 mb16">
           <div className="card">
             <div className="section-row">
               <span className="section-title">Scan trend — 30 days</span>
@@ -94,7 +104,7 @@ export default function AccountAnalytics() {
                   <XAxis 
                     dataKey="date" 
                     tickFormatter={(val) => {
-                      const d = new Date(val);
+                      const d = new Date(val + 'T00:00');
                       return `${d.getMonth()+1}/${d.getDate()}`;
                     }}
                     stroke="var(--text3)"
@@ -115,6 +125,20 @@ export default function AccountAnalytics() {
                   <Line type="monotone" dataKey="total_scans" name="Total" stroke="var(--coral)" strokeWidth={2} dot={false} />
                   <Line type="monotone" dataKey="unique_scans" name="Unique" stroke="var(--blue)" strokeWidth={2} dot={false} />
                 </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          <div className="card">
+            <div className="card-title">Top countries</div>
+            <div style={{ height: '200px', marginTop: '16px' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={accountCountries} layout="vertical" margin={{ top: 0, right: 0, left: 40, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="var(--border)" />
+                  <XAxis type="number" stroke="var(--text3)" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+                  <YAxis dataKey="country" type="category" stroke="var(--text3)" fontSize={11} tickLine={false} axisLine={false} />
+                  <Tooltip cursor={{fill: 'var(--surface2)'}} />
+                  <Bar dataKey="scans" name="Total Scans" fill="var(--blue)" radius={[0, 4, 4, 0]} barSize={16} />
+                </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
