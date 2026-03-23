@@ -18,21 +18,28 @@ export default function AccountAnalytics() {
   useEffect(() => {
     if (!auth.currentUser) return;
 
-    Promise.all([
-      fetch(`/api/analytics/account/${auth.currentUser.uid}`).then(res => res.json()),
-      fetch(`/api/analytics/account/${auth.currentUser.uid}/timeseries?days=30`).then(res => res.json()),
-      fetch(`/api/analytics/account/${auth.currentUser.uid}/performance`).then(res => res.json())
-    ])
-    .then(([stats, timeseries, performance]) => {
-      setAccountStats(stats);
-      setAccountTimeseries(timeseries);
-      setQrPerformance(performance || []);
-      setLoading(false);
-    })
-    .catch(err => {
-      console.error("Failed to fetch account analytics", err);
-      setLoading(false);
-    });
+    const fetchStats = async () => {
+      try {
+        const token = await auth.currentUser.getIdToken();
+        const headers = { 'Authorization': `Bearer ${token}` };
+
+        const [stats, timeseries, performance] = await Promise.all([
+          fetch(`/api/analytics/account/${auth.currentUser.uid}`, { headers }).then(res => res.json()),
+          fetch(`/api/analytics/account/${auth.currentUser.uid}/timeseries?days=30`, { headers }).then(res => res.json()),
+          fetch(`/api/analytics/account/${auth.currentUser.uid}/performance`, { headers }).then(res => res.json())
+        ]);
+
+        setAccountStats(stats);
+        setAccountTimeseries(timeseries);
+        setQrPerformance(performance || []);
+      } catch (err) {
+        console.error("Failed to fetch account analytics", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStats();
   }, [auth.currentUser]);
 
   if (loading) {

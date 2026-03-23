@@ -23,6 +23,7 @@ export default function Analytics() {
   const [referrers, setReferrers] = useState<any[]>([]);
   const [recentScans, setRecentScans] = useState<any[]>([]);
   const [advanced, setAdvanced] = useState<any>(null);
+  const [qrDetails, setQrDetails] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -58,10 +59,6 @@ export default function Analytics() {
         const token = await user.getIdToken();
         const headers = { 'Authorization': `Bearer ${token}` };
 
-        // If no specific slugs selected, or "all" is intended, use account endpoints without slugs filter
-        // If specific slugs selected, use account endpoints with slugs filter
-        // If exactly one slug selected, use the specific slug endpoint (for advanced data)
-        
         let baseUrl = `/api/analytics/account/${user.uid}`;
         let queryParams = '';
 
@@ -71,7 +68,7 @@ export default function Analytics() {
           queryParams = `?slugs=${selectedSlugs.join(',')}`;
         }
 
-        const [sumRes, tsRes, devRes, ctryRes, browserRes, osRes, refRes, recentRes] = await Promise.all([
+        const fetchPromises: Promise<any>[] = [
           fetch(`${baseUrl}/summary${queryParams}`, { headers }).then(r => r.json()),
           fetch(`${baseUrl}/timeseries${queryParams}${queryParams ? '&' : '?'}days=30`, { headers }).then(r => r.json()),
           fetch(`${baseUrl}/devices${queryParams}`, { headers }).then(r => r.json()),
@@ -80,21 +77,29 @@ export default function Analytics() {
           fetch(`${baseUrl}/os${queryParams}`, { headers }).then(r => r.json()),
           fetch(`${baseUrl}/referrers${queryParams}`, { headers }).then(r => r.json()),
           fetch(`${baseUrl}/recent${queryParams}`, { headers }).then(r => r.json()),
-        ]);
+        ];
 
-        setSummary(sumRes);
-        setTimeseries(tsRes);
-        setDevices(devRes);
-        setCountries(ctryRes);
-        setBrowsers(browserRes);
-        setOsData(osRes);
-        setReferrers(refRes);
-        setRecentScans(recentRes);
+        if (selectedSlugs.length === 1) {
+          fetchPromises.push(fetch(`/api/qr/${selectedSlugs[0]}`, { headers }).then(r => r.json()));
+        }
+
+        const results = await Promise.all(fetchPromises);
+        
+        setSummary(results[0]);
+        setTimeseries(results[1]);
+        setDevices(results[2]);
+        setCountries(results[3]);
+        setBrowsers(results[4]);
+        setOsData(results[5]);
+        setReferrers(results[6]);
+        setRecentScans(results[7]);
         
         if (selectedSlugs.length === 1) {
+          setQrDetails(results[8]);
           const advRes = await fetch(`${baseUrl}/advanced`, { headers }).then(r => r.json());
           setAdvanced(advRes);
         } else {
+          setQrDetails(null);
           setAdvanced(null);
         }
       } catch (error) {
@@ -125,7 +130,16 @@ export default function Analytics() {
         <div style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', position: 'relative' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}>← Back</button>
-            <h1 style={{ fontSize: '20px', fontWeight: 600, margin: 0 }}>Analytics</h1>
+            <div>
+              <h1 style={{ fontSize: '20px', fontWeight: 600, margin: 0 }}>
+                {qrDetails?.title || (selectedSlugs.length === 1 ? selectedSlugs[0] : 'Analytics')}
+              </h1>
+              {selectedSlugs.length === 1 && (
+                <div style={{ fontSize: '12px', color: 'var(--text3)', marginTop: '2px' }}>
+                  qr.tharkak.com/{selectedSlugs[0]}
+                </div>
+              )}
+            </div>
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

@@ -303,8 +303,17 @@ async function startServer() {
   app.post('/api/qr', authenticate, async (req, res) => {
     try {
       const user = (req as any).user;
-      const { destination_url, title, style, rate_limit, is_dynamic, qr_type, content_data, expiry_date, password } = req.body;
+      const { destination_url, title, style, is_dynamic, qr_type, content_data, options } = req.body;
       const uid = user.uid;
+
+      // Map options to stored fields
+      const rate_limit = {
+        enabled: options?.scan_limit_enabled || false,
+        max_scans: options?.scan_limit || 100,
+        period: 'total'
+      };
+      const expiry_date = options?.expiry_date_enabled ? options.expiry_date : null;
+      const password = options?.password_protect ? options.password : null;
 
       logger.info(`Starting QR creation for user ${uid}`, { type: qr_type, is_dynamic });
 
@@ -516,6 +525,7 @@ async function startServer() {
         if (options.scan_limit_enabled !== undefined) {
           updateData['rate_limit.enabled'] = options.scan_limit_enabled;
           updateData['rate_limit.max_scans'] = options.scan_limit;
+          updateData['rate_limit.period'] = 'total';
         }
         if (options.password_protect !== undefined) {
           if (options.password_protect && options.password) {
@@ -1434,6 +1444,8 @@ async function captureAnalyticsFromPayload(payload: any) {
     date: dateStr,
     country: country || 'Unknown',
     device: parsed.device,
+    browser: parsed.browser,
+    os: parsed.os,
     is_unique: isUnique,
     scanned_at: serverTimestamp(),
     
