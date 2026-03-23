@@ -123,7 +123,7 @@ export default function ApiDocs() {
           </div>
 
           {/* BASE URL */}
-          <div class="docs-section" id="base-url">
+          <div className="docs-section" id="base-url">
             <div className="docs-h2">Base URL & versioning</div>
             <div className="docs-p">All endpoints are versioned under <code style={{ fontFamily: 'monospace', color: 'var(--coral)' }}>/v1</code>. We will never make breaking changes to v1 — when a new version ships, v1 continues working with a deprecation notice.</div>
             <CodeBlock code={`# Production\n${baseUrl}\n\n# Example full endpoint\n${baseUrl}/qr`}>

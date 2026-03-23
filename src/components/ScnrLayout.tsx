@@ -63,11 +63,31 @@ export default function ScnrLayout() {
   };
 
   const { title, sub } = getPageTitle();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Close mobile menu on navigation
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
 
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
+      {/* MOBILE OVERLAY */}
+      {mobileMenuOpen && (
+        <div 
+          style={{ 
+            position: 'fixed', 
+            inset: 0, 
+            background: 'rgba(0,0,0,0.5)', 
+            zIndex: 90,
+            backdropFilter: 'blur(4px)'
+          }} 
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
       {/* SIDEBAR */}
-      <nav className="sidebar">
+      <nav className={`sidebar ${mobileMenuOpen ? 'mobile-open' : ''}`}>
         <div className="sidebar-logo">
           <div className="logo-mark">
             <svg viewBox="0 0 18 18" fill="none">
@@ -81,6 +101,13 @@ export default function ScnrLayout() {
             </svg>
           </div>
           <span className="logo-text">Scnr</span>
+          <button 
+            className="btn btn-icon btn-sm md:hidden" 
+            style={{ marginLeft: 'auto', border: 'none' }}
+            onClick={() => setMobileMenuOpen(false)}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
         </div>
 
         <div className="nav-section">
@@ -131,16 +158,24 @@ export default function ScnrLayout() {
         {/* TOPBAR */}
         <div className="topbar">
           <div className="topbar-left">
+            <button 
+              className="btn btn-icon btn-sm md:hidden" 
+              style={{ marginRight: '8px' }}
+              onClick={() => setMobileMenuOpen(true)}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+            </button>
             <span className="page-title" id="page-title">{title}</span>
             {location.pathname === '/' && <span className="live-dot" id="live-indicator" style={{ marginLeft: '12px' }}></span>}
-            <span className="page-sub" id="page-sub" style={{ marginLeft: '12px' }}>{sub}</span>
+            <span className="page-sub hidden sm:inline" id="page-sub" style={{ marginLeft: '12px' }}>{sub}</span>
           </div>
           <div className="topbar-right">
             {(location.pathname === '/' || location.pathname === '/analytics') && (
-              <button className="btn btn-ghost btn-sm" id="topbar-date">Last 30 days ▾</button>
+              <button className="btn btn-ghost btn-sm hidden sm:flex" id="topbar-date">Last 30 days ▾</button>
             )}
             <button className="btn btn-primary btn-sm" onClick={() => navigate('/create')}>
-              + New QR
+              <span className="hidden sm:inline">+ New QR</span>
+              <span className="sm:hidden">+</span>
             </button>
           </div>
         </div>

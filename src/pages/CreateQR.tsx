@@ -341,7 +341,7 @@ export default function CreateQR() {
                 {/* vCard fields */}
                 {qrType === 'vcard' && (
                   <div id="fields-vcard">
-                    <div className="grid-2 mb16" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div className="grid-2 mb16">
                       <div className="form-section" style={{ marginBottom: 0 }}>
                         <label className="form-label">First name</label>
                         <input type="text" className="form-input" placeholder="Ashan" value={formData.content_data?.first_name || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, first_name: e.target.value}})} />
@@ -643,6 +643,7 @@ export default function CreateQR() {
                     destination_url: '',
                     slug: '',
                     qr_type: 'url',
+                    is_active: true,
                     content_data: {},
                     style: {
                       dot_color: '#1A1916',

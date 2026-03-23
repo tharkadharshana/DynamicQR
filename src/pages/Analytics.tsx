@@ -59,6 +59,12 @@ export default function Analytics() {
         const token = await user.getIdToken();
         const headers = { 'Authorization': `Bearer ${token}` };
 
+        const fetchJson = async (url: string) => {
+          const res = await fetch(url, { headers });
+          if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+          return res.json();
+        };
+
         let baseUrl = `/api/analytics/account/${user.uid}`;
         let queryParams = '';
 
@@ -69,35 +75,40 @@ export default function Analytics() {
         }
 
         const fetchPromises: Promise<any>[] = [
-          fetch(`${baseUrl}/summary${queryParams}`, { headers }).then(r => r.json()),
-          fetch(`${baseUrl}/timeseries${queryParams}${queryParams ? '&' : '?'}days=30`, { headers }).then(r => r.json()),
-          fetch(`${baseUrl}/devices${queryParams}`, { headers }).then(r => r.json()),
-          fetch(`${baseUrl}/countries${queryParams}`, { headers }).then(r => r.json()),
-          fetch(`${baseUrl}/browsers${queryParams}`, { headers }).then(r => r.json()),
-          fetch(`${baseUrl}/os${queryParams}`, { headers }).then(r => r.json()),
-          fetch(`${baseUrl}/referrers${queryParams}`, { headers }).then(r => r.json()),
-          fetch(`${baseUrl}/recent${queryParams}`, { headers }).then(r => r.json()),
+          fetchJson(`${baseUrl}/summary${queryParams}`),
+          fetchJson(`${baseUrl}/timeseries${queryParams}${queryParams ? '&' : '?'}days=30`),
+          fetchJson(`${baseUrl}/devices${queryParams}`),
+          fetchJson(`${baseUrl}/countries${queryParams}`),
+          fetchJson(`${baseUrl}/browsers${queryParams}`),
+          fetchJson(`${baseUrl}/os${queryParams}`),
+          fetchJson(`${baseUrl}/referrers${queryParams}`),
+          fetchJson(`${baseUrl}/recent${queryParams}`),
         ];
 
         if (selectedSlugs.length === 1) {
-          fetchPromises.push(fetch(`/api/qr/${selectedSlugs[0]}`, { headers }).then(r => r.json()));
+          fetchPromises.push(fetchJson(`/api/qr/${selectedSlugs[0]}`));
         }
 
         const results = await Promise.all(fetchPromises);
         
         setSummary(results[0]);
-        setTimeseries(results[1]);
-        setDevices(results[2]);
-        setCountries(results[3]);
-        setBrowsers(results[4]);
-        setOsData(results[5]);
-        setReferrers(results[6]);
-        setRecentScans(results[7]);
+        setTimeseries(Array.isArray(results[1]) ? results[1] : []);
+        setDevices(Array.isArray(results[2]) ? results[2] : []);
+        setCountries(Array.isArray(results[3]) ? results[3] : []);
+        setBrowsers(Array.isArray(results[4]) ? results[4] : []);
+        setOsData(Array.isArray(results[5]) ? results[5] : []);
+        setReferrers(Array.isArray(results[6]) ? results[6] : []);
+        setRecentScans(Array.isArray(results[7]) ? results[7] : []);
         
         if (selectedSlugs.length === 1) {
           setQrDetails(results[8]);
-          const advRes = await fetch(`${baseUrl}/advanced`, { headers }).then(r => r.json());
-          setAdvanced(advRes);
+          try {
+            const advRes = await fetchJson(`${baseUrl}/advanced`);
+            setAdvanced(advRes);
+          } catch (e) {
+            console.error("Error fetching advanced analytics:", e);
+            setAdvanced(null);
+          }
         } else {
           setQrDetails(null);
           setAdvanced(null);
@@ -127,7 +138,7 @@ export default function Analytics() {
   return (
     <div className="content" style={{ padding: '28px', overflow: 'auto', height: '100%' }}>
       <div className="page active">
-        <div style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', position: 'relative' }}>
+        <div className="analytics-header-row" style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', position: 'relative', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}>← Back</button>
             <div>
@@ -142,16 +153,18 @@ export default function Analytics() {
             </div>
           </div>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ position: 'relative' }}>
+          <div className="analytics-actions" style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%', maxWidth: '100%', justifyContent: 'flex-end' }}>
+            <div style={{ position: 'relative', width: '100%', maxWidth: '300px' }}>
               <button 
                 className="btn btn-outline btn-sm"
                 onClick={() => setShowMultiSelect(!showMultiSelect)}
-                style={{ minWidth: '200px', justifyContent: 'space-between' }}
+                style={{ width: '100%', justifyContent: 'space-between' }}
               >
-                {selectedSlugs.length === 0 ? 'All QR Codes' : 
-                 selectedSlugs.length === 1 ? (qrCodes.find(q => q.slug === selectedSlugs[0])?.title || selectedSlugs[0]) :
-                 `${selectedSlugs.length} QRs Selected`}
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {selectedSlugs.length === 0 ? 'All QR Codes' : 
+                   selectedSlugs.length === 1 ? (qrCodes.find(q => q.slug === selectedSlugs[0])?.title || selectedSlugs[0]) :
+                   `${selectedSlugs.length} QRs Selected`}
+                </span>
                 <span style={{ marginLeft: '8px' }}>▼</span>
               </button>
 
@@ -207,12 +220,12 @@ export default function Analytics() {
         <div className="stats-row mb24">
           <div className="stat-card">
             <div className="stat-label">Total scans</div>
-            <div className="stat-val">{summary.total_scans?.toLocaleString() || 0}</div>
+            <div className="stat-val">{summary?.total_scans?.toLocaleString() || 0}</div>
             <span className="stat-change up">↑ 0%</span>
           </div>
           <div className="stat-card">
             <div className="stat-label">Unique visitors</div>
-            <div className="stat-val">{summary.unique_visitors?.toLocaleString() || 0}</div>
+            <div className="stat-val">{summary?.unique_visitors?.toLocaleString() || 0}</div>
             <span className="stat-change up">↑ 0%</span>
           </div>
           <div className="stat-card">
@@ -229,7 +242,7 @@ export default function Analytics() {
           </div>
           <div className="stat-card">
             <div className="stat-label">Mobile Scans</div>
-            <div className="stat-val">{summary.mobile_pct || 0}%</div>
+            <div className="stat-val">{summary?.mobile_pct || 0}%</div>
             <span className="stat-change neutral">--</span>
           </div>
         </div>
@@ -406,42 +419,44 @@ export default function Analytics() {
           <div className="section-row">
             <span className="section-title">Recent Scans</span>
           </div>
-          <table className="qr-table">
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Location</th>
-                <th>Device</th>
-                <th>Browser/OS</th>
-                <th>Referrer</th>
-                <th>Unique</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentScans.length === 0 ? (
+          <div className="qr-table-wrap">
+            <table className="qr-table">
+              <thead>
                 <tr>
-                  <td colSpan={6} style={{ padding: '20px', textAlign: 'center', color: 'var(--text3)' }}>
-                    No recent scans found.
-                  </td>
+                  <th>Time</th>
+                  <th>Location</th>
+                  <th>Device</th>
+                  <th>Browser/OS</th>
+                  <th>Referrer</th>
+                  <th>Unique</th>
                 </tr>
-              ) : (
-                recentScans.map((scan) => (
-                  <tr key={scan.id}>
-                    <td>{new Date(scan.scanned_at).toLocaleString()}</td>
-                    <td>{scan.city !== 'Unknown' ? `${scan.city}, ` : ''}{scan.country}</td>
-                    <td style={{ textTransform: 'capitalize' }}>{scan.device_type}</td>
-                    <td>{scan.browser} / {scan.os}</td>
-                    <td style={{ maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{scan.referrer}</td>
-                    <td>
-                      <span className={`status-pill ${scan.is_unique ? 'status-active' : 'status-inactive'}`}>
-                        {scan.is_unique ? 'Yes' : 'No'}
-                      </span>
+              </thead>
+              <tbody>
+                {recentScans.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ padding: '20px', textAlign: 'center', color: 'var(--text3)' }}>
+                      No recent scans found.
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  recentScans.map((scan) => (
+                    <tr key={scan.id}>
+                      <td>{new Date(scan.scanned_at).toLocaleString()}</td>
+                      <td>{scan.city !== 'Unknown' ? `${scan.city}, ` : ''}{scan.country}</td>
+                      <td style={{ textTransform: 'capitalize' }}>{scan.device_type}</td>
+                      <td>{scan.browser} / {scan.os}</td>
+                      <td style={{ maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{scan.referrer}</td>
+                      <td>
+                        <span className={`status-pill ${scan.is_unique ? 'status-active' : 'status-inactive'}`}>
+                          {scan.is_unique ? 'Yes' : 'No'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
 
       </div>

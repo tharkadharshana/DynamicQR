@@ -17,6 +17,8 @@ import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsConditions from './pages/TermsConditions';
 import RefundPolicy from './pages/RefundPolicy';
 
+import ErrorBoundary from './components/ErrorBoundary';
+
 export default function App() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -34,30 +36,32 @@ export default function App() {
   }
 
   return (
-    <Router>
-      <Routes>
-        {user ? (
-          <Route path="/" element={<ScnrLayout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="create" element={<CreateQR />} />
-            <Route path="edit/:id" element={<CreateQR />} />
-            <Route path="analytics" element={<AccountAnalytics />} />
-            <Route path="analytics/:slug" element={<Analytics />} />
-            <Route path="api-docs" element={<ApiDocs />} />
-            <Route path="billing" element={<Billing />} />
-            <Route path="settings" element={<SettingsPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Route>
-        ) : (
-          <>
-            <Route path="/login" element={<Landing />} />
-            <Route path="/legal/privacy-policy" element={<PrivacyPolicy />} />
-            <Route path="/legal/terms-and-conditions" element={<TermsConditions />} />
-            <Route path="/legal/refund-policy" element={<RefundPolicy />} />
-            <Route path="*" element={<Navigate to="/login" replace />} />
-          </>
-        )}
-      </Routes>
-    </Router>
+    <ErrorBoundary>
+      <Router>
+        <Routes>
+          {user ? (
+            <Route path="/" element={<ScnrLayout />}>
+              <Route index element={<Dashboard />} />
+              <Route path="create" element={<CreateQR />} />
+              <Route path="edit/:id" element={<CreateQR />} />
+              <Route path="analytics" element={<AccountAnalytics />} />
+              <Route path="analytics/:slug" element={<Analytics />} />
+              <Route path="api-docs" element={<ApiDocs />} />
+              <Route path="billing" element={<Billing />} />
+              <Route path="settings" element={<SettingsPage />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Route>
+          ) : (
+            <>
+              <Route path="/login" element={<Landing />} />
+              <Route path="/legal/privacy-policy" element={<PrivacyPolicy />} />
+              <Route path="/legal/terms-and-conditions" element={<TermsConditions />} />
+              <Route path="/legal/refund-policy" element={<RefundPolicy />} />
+              <Route path="*" element={<Navigate to="/login" replace />} />
+            </>
+          )}
+        </Routes>
+      </Router>
+    </ErrorBoundary>
   );
 }

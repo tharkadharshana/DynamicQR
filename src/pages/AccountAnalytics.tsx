@@ -24,17 +24,23 @@ export default function AccountAnalytics() {
         const token = await auth.currentUser.getIdToken();
         const headers = { 'Authorization': `Bearer ${token}` };
 
+        const fetchJson = async (url: string) => {
+          const res = await fetch(url, { headers });
+          if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+          return res.json();
+        };
+
         const [stats, timeseries, performance, countries] = await Promise.all([
-          fetch(`/api/analytics/account/${auth.currentUser.uid}`, { headers }).then(res => res.json()),
-          fetch(`/api/analytics/account/${auth.currentUser.uid}/timeseries?days=30`, { headers }).then(res => res.json()),
-          fetch(`/api/analytics/account/${auth.currentUser.uid}/performance`, { headers }).then(res => res.json()),
-          fetch(`/api/analytics/account/${auth.currentUser.uid}/countries`, { headers }).then(res => res.json()),
+          fetchJson(`/api/analytics/account/${auth.currentUser.uid}`),
+          fetchJson(`/api/analytics/account/${auth.currentUser.uid}/timeseries?days=30`),
+          fetchJson(`/api/analytics/account/${auth.currentUser.uid}/performance`),
+          fetchJson(`/api/analytics/account/${auth.currentUser.uid}/countries`),
         ]);
 
         setAccountStats(stats);
-        setAccountTimeseries(timeseries);
-        setQrPerformance(performance || []);
-        setAccountCountries(countries || []);
+        setAccountTimeseries(Array.isArray(timeseries) ? timeseries : []);
+        setQrPerformance(Array.isArray(performance) ? performance : []);
+        setAccountCountries(Array.isArray(countries) ? countries : []);
       } catch (err) {
         console.error("Failed to fetch account analytics", err);
       } finally {
@@ -154,41 +160,43 @@ export default function AccountAnalytics() {
               No performance data yet.
             </div>
           ) : (
-            <table className="qr-table">
-              <thead>
-                <tr>
-                  <th>QR Code</th>
-                  <th>Total Scans</th>
-                  <th>Unique</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {qrPerformance.map((qr: any) => (
-                  <tr key={qr.id}>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <div>
-                          <div className="qr-row-name">{qr.title || 'Untitled'}</div>
-                          <div className="qr-row-slug">{window.location.host}/{qr.slug}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 600 }}>{(qr.total_scans || 0).toLocaleString()}</div>
-                    </td>
-                    <td>
-                      <div style={{ color: 'var(--text2)' }}>{(qr.unique_scans || 0).toLocaleString()}</div>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/analytics/${qr.slug}`)}>Details →</button>
-                      </div>
-                    </td>
+            <div className="qr-table-wrap">
+              <table className="qr-table">
+                <thead>
+                  <tr>
+                    <th>QR Code</th>
+                    <th>Total Scans</th>
+                    <th>Unique</th>
+                    <th></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {qrPerformance.map((qr: any) => (
+                    <tr key={qr.id}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div>
+                            <div className="qr-row-name">{qr.title || 'Untitled'}</div>
+                            <div className="qr-row-slug">{window.location.host}/{qr.slug}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 600 }}>{(qr.total_scans || 0).toLocaleString()}</div>
+                      </td>
+                      <td>
+                        <div style={{ color: 'var(--text2)' }}>{(qr.unique_scans || 0).toLocaleString()}</div>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/analytics/${qr.slug}`)}>Details →</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>

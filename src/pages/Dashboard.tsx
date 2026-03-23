@@ -23,31 +23,36 @@ export default function Dashboard() {
         const token = await auth.currentUser?.getIdToken();
         const headers = { 'Authorization': `Bearer ${token}` };
 
+        const fetchJson = async (url: string) => {
+          const res = await fetch(url, { headers });
+          if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+          return res.json();
+        };
+
         // Fetch QR Codes (now includes stats from server-side join)
-        const qrRes = await fetch('/api/qr', { headers });
-        if (!qrRes.ok) throw new Error('Failed to fetch QR codes');
-        const codes = await qrRes.json();
-        setQrCodes(codes);
+        const codes = await fetchJson('/api/qr');
+        const codesArray = Array.isArray(codes) ? codes : [];
+        setQrCodes(codesArray);
         
         // Map stats from the response
         const newStats: Record<string, any> = {};
-        codes.forEach((qr: any) => {
+        codesArray.forEach((qr: any) => {
           if (qr.stats) newStats[qr.id] = qr.stats;
         });
         setStats(newStats);
 
         // Fetch account level data
-        const [tsRes, devRes, countryRes, recentRes] = await Promise.all([
-          fetch(`/api/analytics/account/${auth.currentUser?.uid}/timeseries?days=30`, { headers }),
-          fetch(`/api/analytics/account/${auth.currentUser?.uid}/devices`, { headers }),
-          fetch(`/api/analytics/account/${auth.currentUser?.uid}/countries`, { headers }),
-          fetch(`/api/analytics/account/${auth.currentUser?.uid}/recent`, { headers })
+        const [tsData, devData, countryData, recentData] = await Promise.all([
+          fetchJson(`/api/analytics/account/${auth.currentUser?.uid}/timeseries?days=30`).catch(() => []),
+          fetchJson(`/api/analytics/account/${auth.currentUser?.uid}/devices`).catch(() => []),
+          fetchJson(`/api/analytics/account/${auth.currentUser?.uid}/countries`).catch(() => []),
+          fetchJson(`/api/analytics/account/${auth.currentUser?.uid}/recent`).catch(() => [])
         ]);
         
-        if (tsRes.ok) setTimeseries(await tsRes.json());
-        if (devRes.ok) setDevices(await devRes.json());
-        if (countryRes.ok) setCountries(await countryRes.json());
-        if (recentRes.ok) setRecentScans(await recentRes.json());
+        setTimeseries(Array.isArray(tsData) ? tsData : []);
+        setDevices(Array.isArray(devData) ? devData : []);
+        setCountries(Array.isArray(countryData) ? countryData : []);
+        setRecentScans(Array.isArray(recentData) ? recentData : []);
 
         setLoading(false);
       } catch (err) {
@@ -243,65 +248,67 @@ export default function Dashboard() {
                 No QR codes yet. <Link to="/create" style={{ color: 'var(--coral)', textDecoration: 'none' }}>Create your first one</Link>.
               </div>
             ) : (
-              <table className="qr-table">
-                <thead>
-                  <tr>
-                    <th>QR Code</th>
-                    <th>Scans</th>
-                    <th>Status</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {qrCodes.map(qr => {
-                    const qrStats = stats[qr.id] || {};
-                    let inactiveReason = 'Paused';
-                    if (qr.expiry_date && new Date(qr.expiry_date) < new Date()) inactiveReason = 'Expired';
-                    if (qr.rate_limit?.enabled && qrStats.total_scans > qr.rate_limit.max_scans) inactiveReason = 'Scan Limit Reached';
+              <div className="qr-table-wrap">
+                <table className="qr-table">
+                  <thead>
+                    <tr>
+                      <th>QR Code</th>
+                      <th>Scans</th>
+                      <th>Status</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {qrCodes.map(qr => {
+                      const qrStats = stats[qr.id] || {};
+                      let inactiveReason = 'Paused';
+                      if (qr.expiry_date && new Date(qr.expiry_date) < new Date()) inactiveReason = 'Expired';
+                      if (qr.rate_limit?.enabled && qrStats.total_scans > qr.rate_limit.max_scans) inactiveReason = 'Scan Limit Reached';
 
-                    return (
-                      <tr key={qr.id}>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <div className="qr-thumb">
-                              <canvas id={`thumb-${qr.id}`} width="32" height="32"></canvas>
+                      return (
+                        <tr key={qr.id}>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <div className="qr-thumb">
+                                <canvas id={`thumb-${qr.id}`} width="32" height="32"></canvas>
+                              </div>
+                              <div>
+                                <div className="qr-row-name">{qr.title || 'Untitled'}</div>
+                                <div className="qr-row-slug">{window.location.host}/{qr.slug}</div>
+                              </div>
                             </div>
-                            <div>
-                              <div className="qr-row-name">{qr.title || 'Untitled'}</div>
-                              <div className="qr-row-slug">{window.location.host}/{qr.slug}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td>
-                          <div style={{ fontWeight: 600 }}>{(qrStats.total_scans || 0).toLocaleString()}</div>
-                          {qrStats.failed_scans > 0 && (
-                            <div style={{ fontSize: '11px', color: 'var(--coral)', marginTop: '2px' }}>
-                              {qrStats.failed_scans.toLocaleString()} failed
-                            </div>
-                          )}
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                            <span className={`status-pill ${qr.is_active !== false ? 'status-active' : 'status-inactive'}`}>
-                              {qr.is_active !== false ? '● Active' : '● Inactive'}
-                            </span>
-                            {qr.is_active === false && (
-                              <span style={{ fontSize: '10px', color: 'var(--text3)' }}>{inactiveReason}</span>
+                          </td>
+                          <td>
+                            <div style={{ fontWeight: 600 }}>{(qrStats.total_scans || 0).toLocaleString()}</div>
+                            {qrStats.failed_scans > 0 && (
+                              <div style={{ fontSize: '11px', color: 'var(--coral)', marginTop: '2px' }}>
+                                {qrStats.failed_scans.toLocaleString()} failed
+                              </div>
                             )}
-                          </div>
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/analytics/${qr.slug}`)}>Stats →</button>
-                            <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/edit/${qr.id}`)}>Edit</button>
-                            <button className="btn btn-ghost btn-sm" style={{ color: 'var(--coral)' }} onClick={() => handleDelete(qr.id, qr.slug)}>Delete</button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                              <span className={`status-pill ${qr.is_active !== false ? 'status-active' : 'status-inactive'}`}>
+                                {qr.is_active !== false ? '● Active' : '● Inactive'}
+                              </span>
+                              {qr.is_active === false && (
+                                <span style={{ fontSize: '10px', color: 'var(--text3)' }}>{inactiveReason}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/analytics/${qr.slug}`)}>Stats →</button>
+                              <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/edit/${qr.id}`)}>Edit</button>
+                              <button className="btn btn-ghost btn-sm" style={{ color: 'var(--coral)' }} onClick={() => handleDelete(qr.id, qr.slug)}>Delete</button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
           <div className="card">
