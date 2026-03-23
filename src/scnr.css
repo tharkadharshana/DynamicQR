@@ -301,10 +301,13 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-b);font-size:
 @media (max-width: 1024px) {
   .create-layout {
     grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
   }
   .qr-preview-card {
     position: static;
-    order: -1;
+    order: 2; /* Move to bottom on mobile */
+    margin-bottom: 24px;
   }
 }
 .form-section{margin-bottom:20px}
@@ -341,7 +344,13 @@ textarea.form-input{resize:vertical;min-height:80px}
 /* QR Preview card */
 .qr-preview-card{
   background:var(--surface);border:1px solid var(--border);
-  border-radius:var(--radius-lg);padding:24px;position:sticky;top:0;
+  border-radius:var(--radius-lg);padding:24px;
+}
+@media (min-width: 1025px) {
+  .qr-preview-card {
+    position: sticky;
+    top: 24px;
+  }
 }
 .qr-preview-frame{
   width:200px;height:200px;background:#fff;border-radius:14px;

@@ -292,7 +292,7 @@ export default function CreateQR() {
   };
 
   return (
-    <div className="content" style={{ padding: '28px', overflow: 'auto', height: '100%' }}>
+    <div className="content">
       <div className="page active">
         <div className="create-layout">
           {/* Left: Form */}
