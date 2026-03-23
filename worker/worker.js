@@ -1,16 +1,29 @@
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    const slug = url.pathname.slice(1);
+    const slug = url.pathname.slice(1).split('/')[0]; // only first path segment
 
-    // 1. Ignore static assets, favicon, robots.txt, api routes
-    if (!slug || slug.includes('.') || slug.startsWith('api/') || slug.startsWith('internal/') || slug.startsWith('assets/')) {
-      return fetch(request); // Passthrough to origin
+    // Known frontend routes - always pass through to Cloud Run
+    const FRONTEND_ROUTES = new Set([
+      '', 'create', 'edit', 'analytics', 'settings', 'billing', 
+      'login', 'legal', 'pricing', 'api-docs'
+    ]);
+
+    // Pass through: empty path, known frontend routes, static files, api calls
+    if (
+      FRONTEND_ROUTES.has(slug) ||
+      slug.includes('.') ||
+      slug.startsWith('api') ||
+      slug.startsWith('internal') ||
+      slug.startsWith('assets') ||
+      slug.startsWith('_')
+    ) {
+      return fetch(request); // Pass through to Cloud Run
     }
 
-    // Validate slug format
-    if (!/^[23456789a-zA-Z]{5,12}$/.test(slug)) {
-      return new Response("Not Found", { status: 404 });
+    // Validate it looks like a QR slug (our nanoid alphabet, 5-12 chars)
+    if (!/^[23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ]{5,12}$/.test(slug)) {
+      return fetch(request); // Unknown path - let Cloud Run handle it
     }
 
     // --- PREPARE ANALYTICS CONTEXT ---
@@ -35,7 +48,6 @@ export default {
     // For better debugging and faster updates during testing, we'll check KV but fallback quickly.
     // In production, increased TTL is better.
     if (!config) {
-      console.log(`Cache miss for ${slug}, fetching from origin...`);
       const res = await fetch(`${apiUrl.replace(/\/$/, '')}/internal/slug/${slug}`, {
         headers: { "x-internal-secret": internalSecret },
         signal: AbortSignal.timeout(5000)
@@ -46,7 +58,7 @@ export default {
       config = await res.json();
       config.scan_count = config.total_scans || 0;
       // Set a lower TTL (60s) for more responsive updates while user is testing
-      ctx.waitUntil(env.QR_CACHE.put(slug, JSON.stringify(config), { expirationTtl: 60 }));
+      ctx.waitUntil(env.QR_CACHE.put(slug, JSON.stringify(config), { expirationTtl: 300 }));
     }
 
     // --- GATE ENGINE ---
