@@ -251,6 +251,24 @@ export default function CreateQR() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!window.confirm('Are you sure you want to completely delete this QR code and its stats?')) return;
+    try {
+      setLoading(true);
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch(`/api/qr/${formData.slug}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to delete');
+      navigate('/');
+    } catch (err) {
+      console.error(err);
+      alert('Error deleting QR code.');
+      setLoading(false);
+    }
+  };
+
   const downloadPreview = (fmt: string) => {
     if (!qrCodeRef.current) return;
     const extension = fmt === 'print' ? 'png' : fmt;
@@ -258,9 +276,19 @@ export default function CreateQR() {
   };
 
   const getShortUrl = () => {
-    if (!formData.destination_url) return 'Enter content to generate QR';
-    const short = formData.destination_url.replace(/^https?:\/\/(www\.)?/, '').split('/')[0];
-    return '→ ' + (short.length > 40 ? short.slice(0, 40) + '…' : short);
+    if (qrType === 'url') {
+      if (!formData.destination_url) return 'Enter content to generate QR';
+      let full = formData.destination_url;
+      return '→ ' + (full.length > 55 ? full.slice(0, 55) + '…' : full);
+    } else if (qrType === 'vcard') {
+      return '→ vCard Contact';
+    } else if (qrType === 'wifi') {
+      return '→ WiFi Network';
+    } else if (qrType === 'email') {
+      return '→ Email to ' + (formData.content_data.email || '...');
+    } else {
+      return '→ Text Content';
+    }
   };
 
   return (
@@ -638,6 +666,16 @@ export default function CreateQR() {
               >
                 Reset
               </button>
+              {id && (
+                <button
+                  className="btn btn-ghost"
+                  style={{ color: 'var(--coral)', border: '1px solid var(--coral)' }}
+                  onClick={handleDelete}
+                  disabled={loading}
+                >
+                  Delete
+                </button>
+              )}
             </div>
           </div>
 
@@ -648,7 +686,7 @@ export default function CreateQR() {
               <div ref={canvasRef} id="preview-canvas"></div>
             </div>
             <div className="qr-preview-slug" id="preview-slug">
-              {isDynamic ? `scnr.app/${formData.slug || '———'}` : 'Static QR'}
+              {isDynamic ? `qr.tharkak.com/${formData.slug || '———'}` : 'Static QR'}
             </div>
             <div style={{ marginBottom: '16px' }}>
               <div style={{ fontSize: '11px', color: 'var(--text3)', marginBottom: '4px' }}>Destination</div>

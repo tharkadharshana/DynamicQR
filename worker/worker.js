@@ -9,6 +9,17 @@ export default {
       'login', 'legal', 'pricing', 'api-docs'
     ]);
 
+    // 1. Internal / Hidden Routes
+    if (slug === 'internal' && url.pathname.startsWith('/internal/purge/')) {
+      if (request.headers.get('x-internal-secret') !== internalSecret) {
+        return new Response('Unauthorized', { status: 401 });
+      }
+      const targetSlug = url.pathname.split('/').pop();
+      await env.QR_CACHE.delete(targetSlug);
+      return new Response('Purged', { status: 200 });
+    }
+
+    // 2. Pass through logic:
     // Pass through: empty path, known frontend routes, static files, api calls
     if (
       FRONTEND_ROUTES.has(slug) ||
@@ -69,6 +80,81 @@ export default {
       return new Response("This QR code has expired.", { status: 410 });
     }
 
+    // Prepare common analytics parts
+    const visitorKey = `uniq:${slug}:${visitorHash}`;
+    let isUnique = await env.QR_CACHE.get(visitorKey).then(v => !v);
+
+    if (config.password_hash) {
+      const sessionKey = `uniq:${slug}:${visitorHash}:pw_ok`;
+      const isUnlocked = await env.QR_CACHE.get(sessionKey);
+      
+      if (!isUnlocked) {
+        let isWrong = false;
+        if (request.method === "POST") {
+          const body = await request.formData();
+          const submittedPw = body.get("password");
+          const pwUint8 = new TextEncoder().encode(submittedPw + slug); // Salted
+          const pwBuffer = await crypto.subtle.digest('SHA-256', pwUint8);
+          const pwArray = Array.from(new Uint8Array(pwBuffer));
+          const submittedHash = pwArray.map(b => b.toString(16).padStart(2, '0')).join('');
+          
+          if (submittedHash === config.password_hash) {
+            await env.QR_CACHE.put(sessionKey, "1", { expirationTtl: 86400 });
+            // proceed to redirect
+          } else {
+            isWrong = true;
+          }
+        }
+
+        if (isWrong || request.method !== "POST") {
+          // Send "failed/gated" analytics so user knows someone hit the wall
+          if (isWrong && apiUrl) {
+             const failPayload = {
+               slug, ip, ua,
+               referer: request.headers.get('Referer') || '',
+               country: cf.country || 'Unknown',
+               is_unique: isUnique,
+               status: 'failed_password'
+             };
+             ctx.waitUntil(fetch(`${apiUrl.replace(/\/$/, '')}/internal/scan`, {
+               method: "POST",
+               headers: { "Content-Type": "application/json", "x-internal-secret": internalSecret },
+               body: JSON.stringify(failPayload)
+             }));
+          }
+
+          return new Response(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <title>Protected QR</title>
+              <meta name="viewport" content="width=device-width, initial-scale=1">
+              <style>
+                body { font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f4f4f4; }
+                .card { background: white; padding: 32px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 90%; max-width: 320px; text-align: center; }
+                input { width: 100%; padding: 12px; margin: 16px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 16px; }
+                button { width: 100%; padding: 12px; background: #E85D3A; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; }
+                .error { color: #E85D3A; font-size: 13px; margin-top: -8px; margin-bottom: 8px; }
+              </style>
+            </head>
+            <body>
+              <div class="card">
+                <h2>🔒 Protected</h2>
+                <p>Enter the PIN to continue</p>
+                <form method="POST">
+                  <input type="password" name="password" placeholder="Enter PIN" autofocus required>
+                  ${isWrong ? '<div class="error">Incorrect PIN. Please try again.</div>' : ''}
+                  <button type="submit">Unlock →</button>
+                </form>
+              </div>
+            </body>
+            </html>
+          `, { headers: { "Content-Type": "text/html" } });
+        }
+      }
+    }
+
+    // --- SCAN LIMIT CHECK (Only if they passed through gates) ---
     config.scan_count++;
     if (config.scan_limit !== null && config.scan_count > config.scan_limit) {
       ctx.waitUntil(fetch(`${apiUrl}/api/qr/${slug}`, {
@@ -83,62 +169,11 @@ export default {
       
       return new Response("Scan limit reached.", { status: 410 });
     }
+    // Update cache with new count
     ctx.waitUntil(env.QR_CACHE.put(slug, JSON.stringify(config), { expirationTtl: 300 }));
 
-    if (config.password_hash) {
-      const sessionKey = `uniq:${slug}:${visitorHash}:pw_ok`;
-      const isUnlocked = await env.QR_CACHE.get(sessionKey);
-      
-      if (!isUnlocked) {
-        if (request.method === "POST") {
-          const body = await request.formData();
-          const submittedPw = body.get("password");
-          const pwUint8 = new TextEncoder().encode(submittedPw + slug); // Salted
-          const pwBuffer = await crypto.subtle.digest('SHA-256', pwUint8);
-          const pwArray = Array.from(new Uint8Array(pwBuffer));
-          const submittedHash = pwArray.map(b => b.toString(16).padStart(2, '0')).join('');
-          
-          if (submittedHash === config.password_hash) {
-            await env.QR_CACHE.put(sessionKey, "1", { expirationTtl: 86400 });
-            return Response.redirect(request.url, 302);
-          }
-        }
-
-        return new Response(`
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <title>Protected QR</title>
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <style>
-              body { font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f4f4f4; }
-              .card { background: white; padding: 32px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 90%; max-width: 320px; text-align: center; }
-              input { width: 100%; padding: 12px; margin: 16px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 16px; }
-              button { width: 100%; padding: 12px; background: #E85D3A; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; }
-            </style>
-          </head>
-          <body>
-            <div class="card">
-              <h2>🔒 Protected</h2>
-              <p>Enter the PIN to continue</p>
-              <form method="POST">
-                <input type="password" name="password" placeholder="Enter PIN" autofocus required>
-                <button type="submit">Unlock →</button>
-              </form>
-            </div>
-          </body>
-          </html>
-        `, { headers: { "Content-Type": "text/html" } });
-      }
-    }
-
-    // --- ANALYTICS ---
-    const visitorKey = `uniq:${slug}:${visitorHash}`;
-    let isUnique = false;
-    
-    const existing = await env.QR_CACHE.get(visitorKey);
-    if (!existing) {
-      isUnique = true;
+    // --- ANALYTICS (Successful redirect) ---
+    if (isUnique) {
       const now = new Date();
       const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
       const ttl = Math.floor((endOfDay.getTime() - now.getTime()) / 1000);
@@ -168,7 +203,7 @@ export default {
             "Content-Type": "application/json",
             "x-internal-secret": internalSecret
           },
-          body: JSON.stringify(payload)
+          body: JSON.stringify({ ...payload, status: 'success' })
         }).then(r => {
           if (!r.ok) console.error(`Analytics failed: ${r.status}`);
         }).catch(err => {

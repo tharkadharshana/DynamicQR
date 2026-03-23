@@ -59,6 +59,26 @@ export default function Dashboard() {
     fetchData();
   }, [auth.currentUser]);
 
+  const handleDelete = async (qrId: string, slug: string) => {
+    if (!window.confirm('Are you sure you want to completely delete this QR code and its stats?')) return;
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch(`/api/qr/${slug}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to delete');
+      
+      setQrCodes(prev => prev.filter(qr => qr.id !== qrId));
+      const newStats = { ...stats };
+      delete newStats[qrId];
+      setStats(newStats);
+    } catch (err) {
+      console.error(err);
+      alert('Error deleting QR code.');
+    }
+  };
+
   useEffect(() => {
     qrCodes.forEach(qr => {
       const canvas = document.getElementById(`thumb-${qr.id}`) as HTMLCanvasElement;
@@ -233,35 +253,53 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {qrCodes.map(qr => (
-                    <tr key={qr.id}>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <div className="qr-thumb">
-                            <canvas id={`thumb-${qr.id}`} width="32" height="32"></canvas>
+                  {qrCodes.map(qr => {
+                    const qrStats = stats[qr.id] || {};
+                    let inactiveReason = 'Paused';
+                    if (qr.expiry_date && new Date(qr.expiry_date) < new Date()) inactiveReason = 'Expired';
+                    if (qr.rate_limit?.enabled && qrStats.total_scans > qr.rate_limit.max_scans) inactiveReason = 'Scan Limit Reached';
+
+                    return (
+                      <tr key={qr.id}>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div className="qr-thumb">
+                              <canvas id={`thumb-${qr.id}`} width="32" height="32"></canvas>
+                            </div>
+                            <div>
+                              <div className="qr-row-name">{qr.title || 'Untitled'}</div>
+                              <div className="qr-row-slug">{window.location.host}/{qr.slug}</div>
+                            </div>
                           </div>
-                          <div>
-                            <div className="qr-row-name">{qr.title || 'Untitled'}</div>
-                            <div className="qr-row-slug">{window.location.host}/{qr.slug}</div>
+                        </td>
+                        <td>
+                          <div style={{ fontWeight: 600 }}>{(qrStats.total_scans || 0).toLocaleString()}</div>
+                          {qrStats.failed_scans > 0 && (
+                            <div style={{ fontSize: '11px', color: 'var(--coral)', marginTop: '2px' }}>
+                              {qrStats.failed_scans.toLocaleString()} failed
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <span className={`status-pill ${qr.is_active !== false ? 'status-active' : 'status-inactive'}`}>
+                              {qr.is_active !== false ? '● Active' : '● Inactive'}
+                            </span>
+                            {qr.is_active === false && (
+                              <span style={{ fontSize: '10px', color: 'var(--text3)' }}>{inactiveReason}</span>
+                            )}
                           </div>
-                        </div>
-                      </td>
-                      <td>
-                        <div style={{ fontWeight: 600 }}>{(stats[qr.id]?.total_scans || 0).toLocaleString()}</div>
-                      </td>
-                      <td>
-                        <span className={`status-pill ${qr.is_active !== false ? 'status-active' : 'status-inactive'}`}>
-                          {qr.is_active !== false ? '● Active' : '● Inactive'}
-                        </span>
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/analytics/${qr.slug}`)}>Stats →</button>
-                          <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/edit/${qr.id}`)}>Edit</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/analytics/${qr.slug}`)}>Stats →</button>
+                            <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/edit/${qr.id}`)}>Edit</button>
+                            <button className="btn btn-ghost btn-sm" style={{ color: 'var(--coral)' }} onClick={() => handleDelete(qr.id, qr.slug)}>Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}

@@ -464,8 +464,6 @@ async function startServer() {
       const qrs = await Promise.all(qrSnapshot.docs
         .map(async (docSnap: any) => {
           const data = docSnap.data();
-          if (data.is_active === false) return null;
-          
           // Fetch stats for each QR to satisfy dashboard requirements
           const statsSnap = await getDoc(doc(db, 'qr_stats', data.slug));
           return {
@@ -475,7 +473,7 @@ async function startServer() {
           };
         }));
 
-      res.json(qrs.filter(qr => qr !== null));
+      res.json(qrs);
     } catch (error) {
       logger.error('QR list error:', error);
       res.status(500).json({ error: 'Failed to list QR codes' });
@@ -544,13 +542,26 @@ async function startServer() {
     }
   });
 
-  // Delete QR code (soft delete)
+  // Delete QR code
   app.delete('/api/qr/:slug', authenticate, requireOwnership, async (req, res) => {
     try {
       const { slug } = req.params;
-      // Soft delete by setting is_active to false
-      await updateDoc(doc(db, 'qr_codes', slug), { is_active: false });
-      res.json({ success: true, message: 'QR deleted' });
+      
+      // Batch delete code, stats, and (optionally) some events
+      // For now, keep it simple with codes and stats
+      const batch = db.batch();
+      batch.delete(doc(db, 'qr_codes', slug));
+      batch.delete(doc(db, 'qr_stats', slug));
+      await batch.commit();
+
+      res.json({ message: 'QR code deleted successfully' });
+
+      // Purge Worker Cache
+      const appUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
+      fetch(`${appUrl}/internal/purge/${slug}`, {
+        headers: { 'x-internal-secret': process.env.INTERNAL_SECRET || '' }
+      }).catch(err => logger.error(`Cache purge failed for ${slug}`, err));
+
     } catch (error) {
       logger.error('QR delete error:', error);
       res.status(500).json({ error: 'Failed to delete QR code' });
@@ -1435,7 +1446,7 @@ async function startServer() {
 
 // Analytics Capture Logic
 async function captureAnalyticsFromPayload(payload: any) {
-  const { slug, ip, ua, country, asn, colo, tls, lang, is_eu, is_unique: payloadIsUnique } = payload;
+  const { slug, ip, ua, country, asn, colo, tls, lang, is_eu, is_unique: payloadIsUnique, status } = payload;
   if (isBot(ua)) return;
 
   const today = new Date().toISOString().slice(0, 10);
@@ -1455,6 +1466,8 @@ async function captureAnalyticsFromPayload(payload: any) {
   const dateStr = now.toISOString().split('T')[0];
   const hourStr = now.getHours().toString();
 
+  const isFailed = status === 'failed_password';
+
   // 1. EXACT SCHEMA for scan_events per user prompt (plus CF extensions)
   await addDoc(collection(db, 'scan_events'), {
     slug,
@@ -1472,7 +1485,8 @@ async function captureAnalyticsFromPayload(payload: any) {
     colo: colo || null,
     lang: lang || null,
     tls: tls || null,
-    is_eu: is_eu || false
+    is_eu: is_eu || false,
+    status: status || 'success'
   });
 
   // 2. EXACT SCHEMA for qr_stats per user prompt (plus CF atomic increments)
@@ -1480,26 +1494,30 @@ async function captureAnalyticsFromPayload(payload: any) {
   const inc = increment(1);
   
   const updateData: any = {
-    total_scans: inc,
-    [`${parsed.device}_scans`]: inc,
     [`countries.${country || 'Unknown'}`]: inc,
-    [`days.${dateStr}`]: inc,
-    [`hours.${hourStr}`]: inc,
-    [`browsers.${parsed.browser}`]: inc,
-    [`os.${parsed.os}`]: inc,
     last_scan_at: serverTimestamp()
   };
 
-  // Extra Cloudflare enrichments 
-  if (asn) updateData[`isps.AS${asn}`] = inc;
-  if (colo) updateData[`regions.${colo}`] = inc;
-  if (lang) updateData[`languages.${lang.substring(0, 2)}`] = inc;
-  if (parsed.osVersion) updateData[`os_versions.${parsed.os} ${parsed.osVersion}`] = inc;
-  if (tls) updateData[`tls_protocols.${tls}`] = inc;
-  if (is_eu) updateData[`eu_scans`] = inc;
+  if (isFailed) {
+    updateData.failed_scans = inc;
+  } else {
+    updateData.total_scans = inc;
+    updateData[`${parsed.device}_scans`] = inc;
+    updateData[`days.${dateStr}`] = inc;
+    updateData[`hours.${hourStr}`] = inc;
+    updateData[`browsers.${parsed.browser}`] = inc;
+    updateData[`os.${parsed.os}`] = inc;
 
-  if (isUnique) {
-    updateData.unique_scans = inc;
+    if (asn) updateData[`isps.AS${asn}`] = inc;
+    if (colo) updateData[`regions.${colo}`] = inc;
+    if (lang) updateData[`languages.${lang.substring(0, 2)}`] = inc;
+    if (parsed.osVersion) updateData[`os_versions.${parsed.os} ${parsed.osVersion}`] = inc;
+    if (tls) updateData[`tls_protocols.${tls}`] = inc;
+    if (is_eu) updateData[`eu_scans`] = inc;
+
+    if (isUnique) {
+      updateData.unique_scans = inc;
+    }
   }
 
   await setDoc(statsRef, updateData, { merge: true });
