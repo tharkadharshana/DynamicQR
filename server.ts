@@ -535,6 +535,13 @@ async function startServer() {
       }
       
       await updateDoc(doc(db, 'qr_codes', slug), updateData);
+
+      // Invalidate KV cache so Worker picks up new gate settings immediately
+      const appUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
+      fetch(`${appUrl}/internal/purge/${slug}`, {
+        headers: { 'x-internal-secret': process.env.INTERNAL_SECRET || '' }
+      }).catch(err => logger.error(`Cache purge failed for ${slug}`, err));
+
       res.json({ success: true, slug });
     } catch (error) {
       logger.error('QR update error:', error);
@@ -555,6 +562,36 @@ async function startServer() {
       await batch.commit();
 
       res.json({ message: 'QR code deleted successfully' });
+
+      // Background cleanup: delete scan_events for this slug in chunks of 500
+      (async () => {
+        try {
+          const eventsRef = collection(db, 'scan_events');
+          let deletedCount = 0;
+          let hasMore = true;
+
+          while (hasMore) {
+            const q = query(eventsRef, where('slug', '==', slug), limit(500));
+            const snapshot = await getDocs(q);
+
+            if (snapshot.empty) {
+              hasMore = false;
+              break;
+            }
+
+            const eventsBatch = db.batch();
+            snapshot.docs.forEach((docSnap) => {
+              eventsBatch.delete(docSnap.ref);
+            });
+            await eventsBatch.commit();
+            deletedCount += snapshot.size;
+          }
+          logger.info(`Background cleanup: deleted ${deletedCount} scan_events for slug ${slug}`);
+        } catch (cleanupErr) {
+          logger.error(`Background cleanup failed for slug ${slug}:`, cleanupErr);
+        }
+      })();
+
 
       // Purge Worker Cache
       const appUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
