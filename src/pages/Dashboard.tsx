@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { collection, query, where, onSnapshot, orderBy, getDoc, doc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import QRCode from 'qrcode';
+import ConfirmationModal from '../components/ConfirmationModal';
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
 
 export default function Dashboard() {
@@ -13,6 +14,11 @@ export default function Dashboard() {
   const [countries, setCountries] = useState<any[]>([]);
   const [recentScans, setRecentScans] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; qrId: string; slug: string }>({
+    isOpen: false,
+    qrId: '',
+    slug: ''
+  });
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -65,7 +71,11 @@ export default function Dashboard() {
   }, [auth.currentUser]);
 
   const handleDelete = async (qrId: string, slug: string) => {
-    if (!window.confirm('Are you sure you want to completely delete this QR code and its stats?')) return;
+    setDeleteModal({ isOpen: true, qrId, slug });
+  };
+
+  const confirmDelete = async () => {
+    const { qrId, slug } = deleteModal;
     try {
       const token = await auth.currentUser?.getIdToken();
       const res = await fetch(`/api/qr/${slug}`, {
@@ -361,6 +371,16 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      <ConfirmationModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ ...deleteModal, isOpen: false })}
+        onConfirm={confirmDelete}
+        title="Delete QR Code"
+        message="Are you sure you want to delete this QR code? This action cannot be undone and all historical scan data, analytics, and stats related to this QR code will be permanently deleted."
+        confirmText="Delete Permanently"
+        isDestructive={true}
+      />
     </div>
   );
 }

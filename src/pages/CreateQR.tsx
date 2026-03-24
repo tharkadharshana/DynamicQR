@@ -3,11 +3,13 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import QRCodeStyling from 'qr-code-styling';
+import ConfirmationModal from '../components/ConfirmationModal';
 
 export default function CreateQR() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [qrType, setQrType] = useState('url');
   const [isDynamic, setIsDynamic] = useState(true);
   const [urlError, setUrlError] = useState(false);
@@ -252,7 +254,10 @@ export default function CreateQR() {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm('Are you sure you want to completely delete this QR code and its stats?')) return;
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = async () => {
     try {
       setLoading(true);
       const token = await auth.currentUser?.getIdToken();
@@ -726,6 +731,16 @@ export default function CreateQR() {
           </div>
         </div>
       </div>
+
+      <ConfirmationModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={confirmDelete}
+        title="Delete QR Code"
+        message="Are you sure you want to delete this QR code? This action cannot be undone and all historical scan data, analytics, and stats related to this QR code will be permanently deleted."
+        confirmText="Delete Permanently"
+        isDestructive={true}
+      />
     </div>
   );
 }

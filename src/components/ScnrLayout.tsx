@@ -45,6 +45,18 @@ export default function ScnrLayout() {
     ) }
   ];
 
+  const legalItems: NavItem[] = [
+    { name: 'Privacy Policy', path: '/legal/privacy-policy', icon: (
+      <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M4 2h8a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V4a2 2 0 012-2z"/><path d="M6 6h4M6 10h4"/></svg>
+    ) },
+    { name: 'Terms & Conditions', path: '/legal/terms-and-conditions', icon: (
+      <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M9 2L7 14M5 6h6M4 10h6"/></svg>
+    ) },
+    { name: 'Refund Policy', path: '/legal/refund-policy', icon: (
+      <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 6l3 3 6-6M3 12h10"/></svg>
+    ) }
+  ];
+
   const handleLogout = async () => {
     await logout();
     navigate('/login');
@@ -57,7 +69,11 @@ export default function ScnrLayout() {
       case '/create': return { title: 'Create QR', sub: 'Generate a new QR code' };
       case '/settings': return { title: 'Profile & Settings', sub: 'Manage your account' };
       case '/billing': return { title: 'Billing', sub: 'Subscription & invoices' };
+      case '/pricing': return { title: 'Pricing', sub: 'Choose your plan' };
       case '/api-docs': return { title: 'API Docs', sub: 'Team plan · REST API v1' };
+      case '/legal/privacy-policy': return { title: 'Privacy Policy', sub: 'Legal documentation' };
+      case '/legal/terms-and-conditions': return { title: 'Terms & Conditions', sub: 'Legal documentation' };
+      case '/legal/refund-policy': return { title: 'Refund Policy', sub: 'Legal documentation' };
       default: return { title: 'Scnr', sub: '' };
     }
   };
@@ -138,6 +154,18 @@ export default function ScnrLayout() {
             <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M6 14H3a2 2 0 01-2-2V4a2 2 0 012-2h3M11 11l3-3-3-3M14 8H5"/></svg>
             Sign out
           </div>
+        </div>
+
+        <div className="nav-section">
+          <div className="nav-label">Legal</div>
+          {legalItems.map(item => (
+            <Link key={item.path} to={item.path} style={{ textDecoration: 'none' }}>
+              <div className={`nav-item ${location.pathname === item.path ? 'active' : ''}`}>
+                {item.icon}
+                {item.name}
+              </div>
+            </Link>
+          ))}
         </div>
 
         <div className="sidebar-footer">

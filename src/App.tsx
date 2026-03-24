@@ -39,6 +39,11 @@ export default function App() {
     <ErrorBoundary>
       <Router>
         <Routes>
+          {/* Public Legal Routes */}
+          <Route path="/legal/privacy-policy" element={<PrivacyPolicy />} />
+          <Route path="/legal/terms-and-conditions" element={<TermsConditions />} />
+          <Route path="/legal/refund-policy" element={<RefundPolicy />} />
+
           {user ? (
             <Route path="/" element={<ScnrLayout />}>
               <Route index element={<Dashboard />} />
@@ -48,15 +53,13 @@ export default function App() {
               <Route path="analytics/:slug" element={<Analytics />} />
               <Route path="api-docs" element={<ApiDocs />} />
               <Route path="billing" element={<Billing />} />
+              <Route path="pricing" element={<Pricing />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           ) : (
             <>
               <Route path="/login" element={<Landing />} />
-              <Route path="/legal/privacy-policy" element={<PrivacyPolicy />} />
-              <Route path="/legal/terms-and-conditions" element={<TermsConditions />} />
-              <Route path="/legal/refund-policy" element={<RefundPolicy />} />
               <Route path="*" element={<Navigate to="/login" replace />} />
             </>
           )}

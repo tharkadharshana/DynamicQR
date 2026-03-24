@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { loginWithGoogle } from '../firebase';
 import QRCode from 'qrcode';
 import './Landing.css';
@@ -604,12 +605,11 @@ export default function Landing() {
             Scnr
           </a>
           <div className="footer-links">
-            <a href="#">Features</a>
-            <a href="#">Pricing</a>
-            <a href="#">Blog</a>
-            <a href="#">Docs</a>
-            <a href="#">Privacy</a>
-            <a href="#">Terms</a>
+            <a href="#features">Features</a>
+            <a href="#pricing">Pricing</a>
+            <Link to="/legal/refund-policy">Refund Policy</Link>
+            <Link to="/legal/privacy-policy">Privacy</Link>
+            <Link to="/legal/terms-and-conditions">Terms</Link>
           </div>
           <div className="footer-copy">© 2026 Scnr. All rights reserved.</div>
         </div>
