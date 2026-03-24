@@ -10,6 +10,7 @@ import { customAlphabet } from 'nanoid';
 import QRCode from 'qrcode';
 import logger from "./logger.ts";
 import fs from 'fs';
+import { PLANS, ADDONS, getPlan, getAddon, computeEffectiveLimits, isUnlimited, type PlanId, type ActiveAddon } from './src/shared/plans.ts';
 
 // Initialize Firebase Admin
 let firebaseConfig: any = {};
@@ -143,33 +144,142 @@ async function startServer() {
     res.json({ status: 'ok' });
   });
 
-  // User Plan API
+  // ═══════════════════════════════════════════════════════════
+  //  BILLING & PLAN HELPERS
+  // ═══════════════════════════════════════════════════════════
+
+  /** Fetch user's subscription doc (plan + addons). Creates default if missing. */
+  async function getUserSubscription(uid: string) {
+    const subRef = doc(db, 'subscriptions', uid);
+    const subSnap = await getDoc(subRef);
+    if (subSnap.exists()) return subSnap.data();
+    // Create default subscription
+    const defaultSub = {
+      plan: 'free' as PlanId,
+      addons: [] as ActiveAddon[],
+      billing_cycle_start: null,
+      billing_cycle_end: null,
+      cancel_at_period_end: false,
+      created_at: serverTimestamp(),
+      updated_at: serverTimestamp(),
+    };
+    await setDoc(subRef, defaultSub);
+    return defaultSub;
+  }
+
+  /** Get real usage numbers for a user */
+  async function getUserUsage(uid: string) {
+    // Count active QR codes
+    const qrSnapshot = await getDocs(
+      query(collection(db, 'qr_codes'), where('user_uid', '==', uid))
+    );
+    const allQrs = qrSnapshot.docs.map((d: any) => d.data());
+    const activeQrs = allQrs.filter((d: any) => d.is_active !== false).length;
+
+    // Compute storage (rough estimate: QR SVG size)
+    let storageBytes = 0;
+    allQrs.forEach((d: any) => {
+      if (d.qr_svg) storageBytes += Buffer.byteLength(d.qr_svg, 'utf-8');
+      if (d.style?.logo_url) storageBytes += (d.style.logo_url.length * 0.75); // base64 estimate
+    });
+
+    // Count scans this month
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthKey = monthStart.toISOString().slice(0, 7); // "2026-03"
+
+    let scansThisMonth = 0;
+    for (const qr of allQrs) {
+      try {
+        const statsSnap = await getDoc(doc(db, 'qr_stats', qr.slug));
+        if (statsSnap.exists()) {
+          const days = statsSnap.data()?.days || {};
+          for (const [dateStr, count] of Object.entries(days)) {
+            if (dateStr.startsWith(monthKey)) {
+              scansThisMonth += (count as number);
+            }
+          }
+        }
+      } catch (e) { /* skip broken stats */ }
+    }
+
+    return {
+      active_qr_codes: activeQrs,
+      total_qr_codes: allQrs.length,
+      scans_this_month: scansThisMonth,
+      storage_bytes: Math.round(storageBytes),
+    };
+  }
+
+  /** Generate PayHere checkout data */
+  function buildPayHereCheckout(opts: {
+    uid: string; email: string; name: string;
+    orderId: string; amount: number; itemDesc: string;
+    custom1: string; custom2: string;
+    recurrence?: string; duration?: string;
+  }) {
+    const merchant_id = process.env.PAYHERE_MERCHANT_ID || '';
+    const merchant_secret = process.env.PAYHERE_SECRET || '';
+    const currency = 'USD';
+    const amountStr = opts.amount.toFixed(2);
+    const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
+
+    // md5(merchant_id + order_id + amount + currency + md5(merchant_secret))
+    const hashedSecret = crypto.createHash('md5').update(merchant_secret).digest('hex').toUpperCase();
+    const hashInput = `${merchant_id}${opts.orderId}${amountStr}${currency}${hashedSecret}`;
+    const hash = crypto.createHash('md5').update(hashInput).digest('hex').toUpperCase();
+
+    return {
+      merchant_id,
+      return_url: `${appUrl}/billing`,
+      cancel_url: `${appUrl}/pricing`,
+      notify_url: `${appUrl}/api/billing/notify`,
+      order_id: opts.orderId,
+      items: opts.itemDesc,
+      currency,
+      amount: amountStr,
+      first_name: opts.name.split(' ')[0] || 'User',
+      last_name: opts.name.split(' ').slice(1).join(' ') || '',
+      email: opts.email,
+      phone: '0000000000',
+      address: 'N/A',
+      city: 'N/A',
+      country: 'Sri Lanka',
+      hash,
+      custom_1: opts.custom1,
+      custom_2: opts.custom2,
+      ...(opts.recurrence ? { recurrence: opts.recurrence, duration: opts.duration || 'Forever' } : {}),
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  USER PLAN & USAGE APIs
+  // ═══════════════════════════════════════════════════════════
+
+  /** Full plan info: plan details, effective limits (with addons), real usage, features */
   app.get('/api/user/plan', authenticate, async (req, res) => {
     try {
       const uid = (req as any).user.uid;
-      
-      // Get user's plan from Firestore (or default to free)
-      const userDoc = await getDoc(doc(db, 'users', uid));
-      const plan = userDoc.exists() ? userDoc.data()?.plan || 'free' : 'free';
-      
-      // Get number of active QR codes
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid), where('is_active', '==', true)));
-        
-      const activeQrs = qrSnapshot.size;
-      
-      const plans: Record<string, any> = {
-        free: { qr_codes: 3, analytics_days: 7, custom_domain: false, logo: false },
-        pro: { qr_codes: Infinity, analytics_days: 30, custom_domain: true, logo: true },
-        team: { qr_codes: Infinity, analytics_days: 365, custom_domain: true, logo: true }
-      };
-      
-      const limits = plans[plan] || plans.free;
-      const remaining_qr = limits.qr_codes === Infinity ? Infinity : Math.max(0, limits.qr_codes - activeQrs);
-      
+      const sub = await getUserSubscription(uid);
+      const planId = sub.plan || 'free';
+      const plan = getPlan(planId);
+      const activeAddons: ActiveAddon[] = sub.addons || [];
+      const effectiveLimits = computeEffectiveLimits(planId, activeAddons);
+      const usage = await getUserUsage(uid);
+
       res.json({
-        plan,
-        limits,
-        remaining_qr
+        plan: planId,
+        plan_name: plan.name,
+        price_usd: plan.price_usd,
+        cycle: plan.cycle,
+        rank: plan.rank,
+        limits: effectiveLimits,
+        base_limits: plan.limits,
+        features: plan.features,
+        addons: activeAddons,
+        usage,
+        cancel_at_period_end: sub.cancel_at_period_end || false,
+        billing_cycle_end: sub.billing_cycle_end || null,
       });
     } catch (error) {
       logger.error('Plan fetch error:', error);
@@ -177,75 +287,193 @@ async function startServer() {
     }
   });
 
-  // Billing Checkout API
+  /** Lightweight usage-only endpoint for quick checks */
+  app.get('/api/user/usage', authenticate, async (req, res) => {
+    try {
+      const uid = (req as any).user.uid;
+      const usage = await getUserUsage(uid);
+      res.json(usage);
+    } catch (error) {
+      logger.error('Usage fetch error:', error);
+      res.status(500).json({ error: 'Failed to fetch usage' });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════
+  //  BILLING CHECKOUT & MANAGEMENT APIs
+  // ═══════════════════════════════════════════════════════════
+
+  /** Checkout for plan upgrade/downgrade */
   app.post('/api/billing/checkout', authenticate, async (req, res) => {
     try {
       const user = (req as any).user;
-      const { plan } = req.body;
+      const { plan: targetPlanId } = req.body;
       const uid = user.uid;
-      
-      const prices: Record<string, number> = {
-        pro: 7,
-        team: 29
-      };
-      
-      if (!prices[plan]) {
-        return res.status(400).json({ error: 'Invalid plan' });
+
+      const targetPlan = PLANS[targetPlanId as PlanId];
+      if (!targetPlan || targetPlanId === 'free') {
+        return res.status(400).json({ error: 'Invalid plan. Use /api/billing/cancel for free.' });
       }
 
       const merchant_id = process.env.PAYHERE_MERCHANT_ID;
       const merchant_secret = process.env.PAYHERE_SECRET;
-      
       if (!merchant_id || !merchant_secret) {
-        logger.error('Missing PayHere credentials');
-        return res.status(500).json({ error: 'Billing configuration error' });
+        // PayHere not configured — simulate for development
+        logger.warn('PayHere not configured. Simulating checkout for development.');
+        // Auto-apply the plan for dev/testing
+        const subRef = doc(db, 'subscriptions', uid);
+        await setDoc(subRef, {
+          plan: targetPlanId,
+          updated_at: serverTimestamp(),
+          cancel_at_period_end: false,
+        }, { merge: true });
+        await setDoc(doc(db, 'users', uid), { plan: targetPlanId }, { merge: true });
+        return res.json({ dev_mode: true, message: `Plan set to ${targetPlanId} (dev mode — no PayHere)` });
       }
-      const order_id = `ORDER_${uid}_${Date.now()}`;
-      const amount = prices[plan].toFixed(2);
-      const currency = 'USD';
-      
-      // Generate PayHere Hash
-      // md5(merchant_id + order_id + amount + currency + md5(merchant_secret))
-      const hashedSecret = crypto.createHash('md5').update(merchant_secret).digest('hex').toUpperCase();
-      const hashString = `${merchant_id}${order_id}${amount}${currency}${hashedSecret}`;
-      const hash = crypto.createHash('md5').update(hashString).digest('hex').toUpperCase();
 
-      const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
+      const orderId = `PLAN_${uid}_${Date.now()}`;
+      const checkout = buildPayHereCheckout({
+        uid, email: user.email || '', name: user.name || 'User',
+        orderId, amount: targetPlan.price_usd,
+        itemDesc: `${targetPlan.name} Plan Subscription`,
+        custom1: uid, custom2: `plan:${targetPlanId}`,
+        recurrence: targetPlan.recurrence, duration: targetPlan.duration,
+      });
 
-      const checkoutData = {
-        merchant_id,
-        return_url: `${appUrl}/settings`,
-        cancel_url: `${appUrl}/pricing`,
-        notify_url: `${appUrl}/api/billing/notify`,
-        order_id,
-        items: `${plan.toUpperCase()} Plan Subscription`,
-        currency,
-        amount,
-        first_name: user.name?.split(' ')[0] || 'User',
-        last_name: user.name?.split(' ').slice(1).join(' ') || '',
-        email: user.email || '',
-        phone: '0000000000',
-        address: 'N/A',
-        city: 'N/A',
-        country: 'Sri Lanka',
-        hash,
-        custom_1: uid,
-        custom_2: plan,
-        recurrence: '1 Month',
-        duration: 'Forever'
-      };
-
-      res.json(checkoutData);
+      res.json(checkout);
     } catch (error) {
       logger.error('Checkout error:', error);
       res.status(500).json({ error: 'Failed to generate checkout' });
     }
   });
 
+  /** Purchase an add-on */
+  app.post('/api/billing/addon', authenticate, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const { addon_id, quantity = 1 } = req.body;
+      const uid = user.uid;
+
+      const addon = getAddon(addon_id);
+      if (!addon) return res.status(400).json({ error: 'Invalid add-on ID' });
+
+      const totalPrice = addon.price_usd * quantity;
+      const merchant_id = process.env.PAYHERE_MERCHANT_ID;
+      const merchant_secret = process.env.PAYHERE_SECRET;
+
+      if (!merchant_id || !merchant_secret) {
+        // Dev mode — auto-apply add-on
+        logger.warn('PayHere not configured. Auto-applying add-on for development.');
+        const subRef = doc(db, 'subscriptions', uid);
+        const sub = await getUserSubscription(uid);
+        const addons: ActiveAddon[] = sub.addons || [];
+        addons.push({
+          addon_id,
+          quantity,
+          purchased_at: new Date().toISOString(),
+          order_id: `DEV_ADDON_${Date.now()}`,
+        });
+        await setDoc(subRef, { addons, updated_at: serverTimestamp() }, { merge: true });
+        return res.json({ dev_mode: true, message: `Add-on ${addon_id} applied (dev mode)` });
+      }
+
+      const orderId = `ADDON_${uid}_${Date.now()}`;
+      const checkout = buildPayHereCheckout({
+        uid, email: user.email || '', name: user.name || 'User',
+        orderId, amount: totalPrice,
+        itemDesc: `${addon.name} x${quantity}`,
+        custom1: uid, custom2: `addon:${addon_id}:${quantity}`,
+        recurrence: '1 Month', duration: 'Forever',
+      });
+
+      res.json(checkout);
+    } catch (error) {
+      logger.error('Addon checkout error:', error);
+      res.status(500).json({ error: 'Failed to generate addon checkout' });
+    }
+  });
+
+  /** Remove an active add-on */
+  app.delete('/api/billing/addon/:addonId', authenticate, async (req, res) => {
+    try {
+      const uid = (req as any).user.uid;
+      const { addonId } = req.params;
+      const subRef = doc(db, 'subscriptions', uid);
+      const sub = await getUserSubscription(uid);
+      const addons: ActiveAddon[] = sub.addons || [];
+
+      const idx = addons.findIndex(a => a.addon_id === addonId);
+      if (idx === -1) return res.status(404).json({ error: 'Add-on not found' });
+
+      addons.splice(idx, 1);
+      await setDoc(subRef, { addons, updated_at: serverTimestamp() }, { merge: true });
+
+      res.json({ success: true, message: `Add-on ${addonId} removed` });
+    } catch (error) {
+      logger.error('Addon removal error:', error);
+      res.status(500).json({ error: 'Failed to remove addon' });
+    }
+  });
+
+  /** Get invoice history */
+  app.get('/api/billing/invoices', authenticate, async (req, res) => {
+    try {
+      const uid = (req as any).user.uid;
+      const snapshot = await getDocs(
+        query(collection(db, 'invoices'), where('user_uid', '==', uid), orderBy('created_at', 'desc'), limit(50))
+      );
+      const invoices = snapshot.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+      res.json(invoices);
+    } catch (error) {
+      logger.error('Invoices fetch error:', error);
+      res.status(500).json({ error: 'Failed to fetch invoices' });
+    }
+  });
+
+  /** Cancel subscription (schedule downgrade to free at period end) */
+  app.post('/api/billing/cancel', authenticate, async (req, res) => {
+    try {
+      const uid = (req as any).user.uid;
+      const subRef = doc(db, 'subscriptions', uid);
+      await setDoc(subRef, {
+        cancel_at_period_end: true,
+        updated_at: serverTimestamp(),
+      }, { merge: true });
+      res.json({ success: true, message: 'Subscription will cancel at end of current billing period' });
+    } catch (error) {
+      logger.error('Cancel error:', error);
+      res.status(500).json({ error: 'Failed to cancel subscription' });
+    }
+  });
+
+  /** Downgrade immediately to free */
+  app.post('/api/billing/downgrade-free', authenticate, async (req, res) => {
+    try {
+      const uid = (req as any).user.uid;
+      const subRef = doc(db, 'subscriptions', uid);
+      await setDoc(subRef, {
+        plan: 'free',
+        addons: [],
+        cancel_at_period_end: false,
+        updated_at: serverTimestamp(),
+      }, { merge: true });
+      await setDoc(doc(db, 'users', uid), { plan: 'free' }, { merge: true });
+      res.json({ success: true, message: 'Downgraded to Free plan' });
+    } catch (error) {
+      logger.error('Downgrade error:', error);
+      res.status(500).json({ error: 'Failed to downgrade' });
+    }
+  });
+
+  /** Get available plans and add-ons (public config endpoint) */
+  app.get('/api/billing/plans', (_req, res) => {
+    res.json({ plans: PLANS, addons: ADDONS });
+  });
+
   const ALPHABET = "23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ";
   const generateSlug = customAlphabet(ALPHABET, 7);
 
-  // PayHere Webhook
+  // PayHere Webhook — handles BOTH plan upgrades and add-on purchases
   app.post('/api/billing/notify', express.urlencoded({ extended: true }), async (req, res) => {
     try {
       const {
@@ -256,7 +484,7 @@ async function startServer() {
         status_code,
         md5sig,
         custom_1: uid,
-        custom_2: plan
+        custom_2: payload  // "plan:pro" or "addon:scans_10k:2"
       } = req.body;
 
       const merchant_secret = process.env.PAYHERE_SECRET;
@@ -273,13 +501,67 @@ async function startServer() {
       }
 
       if (status_code === '2') {
-        // Success - Upgrade Plan
-        await setDoc(doc(db, 'users', uid), { plan }, { merge: true });
-        logger.info(`User ${uid} upgraded to ${plan}`);
+        // Payment successful
+        const parts = payload.split(':');
+        const type = parts[0]; // "plan" or "addon"
+
+        if (type === 'plan') {
+          const planId = parts[1];
+          const subRef = doc(db, 'subscriptions', uid);
+          const now = new Date();
+          const cycleEnd = new Date(now);
+          cycleEnd.setMonth(cycleEnd.getMonth() + 1);
+
+          await setDoc(subRef, {
+            plan: planId,
+            billing_cycle_start: now.toISOString(),
+            billing_cycle_end: cycleEnd.toISOString(),
+            cancel_at_period_end: false,
+            updated_at: serverTimestamp(),
+          }, { merge: true });
+          await setDoc(doc(db, 'users', uid), { plan: planId }, { merge: true });
+          logger.info(`User ${uid} upgraded to ${planId}`);
+        } else if (type === 'addon') {
+          const addonId = parts[1];
+          const qty = parseInt(parts[2]) || 1;
+          const subRef = doc(db, 'subscriptions', uid);
+          const sub = await getUserSubscription(uid);
+          const addons: ActiveAddon[] = sub.addons || [];
+          addons.push({
+            addon_id: addonId,
+            quantity: qty,
+            purchased_at: new Date().toISOString(),
+            order_id,
+          });
+          await setDoc(subRef, { addons, updated_at: serverTimestamp() }, { merge: true });
+          logger.info(`User ${uid} purchased add-on ${addonId} x${qty}`);
+        }
+
+        // Save invoice record
+        await addDoc(collection(db, 'invoices'), {
+          user_uid: uid,
+          order_id,
+          amount: parseFloat(payhere_amount),
+          currency: payhere_currency,
+          description: payload,
+          status: 'paid',
+          created_at: serverTimestamp(),
+        });
+
       } else if (status_code === '0') {
         logger.info(`Payment pending for user ${uid}`);
       } else {
         logger.warn(`Payment failed for user ${uid} (Status ${status_code})`);
+        // Save failed invoice
+        await addDoc(collection(db, 'invoices'), {
+          user_uid: uid,
+          order_id,
+          amount: parseFloat(payhere_amount || '0'),
+          currency: payhere_currency || 'USD',
+          description: payload,
+          status: status_code === '-1' ? 'cancelled' : 'failed',
+          created_at: serverTimestamp(),
+        });
       }
 
       res.send('OK');
@@ -317,24 +599,20 @@ async function startServer() {
 
       logger.info(`Starting QR creation for user ${uid}`, { type: qr_type, is_dynamic });
 
-      // 1. Plan Limit Enforcement
-      let userDoc;
+      // 1. Plan Limit Enforcement (uses shared config)
+      let sub;
       try {
-        userDoc = await getDoc(doc(db, 'users', uid));
+        sub = await getUserSubscription(uid);
       } catch (err: any) {
-        logger.error('Failed to fetch user doc for plan check', { error: err.message });
-        throw new Error(`User lookup failed: ${err.message}`);
+        logger.error('Failed to fetch subscription for plan check', { error: err.message });
+        throw new Error(`Subscription lookup failed: ${err.message}`);
       }
       
-      const plan = userDoc.exists() ? userDoc.data()?.plan || 'free' : 'free';
-      const plans: Record<string, any> = {
-        free: { qr_codes: 3 },
-        pro: { qr_codes: Infinity },
-        team: { qr_codes: Infinity }
-      };
-      const limits = plans[plan] || plans.free;
+      const planId = sub.plan || 'free';
+      const planConfig = getPlan(planId);
+      const effectiveLimits = computeEffectiveLimits(planId, sub.addons || []);
 
-      logger.info(`Checking limits for plan: ${plan}`, { limits });
+      logger.info(`Checking limits for plan: ${planId}`, { effectiveLimits });
 
       let qrSnapshot;
       try {
@@ -344,11 +622,26 @@ async function startServer() {
         throw new Error(`QR lookup failed: ${err.message}`);
       }
       
-      const activeCount = qrSnapshot.docs.filter((doc: any) => doc.data().is_active !== false).length;
+      const activeCount = qrSnapshot.docs.filter((d: any) => d.data().is_active !== false).length;
       
-      if (limits.qr_codes !== Infinity && activeCount >= limits.qr_codes) {
-        logger.warn(`User ${uid} reached plan limit (${activeCount}/${limits.qr_codes})`);
-        return res.status(403).json({ error: 'Plan limit reached. Upgrade to create more QRs.' });
+      if (!isUnlimited(effectiveLimits.max_qr_codes) && activeCount >= effectiveLimits.max_qr_codes) {
+        logger.warn(`User ${uid} reached QR limit (${activeCount}/${effectiveLimits.max_qr_codes})`);
+        return res.status(403).json({ error: `QR code limit reached (${activeCount}/${effectiveLimits.max_qr_codes}). Upgrade your plan or purchase a QR add-on.`, upgrade: true });
+      }
+
+      // Check feature: dynamic QR
+      if (is_dynamic !== false && !planConfig.features.dynamic_qr) {
+        return res.status(403).json({ error: 'Dynamic QR codes require Starter plan or above.', feature: 'dynamic_qr', upgrade: true });
+      }
+
+      // Check feature: logo embedding
+      if (style?.logo_url && !planConfig.features.logo_embedding) {
+        return res.status(403).json({ error: 'Logo embedding requires Pro plan or above.', feature: 'logo_embedding', upgrade: true });
+      }
+
+      // Check feature: password protection
+      if (options?.password_protect && !planConfig.features.password_protect) {
+        return res.status(403).json({ error: 'Password protection requires Starter plan or above.', feature: 'password_protect', upgrade: true });
       }
 
       // 2. Slug Generation

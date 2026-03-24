@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import QRCodeStyling from 'qr-code-styling';
+import { getPlan, formatLimit, isUnlimited, type PlanFeatures } from '../shared/plans';
 
 export default function CreateQR() {
   const { id } = useParams();
@@ -11,6 +12,10 @@ export default function CreateQR() {
   const [qrType, setQrType] = useState('url');
   const [isDynamic, setIsDynamic] = useState(true);
   const [urlError, setUrlError] = useState(false);
+  const [planFeatures, setPlanFeatures] = useState<PlanFeatures | null>(null);
+  const [planLimits, setPlanLimits] = useState<any>(null);
+  const [activeQrCount, setActiveQrCount] = useState(0);
+  const [planName, setPlanName] = useState('free');
   
   const [formData, setFormData] = useState({
     title: '',
@@ -51,6 +56,27 @@ export default function CreateQR() {
     if (canvasRef.current) {
       qrCodeRef.current.append(canvasRef.current);
     }
+
+    // Fetch plan for feature gating
+    const fetchPlan = async () => {
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        if (!token) return;
+        const res = await fetch('/api/user/plan', { headers: { 'Authorization': `Bearer ${token}` } });
+        if (res.ok) {
+          const data = await res.json();
+          setPlanFeatures(data.features);
+          setPlanLimits(data.limits);
+          setActiveQrCount(data.usage?.active_qr_codes || 0);
+          setPlanName(data.plan);
+          // Auto-disable dynamic if not allowed
+          if (!data.features?.dynamic_qr && !id) {
+            setIsDynamic(false);
+          }
+        }
+      } catch (e) { console.error('Plan fetch error', e); }
+    };
+    fetchPlan();
   }, []);
 
   useEffect(() => {
@@ -496,7 +522,10 @@ export default function CreateQR() {
               </div>
 
               <div className="form-section">
-                <label className="form-label">Center logo <span style={{ color: 'var(--text3)', fontWeight: 'normal' }}>(optional — auto-sets error correction to H)</span></label>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  Center logo <span style={{ color: 'var(--text3)', fontWeight: 'normal' }}>(optional)</span>
+                  {!planFeatures?.logo_embedding && <span className="pro-badge">PRO</span>}
+                </label>
                 <div 
                   style={{ border: '1px dashed var(--border2)', borderRadius: '8px', padding: '24px', textAlign: 'center', cursor: 'pointer', position: 'relative' }} 
                   onClick={() => document.getElementById('logo-upload')?.click()}
@@ -563,28 +592,36 @@ export default function CreateQR() {
                 <span style={{ textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text3)', fontSize: '13px' }}>OPTIONS</span>
               </div>
 
-              <div className="toggle-wrap" style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
+              <div className={`toggle-wrap ${!planFeatures?.dynamic_qr ? 'feature-gated' : ''}`} style={{ padding: '16px 0', borderBottom: '1px solid var(--border)', position: 'relative' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 500, marginBottom: '4px' }}>Dynamic QR</div>
+                  <div style={{ fontWeight: 500, marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    Dynamic QR
+                    {!planFeatures?.dynamic_qr && <span className="pro-badge">STARTER</span>}
+                  </div>
                   <div style={{ fontSize: '13px', color: 'var(--text3)' }}>Editable destination + scan analytics</div>
                 </div>
                 <button 
                   className={`toggle ${isDynamic ? 'on' : ''}`} 
-                  onClick={() => setIsDynamic(!isDynamic)}
+                  onClick={() => planFeatures?.dynamic_qr && setIsDynamic(!isDynamic)}
+                  style={!planFeatures?.dynamic_qr ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
                 ></button>
               </div>
 
-              <div className="toggle-wrap" style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
+              <div className={`toggle-wrap ${!planFeatures?.password_protect ? 'feature-gated' : ''}`} style={{ padding: '16px 0', borderBottom: '1px solid var(--border)', position: 'relative' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 500, marginBottom: '4px' }}>Password protect</div>
+                  <div style={{ fontWeight: 500, marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    Password protect
+                    {!planFeatures?.password_protect && <span className="pro-badge">STARTER</span>}
+                  </div>
                   <div style={{ fontSize: '13px', color: 'var(--text3)' }}>Require a PIN before redirecting</div>
                 </div>
                 <button 
                   className={`toggle ${formData.options.password_protect ? 'on' : ''}`} 
-                  onClick={() => setFormData({...formData, options: {...formData.options, password_protect: !formData.options.password_protect}})}
+                  onClick={() => planFeatures?.password_protect && setFormData({...formData, options: {...formData.options, password_protect: !formData.options.password_protect}})}
+                  style={!planFeatures?.password_protect ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
                 ></button>
               </div>
-              {formData.options.password_protect && (
+              {formData.options.password_protect && planFeatures?.password_protect && (
                 <div className="form-section" style={{ padding: '0 0 16px 0' }}>
                   <input type="text" className="form-input" placeholder="Enter PIN or password" value={formData.options.password} onChange={(e) => setFormData({...formData, options: {...formData.options, password: e.target.value}})} />
                 </div>

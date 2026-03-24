@@ -13,6 +13,7 @@ export default function Dashboard() {
   const [devices, setDevices] = useState<any[]>([]);
   const [countries, setCountries] = useState<any[]>([]);
   const [recentScans, setRecentScans] = useState<any[]>([]);
+  const [planFeatures, setPlanFeatures] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; qrId: string; slug: string }>({
     isOpen: false,
@@ -59,6 +60,12 @@ export default function Dashboard() {
         setDevices(Array.isArray(devData) ? devData : []);
         setCountries(Array.isArray(countryData) ? countryData : []);
         setRecentScans(Array.isArray(recentData) ? recentData : []);
+
+        // Fetch plan features
+        const planRes = await fetchJson('/api/user/plan').catch(() => null);
+        if (planRes?.features) {
+          setPlanFeatures(planRes.features);
+        }
 
         setLoading(false);
       } catch (err) {
@@ -200,7 +207,15 @@ export default function Dashboard() {
               <span style={{ fontSize: '10px', color: 'var(--text3)' }}>Today</span>
             </div>
           </div>
-          <div className="card">
+          <div className={`card ${!planFeatures?.advanced_analytics ? 'feature-gated' : ''}`} style={{ position: 'relative' }}>
+            {!planFeatures?.advanced_analytics && (
+              <div style={{ position: 'absolute', inset: 0, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ marginBottom: '8px' }}><span className="pro-badge" style={{ fontSize: '11px', padding: '4px 10px' }}>PRO FEATURE</span></div>
+                <div style={{ color: '#fff', fontSize: '14px', fontWeight: 600 }}>Device Split Locked</div>
+                <div style={{ color: 'var(--text2)', fontSize: '12px', marginTop: '4px' }}>Upgrade to see device analytics</div>
+              </div>
+            )}
+            <div style={{ opacity: !planFeatures?.advanced_analytics ? 0.2 : 1 }}>
             <div className="card-title">Device split</div>
             {devices.length === 0 ? (
               <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text3)' }}>No data</div>
@@ -244,9 +259,10 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+      </div>
 
-        {/* QR Codes table + Top Countries */}
-        <div className="grid-21 mb24">
+      {/* QR Codes table + Top Countries */}
+      <div className="grid-21 mb24">
           <div className="card">
             <div className="section-row">
               <span className="section-title">Your QR codes</span>
@@ -321,54 +337,72 @@ export default function Dashboard() {
               </div>
             )}
           </div>
-          <div className="card">
-            <div className="card-title">Top countries</div>
-            {countries.length === 0 ? (
-              <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text3)' }}>No data</div>
-            ) : (
-              <div id="country-list-main">
-                {countries.map(c => {
-                  const maxScans = countries[0].scans;
-                  const pct = (c.scans / maxScans) * 100;
-                  return (
-                    <div key={c.country} className="country-row">
-                      <div className="c-name" style={{ flex: 1, fontSize: '13px', color: 'var(--text2)' }}>{c.country}</div>
-                      <div className="c-bar-track" style={{ flex: 2, height: '3px', background: 'var(--surface3)', borderRadius: '2px', overflow: 'hidden' }}>
-                        <div className="c-bar-fill" style={{ height: '100%', background: 'var(--coral)', borderRadius: '2px', width: `${pct}%` }}></div>
-                      </div>
-                      <div className="c-count" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)', minWidth: '36px', textAlign: 'right' }}>{c.scans}</div>
-                    </div>
-                  );
-                })}
+          <div className={`card ${!planFeatures?.advanced_analytics ? 'feature-gated' : ''}`} style={{ position: 'relative' }}>
+            {!planFeatures?.advanced_analytics && (
+              <div style={{ position: 'absolute', inset: 0, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ marginBottom: '8px' }}><span className="pro-badge" style={{ fontSize: '11px', padding: '4px 10px' }}>PRO FEATURE</span></div>
+                <div style={{ color: '#fff', fontSize: '14px', fontWeight: 600 }}>Top Countries Locked</div>
+                <div style={{ color: 'var(--text2)', fontSize: '12px', marginTop: '4px' }}>Upgrade to see global reach</div>
               </div>
             )}
+            <div style={{ opacity: !planFeatures?.advanced_analytics ? 0.2 : 1 }}>
+              <div className="card-title">Top countries</div>
+              {countries.length === 0 ? (
+                <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text3)' }}>No data</div>
+              ) : (
+                <div id="country-list-main">
+                  {countries.map(c => {
+                    const maxScans = countries[0].scans;
+                    const pct = (c.scans / maxScans) * 100;
+                    return (
+                      <div key={c.country} className="country-row">
+                        <div className="c-name" style={{ flex: 1, fontSize: '13px', color: 'var(--text2)' }}>{c.country}</div>
+                        <div className="c-bar-track" style={{ flex: 2, height: '3px', background: 'var(--surface3)', borderRadius: '2px', overflow: 'hidden' }}>
+                          <div className="c-bar-fill" style={{ height: '100%', background: 'var(--coral)', borderRadius: '2px', width: `${pct}%` }}></div>
+                        </div>
+                        <div className="c-count" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)', minWidth: '36px', textAlign: 'right' }}>{c.scans}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Recent activity */}
-        <div className="card">
-          <div className="section-row">
-            <span className="section-title">Live scan feed</span>
-            <span style={{ fontSize: '11px', color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: '6px' }}><span className="live-dot"></span> Real-time</span>
-          </div>
-          {recentScans.length === 0 ? (
-            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text3)' }}>No recent scans</div>
-          ) : (
-            <div id="live-feed" style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-              {recentScans.map(scan => (
-                <div key={scan.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: 'var(--surface2)', borderRadius: '8px', marginBottom: '4px' }}>
-                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: scan.is_unique ? 'var(--blue)' : 'var(--surface3)' }}></div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)', marginBottom: '2px' }}>{scan.slug}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text3)' }}>{scan.city}, {scan.country} · {scan.device_type} · {scan.browser}</div>
-                  </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text3)' }}>
-                    {new Date(scan.scanned_at).toLocaleString()}
-                  </div>
-                </div>
-              ))}
+        <div className={`card ${!planFeatures?.advanced_analytics ? 'feature-gated' : ''}`} style={{ position: 'relative' }}>
+          {!planFeatures?.advanced_analytics && (
+            <div style={{ position: 'absolute', inset: 0, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ marginBottom: '8px' }}><span className="pro-badge" style={{ fontSize: '11px', padding: '4px 10px' }}>PRO FEATURE</span></div>
+              <div style={{ color: '#fff', fontSize: '14px', fontWeight: 600 }}>Live Feed Locked</div>
+              <div style={{ color: 'var(--text2)', fontSize: '12px', marginTop: '4px' }}>Upgrade to view real-time scans</div>
             </div>
           )}
+          <div style={{ opacity: !planFeatures?.advanced_analytics ? 0.2 : 1 }}>
+            <div className="section-row">
+              <span className="section-title">Live scan feed</span>
+              <span style={{ fontSize: '11px', color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: '6px' }}><span className="live-dot"></span> Real-time</span>
+            </div>
+            {recentScans.length === 0 ? (
+              <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text3)' }}>No recent scans</div>
+            ) : (
+              <div id="live-feed" style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                {recentScans.map(scan => (
+                  <div key={scan.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: 'var(--surface2)', borderRadius: '8px', marginBottom: '4px' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: scan.is_unique ? 'var(--blue)' : 'var(--surface3)' }}></div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)', marginBottom: '2px' }}>{scan.slug}</div>
+                      <div style={{ fontSize: '11px', color: 'var(--text3)' }}>{scan.city}, {scan.country} · {scan.device_type} · {scan.browser}</div>
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text3)' }}>
+                      {new Date(scan.scanned_at).toLocaleString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

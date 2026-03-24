@@ -61,5 +61,17 @@ service cloud.firestore {
       allow read: if true; // Allow backend and frontend to read
       allow write: if true; // Allow backend to write
     }
+
+    // Subscription state (plan + active add-ons)
+    match /subscriptions/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if true; // Backend-managed via PayHere webhook
+    }
+
+    // Invoice / payment history
+    match /invoices/{invoiceId} {
+      allow read: if isAuthenticated() && resource.data.user_uid == request.auth.uid;
+      allow write: if true; // Backend-managed via PayHere webhook
+    }
   }
 }

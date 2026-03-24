@@ -2,12 +2,21 @@ import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { auth, logout } from '../firebase';
 
+const PLAN_COLORS: Record<string, string> = {
+  free: 'var(--text3)',
+  starter: '#34d399',
+  pro: '#a78bfa',
+  business: '#fbbf24',
+};
+
 export default function ScnrLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const [userEmail, setUserEmail] = useState('');
   const [userName, setUserName] = useState('');
   const [userInitials, setUserInitials] = useState('');
+  const [userPlan, setUserPlan] = useState('free');
+  const [userPlanName, setUserPlanName] = useState('Free');
 
   useEffect(() => {
     if (auth.currentUser) {
@@ -17,6 +26,20 @@ export default function ScnrLayout() {
       setUserName(name);
       setUserInitials(name.substring(0, 2).toUpperCase());
     }
+    // Fetch user plan for sidebar badge
+    const fetchPlan = async () => {
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        if (!token) return;
+        const res = await fetch('/api/user/plan', { headers: { 'Authorization': `Bearer ${token}` } });
+        if (res.ok) {
+          const data = await res.json();
+          setUserPlan(data.plan || 'free');
+          setUserPlanName(data.plan_name || 'Free');
+        }
+      } catch (e) { /* silently ignore */ }
+    };
+    fetchPlan();
   }, []);
 
   type NavItem = { name: string; path: string; icon: React.ReactNode; badge?: React.ReactNode; };
@@ -174,7 +197,7 @@ export default function ScnrLayout() {
               <div className="user-av">{userInitials}</div>
               <div className="user-info">
                 <div className="user-name">{userName}</div>
-                <div className="user-plan"><span className="plan-badge">Pro</span></div>
+                <div className="user-plan"><span className="plan-badge" style={{ color: PLAN_COLORS[userPlan] || 'var(--text3)' }}>{userPlanName}</span></div>
               </div>
             </div>
           </Link>

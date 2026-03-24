@@ -13,6 +13,7 @@ export default function AccountAnalytics() {
   const [accountTimeseries, setAccountTimeseries] = useState<any[]>([]);
   const [qrPerformance, setQrPerformance] = useState<any[]>([]);
   const [accountCountries, setAccountCountries] = useState<any[]>([]);
+  const [planFeatures, setPlanFeatures] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -41,6 +42,11 @@ export default function AccountAnalytics() {
         setAccountTimeseries(Array.isArray(timeseries) ? timeseries : []);
         setQrPerformance(Array.isArray(performance) ? performance : []);
         setAccountCountries(Array.isArray(countries) ? countries : []);
+
+        const planRes = await fetchJson('/api/user/plan').catch(() => null);
+        if (planRes?.features) {
+          setPlanFeatures(planRes.features);
+        }
       } catch (err) {
         console.error("Failed to fetch account analytics", err);
       } finally {
@@ -134,18 +140,27 @@ export default function AccountAnalytics() {
               </ResponsiveContainer>
             </div>
           </div>
-          <div className="card">
-            <div className="card-title">Top countries</div>
-            <div style={{ height: '200px', marginTop: '16px' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={accountCountries} layout="vertical" margin={{ top: 0, right: 0, left: 40, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="var(--border)" />
-                  <XAxis type="number" stroke="var(--text3)" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
-                  <YAxis dataKey="country" type="category" stroke="var(--text3)" fontSize={11} tickLine={false} axisLine={false} />
-                  <Tooltip cursor={{fill: 'var(--surface2)'}} />
-                  <Bar dataKey="scans" name="Total Scans" fill="var(--blue)" radius={[0, 4, 4, 0]} barSize={16} />
-                </BarChart>
-              </ResponsiveContainer>
+          <div className={`card ${!planFeatures?.advanced_analytics ? 'feature-gated' : ''}`} style={{ position: 'relative' }}>
+            {!planFeatures?.advanced_analytics && (
+              <div style={{ position: 'absolute', inset: 0, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ marginBottom: '8px' }}><span className="pro-badge" style={{ fontSize: '11px', padding: '4px 10px' }}>PRO FEATURE</span></div>
+                <div style={{ color: '#fff', fontSize: '14px', fontWeight: 600 }}>Top Countries Locked</div>
+                <div style={{ color: 'var(--text2)', fontSize: '12px', marginTop: '4px' }}>Upgrade to see global reach</div>
+              </div>
+            )}
+            <div style={{ opacity: !planFeatures?.advanced_analytics ? 0.2 : 1 }}>
+              <div className="card-title">Top countries</div>
+              <div style={{ height: '200px', marginTop: '16px' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={accountCountries} layout="vertical" margin={{ top: 0, right: 0, left: 40, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="var(--border)" />
+                    <XAxis type="number" stroke="var(--text3)" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+                    <YAxis dataKey="country" type="category" stroke="var(--text3)" fontSize={11} tickLine={false} axisLine={false} />
+                    <Tooltip cursor={{fill: 'var(--surface2)'}} />
+                    <Bar dataKey="scans" name="Total Scans" fill="var(--blue)" radius={[0, 4, 4, 0]} barSize={16} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
         </div>

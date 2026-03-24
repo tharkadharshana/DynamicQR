@@ -2,6 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth } from '../firebase';
 import { updateProfile } from 'firebase/auth';
+import { formatLimit, formatBytes, isUnlimited } from '../shared/plans';
+
+const apiFetch = async (url: string, opts?: any) => {
+  const token = await auth.currentUser?.getIdToken();
+  const res = await fetch(url, { ...opts, headers: { ...opts?.headers, 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } });
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+};
+const formatNumber = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n);
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -24,6 +33,17 @@ export default function Settings() {
   const [showPwForm, setShowPwForm] = useState(false);
   const [tfaEnabled, setTfaEnabled] = useState(false);
   const [showTfaSetup, setShowTfaSetup] = useState(false);
+  const [planData, setPlanData] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchPlan = async () => {
+      try {
+        const data = await apiFetch('/api/user/plan');
+        setPlanData(data);
+      } catch (e) { console.error('Plan fetch error', e); }
+    };
+    fetchPlan();
+  }, []);
 
   useEffect(() => {
     if (user?.displayName) {
@@ -157,12 +177,12 @@ export default function Settings() {
               </div>
               <div className="profile-name" id="profile-display-name">{firstName} {lastName}</div>
               <div className="profile-email" id="profile-display-email">{user?.email}</div>
-              <div className="profile-plan-chip">⭐ Pro Plan · Active</div>
+              <div className="profile-plan-chip">⭐ {planData ? `${planData.plan_name} Plan` : 'Loading…'} · Active</div>
               <div className="profile-stats">
-                <div className="p-stat"><div className="p-stat-val">7</div><div className="p-stat-key">QR Codes</div></div>
-                <div className="p-stat"><div className="p-stat-val">48K</div><div className="p-stat-key">Scans</div></div>
-                <div className="p-stat"><div className="p-stat-val">30</div><div className="p-stat-key">Days active</div></div>
-                <div className="p-stat"><div className="p-stat-val">12</div><div className="p-stat-key">Countries</div></div>
+                <div className="p-stat"><div className="p-stat-val">{planData?.usage?.active_qr_codes ?? '—'}</div><div className="p-stat-key">QR Codes</div></div>
+                <div className="p-stat"><div className="p-stat-val">{planData ? formatNumber(planData.usage?.scans_this_month || 0) : '—'}</div><div className="p-stat-key">Scans</div></div>
+                <div className="p-stat"><div className="p-stat-val">{planData?.limits?.analytics_days || '—'}</div><div className="p-stat-key">Analytics days</div></div>
+                <div className="p-stat"><div className="p-stat-val">{planData ? formatBytes(planData.usage?.storage_bytes || 0) : '—'}</div><div className="p-stat-key">Storage</div></div>
               </div>
               <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
                 <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center', fontSize: '12px' }}>Change photo</button>
@@ -176,10 +196,10 @@ export default function Settings() {
                 <button className="btn btn-ghost btn-sm" style={{ fontSize: '11px' }} onClick={() => navigate('/billing')}>Manage →</button>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>QR codes</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>7 / unlimited</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: '14%' }}></div></div></div>
-                <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>Storage</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>2.4 MB</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: '3%', background: 'var(--blue)' }}></div></div></div>
-                <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>Analytics window</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>90 days</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: '100%', background: 'var(--green)' }}></div></div></div>
-                <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>Scans this month</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>48,291 / unlimited</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: '100%', background: 'var(--coral)' }}></div></div></div>
+                <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>QR codes</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>{planData ? `${planData.usage.active_qr_codes} / ${formatLimit(planData.limits.max_qr_codes)}` : '—'}</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: planData && !isUnlimited(planData.limits.max_qr_codes) ? `${Math.min(100, Math.round((planData.usage.active_qr_codes / planData.limits.max_qr_codes) * 100))}%` : '10%' }}></div></div></div>
+                <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>Storage</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>{planData ? formatBytes(planData.usage.storage_bytes) : '—'}</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: planData ? `${Math.min(100, Math.round((planData.usage.storage_bytes / planData.limits.max_storage_bytes) * 100))}%` : '3%', background: 'var(--blue)' }}></div></div></div>
+                <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>Analytics window</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>{planData ? `${planData.limits.analytics_days} days` : '—'}</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: '100%', background: 'var(--green)' }}></div></div></div>
+                <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>Scans this month</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>{planData ? `${formatNumber(planData.usage.scans_this_month)} / ${formatLimit(planData.limits.max_scans_per_month)}` : '—'}</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: planData && !isUnlimited(planData.limits.max_scans_per_month) ? `${Math.min(100, Math.round((planData.usage.scans_this_month / planData.limits.max_scans_per_month) * 100))}%` : '100%', background: 'var(--coral)' }}></div></div></div>
               </div>
             </div>
 
