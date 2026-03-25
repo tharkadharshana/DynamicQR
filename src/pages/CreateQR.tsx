@@ -3,19 +3,16 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import QRCodeStyling from 'qr-code-styling';
-import { getPlan, formatLimit, isUnlimited, type PlanFeatures } from '../shared/plans';
+import ConfirmationModal from '../components/ConfirmationModal';
 
 export default function CreateQR() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [qrType, setQrType] = useState('url');
   const [isDynamic, setIsDynamic] = useState(true);
   const [urlError, setUrlError] = useState(false);
-  const [planFeatures, setPlanFeatures] = useState<PlanFeatures | null>(null);
-  const [planLimits, setPlanLimits] = useState<any>(null);
-  const [activeQrCount, setActiveQrCount] = useState(0);
-  const [planName, setPlanName] = useState('free');
   
   const [formData, setFormData] = useState({
     title: '',
@@ -56,27 +53,6 @@ export default function CreateQR() {
     if (canvasRef.current) {
       qrCodeRef.current.append(canvasRef.current);
     }
-
-    // Fetch plan for feature gating
-    const fetchPlan = async () => {
-      try {
-        const token = await auth.currentUser?.getIdToken();
-        if (!token) return;
-        const res = await fetch('/api/user/plan', { headers: { 'Authorization': `Bearer ${token}` } });
-        if (res.ok) {
-          const data = await res.json();
-          setPlanFeatures(data.features);
-          setPlanLimits(data.limits);
-          setActiveQrCount(data.usage?.active_qr_codes || 0);
-          setPlanName(data.plan);
-          // Auto-disable dynamic if not allowed
-          if (!data.features?.dynamic_qr && !id) {
-            setIsDynamic(false);
-          }
-        }
-      } catch (e) { console.error('Plan fetch error', e); }
-    };
-    fetchPlan();
   }, []);
 
   useEffect(() => {
@@ -146,7 +122,7 @@ export default function CreateQR() {
         content = formData.slug ? `${window.location.origin}/${formData.slug}` : `${window.location.origin}/preview`;
       } else {
         if (qrType === 'url') {
-          content = formData.destination_url || '';
+          content = formData.destination_url || 'https://scnr.app';
         } else if (qrType === 'vcard') {
           content = `BEGIN:VCARD\nVERSION:3.0\nN:${formData.content_data?.last_name || ''};${formData.content_data?.first_name || ''}\nFN:${formData.content_data?.first_name || ''} ${formData.content_data?.last_name || ''}\nTEL:${formData.content_data?.phone || ''}\nEMAIL:${formData.content_data?.email || ''}\nORG:${formData.content_data?.company || ''}\nURL:${formData.content_data?.website || ''}\nEND:VCARD`;
         } else if (qrType === 'wifi') {
@@ -278,7 +254,10 @@ export default function CreateQR() {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm('Are you sure you want to completely delete this QR code and its stats?')) return;
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = async () => {
     try {
       setLoading(true);
       const token = await auth.currentUser?.getIdToken();
@@ -318,7 +297,7 @@ export default function CreateQR() {
   };
 
   return (
-    <div className="content" style={{ padding: '28px', overflow: 'auto', height: '100%' }}>
+    <div className="content">
       <div className="page active">
         <div className="create-layout">
           {/* Left: Form */}
@@ -522,10 +501,7 @@ export default function CreateQR() {
               </div>
 
               <div className="form-section">
-                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  Center logo <span style={{ color: 'var(--text3)', fontWeight: 'normal' }}>(optional)</span>
-                  {!planFeatures?.logo_embedding && <span className="pro-badge">PRO</span>}
-                </label>
+                <label className="form-label">Center logo <span style={{ color: 'var(--text3)', fontWeight: 'normal' }}>(optional — auto-sets error correction to H)</span></label>
                 <div 
                   style={{ border: '1px dashed var(--border2)', borderRadius: '8px', padding: '24px', textAlign: 'center', cursor: 'pointer', position: 'relative' }} 
                   onClick={() => document.getElementById('logo-upload')?.click()}
@@ -592,36 +568,28 @@ export default function CreateQR() {
                 <span style={{ textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text3)', fontSize: '13px' }}>OPTIONS</span>
               </div>
 
-              <div className={`toggle-wrap ${!planFeatures?.dynamic_qr ? 'feature-gated' : ''}`} style={{ padding: '16px 0', borderBottom: '1px solid var(--border)', position: 'relative' }}>
+              <div className="toggle-wrap" style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 500, marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    Dynamic QR
-                    {!planFeatures?.dynamic_qr && <span className="pro-badge">STARTER</span>}
-                  </div>
+                  <div style={{ fontWeight: 500, marginBottom: '4px' }}>Dynamic QR</div>
                   <div style={{ fontSize: '13px', color: 'var(--text3)' }}>Editable destination + scan analytics</div>
                 </div>
                 <button 
                   className={`toggle ${isDynamic ? 'on' : ''}`} 
-                  onClick={() => planFeatures?.dynamic_qr && setIsDynamic(!isDynamic)}
-                  style={!planFeatures?.dynamic_qr ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
+                  onClick={() => setIsDynamic(!isDynamic)}
                 ></button>
               </div>
 
-              <div className={`toggle-wrap ${!planFeatures?.password_protect ? 'feature-gated' : ''}`} style={{ padding: '16px 0', borderBottom: '1px solid var(--border)', position: 'relative' }}>
+              <div className="toggle-wrap" style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 500, marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    Password protect
-                    {!planFeatures?.password_protect && <span className="pro-badge">STARTER</span>}
-                  </div>
+                  <div style={{ fontWeight: 500, marginBottom: '4px' }}>Password protect</div>
                   <div style={{ fontSize: '13px', color: 'var(--text3)' }}>Require a PIN before redirecting</div>
                 </div>
                 <button 
                   className={`toggle ${formData.options.password_protect ? 'on' : ''}`} 
-                  onClick={() => planFeatures?.password_protect && setFormData({...formData, options: {...formData.options, password_protect: !formData.options.password_protect}})}
-                  style={!planFeatures?.password_protect ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
+                  onClick={() => setFormData({...formData, options: {...formData.options, password_protect: !formData.options.password_protect}})}
                 ></button>
               </div>
-              {formData.options.password_protect && planFeatures?.password_protect && (
+              {formData.options.password_protect && (
                 <div className="form-section" style={{ padding: '0 0 16px 0' }}>
                   <input type="text" className="form-input" placeholder="Enter PIN or password" value={formData.options.password} onChange={(e) => setFormData({...formData, options: {...formData.options, password: e.target.value}})} />
                 </div>
@@ -763,6 +731,16 @@ export default function CreateQR() {
           </div>
         </div>
       </div>
+
+      <ConfirmationModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={confirmDelete}
+        title="Delete QR Code"
+        message="Are you sure you want to delete this QR code? This action cannot be undone and all historical scan data, analytics, and stats related to this QR code will be permanently deleted."
+        confirmText="Delete Permanently"
+        isDestructive={true}
+      />
     </div>
   );
 }

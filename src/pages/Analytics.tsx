@@ -24,7 +24,6 @@ export default function Analytics() {
   const [recentScans, setRecentScans] = useState<any[]>([]);
   const [advanced, setAdvanced] = useState<any>(null);
   const [qrDetails, setQrDetails] = useState<any>(null);
-  const [planFeatures, setPlanFeatures] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -113,12 +112,6 @@ export default function Analytics() {
         } else {
           setQrDetails(null);
           setAdvanced(null);
-        }
-
-        // Fetch plan features
-        const planRes = await fetchJson('/api/user/plan').catch(() => null);
-        if (planRes?.features && !planFeatures) {
-          setPlanFeatures(planRes.features);
         }
       } catch (error) {
         console.error("Error fetching analytics:", error);
@@ -316,15 +309,8 @@ export default function Analytics() {
         </div>
 
         {/* Heatmap + Browsers */}
-        <div className={`grid-2 mb16 ${!planFeatures?.advanced_analytics ? 'feature-gated' : ''}`} style={{ position: 'relative' }}>
-          {!planFeatures?.advanced_analytics && (
-            <div style={{ position: 'absolute', inset: 0, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ marginBottom: '8px' }}><span className="pro-badge" style={{ fontSize: '11px', padding: '4px 10px' }}>PRO FEATURE</span></div>
-              <div style={{ color: '#fff', fontSize: '14px', fontWeight: 600 }}>Advanced Analytics Locked</div>
-              <div style={{ color: 'var(--text2)', fontSize: '12px', marginTop: '4px' }}>Upgrade to see devices, referrers, and browsers</div>
-            </div>
-          )}
-          <div className="card" style={{ opacity: !planFeatures?.advanced_analytics ? 0.2 : 1 }}>
+        <div className="grid-2 mb16">
+          <div className="card">
             <div className="section-title mb16">Devices & Referrers</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div>
@@ -379,7 +365,7 @@ export default function Analytics() {
               </div>
             </div>
           </div>
-          <div className="card" style={{ opacity: !planFeatures?.advanced_analytics ? 0.2 : 1 }}>
+          <div className="card">
             <div className="section-title mb16">Browser & OS</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div>
@@ -429,15 +415,7 @@ export default function Analytics() {
         </div>
 
         {/* Recent Scans Table */}
-        <div className={`card ${!planFeatures?.advanced_analytics ? 'feature-gated' : ''}`} style={{ position: 'relative' }}>
-          {!planFeatures?.advanced_analytics && (
-            <div style={{ position: 'absolute', inset: 0, zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ marginBottom: '8px' }}><span className="pro-badge" style={{ fontSize: '11px', padding: '4px 10px' }}>PRO FEATURE</span></div>
-              <div style={{ color: '#fff', fontSize: '14px', fontWeight: 600 }}>Recent Scans Locked</div>
-              <div style={{ color: 'var(--text2)', fontSize: '12px', marginTop: '4px' }}>Upgrade to view the real-time scan log</div>
-            </div>
-          )}
-          <div style={{ opacity: !planFeatures?.advanced_analytics ? 0.2 : 1 }}>
+        <div className="card">
           <div className="section-row">
             <span className="section-title">Recent Scans</span>
           </div>
@@ -478,7 +456,6 @@ export default function Analytics() {
                 )}
               </tbody>
             </table>
-          </div>
           </div>
         </div>
 
