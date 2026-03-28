@@ -1,29 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { auth } from '../firebase';
+import { useNavigate, useOutletContext } from 'react-router-dom';
+import { auth, logout } from '../firebase';
 import { updateProfile } from 'firebase/auth';
+import { apiFetch, formatNumber } from '../lib/api';
 
 export default function Settings() {
   const navigate = useNavigate();
+  const { planData } = useOutletContext<{ planData: any }>();
   const user = auth.currentUser;
+  
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [company, setCompany] = useState('');
   const [jobTitle, setJobTitle] = useState('');
   const [country, setCountry] = useState('LK');
   const [timezone, setTimezone] = useState('Asia/Colombo');
+  
   const [savingProfile, setSavingProfile] = useState(false);
-  const [savingSettings, setSavingSettings] = useState(false);
-  const [savingPrefs, setSavingPrefs] = useState(false);
-  const [savingWebhook, setSavingWebhook] = useState(false);
   const [webhookUrl, setWebhookUrl] = useState('');
-
-  const [pwCurrent, setPwCurrent] = useState('');
-  const [pwNew, setPwNew] = useState('');
-  const [pwConfirm, setPwConfirm] = useState('');
-  const [showPwForm, setShowPwForm] = useState(false);
-  const [tfaEnabled, setTfaEnabled] = useState(false);
-  const [showTfaSetup, setShowTfaSetup] = useState(false);
 
   useEffect(() => {
     if (user?.displayName) {
@@ -31,7 +25,14 @@ export default function Settings() {
       setFirstName(parts[0] || '');
       setLastName(parts.slice(1).join(' ') || '');
     }
-  }, [user]);
+    
+    if (planData?.profile) {
+      setCompany(planData.profile.company || '');
+      setJobTitle(planData.profile.jobTitle || '');
+      setCountry(planData.profile.country || 'LK');
+      setTimezone(planData.profile.timezone || 'Asia/Colombo');
+    }
+  }, [user, planData]);
 
   const showToast = (type: string, message: string) => {
     alert(`${type.toUpperCase()}: ${message}`);
@@ -41,8 +42,15 @@ export default function Settings() {
     setSavingProfile(true);
     try {
       if (user) {
+        // 1. Update Firebase Auth Profile (DisplayName)
         await updateProfile(user, {
           displayName: `${firstName} ${lastName}`.trim()
+        });
+        
+        // 2. Update Extended Profile in Firestore
+        await apiFetch('/api/user/profile', {
+          method: 'PUT',
+          body: JSON.stringify({ company, jobTitle, country, timezone })
         });
       }
       showToast('success', 'Profile updated');
@@ -53,6 +61,18 @@ export default function Settings() {
       setSavingProfile(false);
     }
   };
+
+  /* 
+  // --- MOCKED HANDLERS (Preserved for future implementation) ---
+  const [pwCurrent, setPwCurrent] = useState('');
+  const [pwNew, setPwNew] = useState('');
+  const [pwConfirm, setPwConfirm] = useState('');
+  const [showPwForm, setShowPwForm] = useState(false);
+  const [tfaEnabled, setTfaEnabled] = useState(false);
+  const [showTfaSetup, setShowTfaSetup] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [savingPrefs, setSavingPrefs] = useState(false);
+  const [savingWebhook, setSavingWebhook] = useState(false);
 
   const handleSavePassword = () => {
     if (!pwCurrent || !pwNew) { showToast('error', 'Please fill all password fields'); return; }
@@ -79,18 +99,6 @@ export default function Settings() {
     showToast('success', 'Two-factor authentication enabled');
   };
 
-  const revokeAllSessions = () => {
-    if (window.confirm('Revoke all other sessions? You will stay signed in on this device only.')) {
-      showToast('success', 'All other sessions revoked');
-    }
-  };
-
-  const revokeSession = () => {
-    if (window.confirm('Revoke this session?')) {
-      showToast('success', 'Session revoked');
-    }
-  };
-
   const handleSaveSettings = (type: 'notifications' | 'preferences') => {
     if (type === 'notifications') {
       setSavingSettings(true);
@@ -111,26 +119,43 @@ export default function Settings() {
     if (!webhookUrl) { showToast('error', 'Save a webhook URL first'); return; }
     showToast('success', 'Test event sent to ' + webhookUrl.slice(0, 40));
   };
+  // -------------------------------------------------------------
+  */
 
-  const exportData = () => {
-    showToast('success', 'Data exported as scnr-export.json');
-  };
-
-  const deactivateAll = () => {
-    if (window.confirm('Deactivate all QR codes? Scans will return 410 until you reactivate them.')) {
-      showToast('success', 'All QR codes deactivated');
+  const revokeAllSessions = async () => {
+    if (window.confirm('Revoke all other sessions? This will invalidate all active tokens and log you out for security.')) {
+      try {
+        await apiFetch('/api/user/revoke-sessions', { method: 'POST' });
+        showToast('success', 'All sessions revoked. Please sign in again.');
+        setTimeout(async () => {
+          await logout();
+          navigate('/login');
+        }, 1500);
+      } catch (err) {
+        showToast('error', 'Failed to revoke sessions');
+      }
     }
   };
 
-  const deleteAccount = () => {
-    const confirm1 = window.prompt('Type DELETE to confirm account deletion. This cannot be undone.');
-    if (confirm1 === 'DELETE') {
-      showToast('error', 'Account deletion scheduled. You will receive a confirmation email.');
-    } else if (confirm1 !== null) {
-      showToast('error', 'Confirmation text did not match — type DELETE exactly');
+
+  const exportData = async () => {
+    try {
+      const data = await apiFetch('/api/user/export');
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `dynamicqr-export-${user?.uid}.json`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      showToast('success', 'Data exported as dynamicqr-export.json');
+    } catch (err) {
+      showToast('error', 'Failed to export data');
     }
   };
 
+  /*
   const checkPasswordStrength = (pw: string) => {
     let score = 0;
     if (pw.length >= 8) score++;
@@ -139,10 +164,48 @@ export default function Settings() {
     if (/[^A-Za-z0-9]/.test(pw)) score++;
     return score;
   };
+  */
 
-  const pwScore = checkPasswordStrength(pwNew);
-  const pwColors = ['var(--red)', 'var(--red)', 'var(--amber)', 'var(--amber)', 'var(--green)'];
-  const pwLabels = ['', 'Weak', 'Fair', 'Good', 'Strong'];
+  const deactivateAll = async () => {
+    if (window.confirm('Deactivate all QR codes? Scans will return 410 until you reactivate them.')) {
+      try {
+        await apiFetch('/api/user/deactivate-all', { method: 'PUT' });
+        showToast('success', 'All QR codes deactivated');
+      } catch (err) {
+        showToast('error', 'Failed to deactivate QR codes');
+      }
+    }
+  };
+
+  const deleteAccount = async () => {
+    const confirm1 = window.prompt('Type DELETE to confirm account deletion. This cannot be undone and will delete all your QR codes and analytics.');
+    if (confirm1 === 'DELETE') {
+      try {
+        await apiFetch('/api/user/account', { method: 'DELETE' });
+        showToast('success', 'Account deleted. Redirecting...');
+        setTimeout(async () => {
+          await logout();
+          navigate('/login');
+        }, 2000);
+      } catch (err) {
+        showToast('error', 'Failed to delete account');
+      }
+    } else if (confirm1 !== null) {
+      showToast('error', 'Confirmation text did not match — type DELETE exactly');
+    }
+  };
+
+
+  if (!planData) return <div className="content" style={{ padding: '28px' }}>Loading...</div>;
+
+  const currentPlan = planData.plan || 'free';
+  const planLabel = currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1);
+  const scanLimit = planData.limits.monthly_scans;
+  const scanUsed = planData.monthly_scans_used || 0;
+  const scanPct = scanLimit === Infinity ? 0 : Math.min(100, (scanUsed / scanLimit) * 100);
+  const qrLimit = planData.limits.qr_codes;
+  const qrUsed = qrLimit === Infinity ? planData.total_qrs : (qrLimit - planData.remaining_qr);
+  const qrPct = qrLimit === Infinity ? 0 : Math.min(100, (qrUsed / qrLimit) * 100);
 
   return (
     <div className="content" style={{ padding: '28px', overflow: 'auto', height: '100%' }}>
@@ -157,12 +220,12 @@ export default function Settings() {
               </div>
               <div className="profile-name" id="profile-display-name">{firstName} {lastName}</div>
               <div className="profile-email" id="profile-display-email">{user?.email}</div>
-              <div className="profile-plan-chip">⭐ Pro Plan · Active</div>
+              <div className="profile-plan-chip">⭐ {planLabel} Plan · {planData.is_expired ? 'Expired' : 'Active'}</div>
               <div className="profile-stats">
-                <div className="p-stat"><div className="p-stat-val">7</div><div className="p-stat-key">QR Codes</div></div>
-                <div className="p-stat"><div className="p-stat-val">48K</div><div className="p-stat-key">Scans</div></div>
-                <div className="p-stat"><div className="p-stat-val">30</div><div className="p-stat-key">Days active</div></div>
-                <div className="p-stat"><div className="p-stat-val">12</div><div className="p-stat-key">Countries</div></div>
+                <div className="p-stat"><div className="p-stat-val">{qrUsed}</div><div className="p-stat-key">QR Codes</div></div>
+                <div className="p-stat"><div className="p-stat-val">{formatNumber(planData.total_scans || 0)}</div><div className="p-stat-key">Scans</div></div>
+                <div className="p-stat"><div className="p-stat-val">{planData.days_active || '—'}</div><div className="p-stat-key">Days active</div></div>
+                <div className="p-stat"><div className="p-stat-val">{planData.countries_count || '—'}</div><div className="p-stat-key">Countries</div></div>
               </div>
               <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
                 <button className="btn btn-ghost" style={{ flex: 1, justifyContent: 'center', fontSize: '12px' }}>Change photo</button>
@@ -176,10 +239,10 @@ export default function Settings() {
                 <button className="btn btn-ghost btn-sm" style={{ fontSize: '11px' }} onClick={() => navigate('/billing')}>Manage →</button>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>QR codes</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>7 / unlimited</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: '14%' }}></div></div></div>
-                <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>Storage</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>2.4 MB</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: '3%', background: 'var(--blue)' }}></div></div></div>
-                <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>Analytics window</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>90 days</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: '100%', background: 'var(--green)' }}></div></div></div>
-                <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>Scans this month</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>48,291 / unlimited</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: '100%', background: 'var(--coral)' }}></div></div></div>
+                <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>QR codes</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>{qrUsed} / {qrLimit === Infinity ? '∞' : qrLimit}</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: `${qrPct}%` }}></div></div></div>
+                <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>Storage</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>0.4 MB</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: '1%', background: 'var(--blue)' }}></div></div></div>
+                <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>Analytics window</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>{planData.limits.analytics_days} days</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: '100%', background: 'var(--green)' }}></div></div></div>
+                <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>Scans this month</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>{formatNumber(scanUsed)} / {scanLimit === Infinity ? '∞' : formatNumber(scanLimit)}</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: `${scanPct}%`, background: scanPct > 90 ? 'var(--red)' : 'var(--coral)' }}></div></div></div>
               </div>
             </div>
 
@@ -245,153 +308,37 @@ export default function Settings() {
             <div className="settings-section mb16">
               <div className="settings-header"><span className="settings-title">Security</span></div>
               <div className="settings-body">
-                <div className="setting-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '10px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                    <div className="setting-info"><div className="setting-name">Password</div><div className="setting-desc">Last changed 30 days ago</div></div>
-                    <button className="btn btn-ghost btn-sm" onClick={() => setShowPwForm(!showPwForm)}>Change password</button>
+                <div className="setting-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                  <div className="setting-info">
+                    <div className="setting-name">Login method</div>
+                    <div className="setting-desc">Managed by Google Authentication</div>
                   </div>
-                  {showPwForm && (
-                    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      <div className="grid-2">
-                        <div><label className="form-label">Current password</label><input type="password" className="form-input" placeholder="••••••••" value={pwCurrent} onChange={e => setPwCurrent(e.target.value)} /></div>
-                        <div></div>
-                      </div>
-                      <div className="grid-2">
-                        <div><label className="form-label">New password</label><input type="password" className="form-input" placeholder="Min 8 characters" value={pwNew} onChange={e => setPwNew(e.target.value)} /></div>
-                        <div><label className="form-label">Confirm new password</label><input type="password" className="form-input" placeholder="Repeat new password" value={pwConfirm} onChange={e => setPwConfirm(e.target.value)} /></div>
-                      </div>
-                      {pwNew && (
-                        <div>
-                          <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
-                            {[1, 2, 3, 4].map(i => (
-                              <div key={i} style={{ flex: 1, height: '3px', borderRadius: '2px', background: i <= pwScore ? pwColors[pwScore] : 'var(--surface3)' }}></div>
-                            ))}
-                          </div>
-                          <div style={{ fontSize: '11px', color: pwColors[pwScore] }}>Strength: {pwLabels[pwScore] || 'Weak'}</div>
-                        </div>
-                      )}
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button className="btn btn-primary btn-sm" onClick={handleSavePassword}>Update password</button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => setShowPwForm(false)}>Cancel</button>
-                      </div>
-                    </div>
-                  )}
+                  <div style={{ fontSize: '12px', color: 'var(--text3)', background: 'var(--surface2)', padding: '10px 14px', borderRadius: '8px', width: '100%', marginTop: '6px' }}>
+                    Your account uses Google Sign-In. Password management, 2FA, and account recovery are handled securely by Google.
+                  </div>
                 </div>
-                <div className="setting-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '10px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                    <div className="setting-info"><div className="setting-name">Two-factor authentication</div><div className="setting-desc">{tfaEnabled ? 'Enabled · Authenticator app active' : showTfaSetup ? 'Setting up… scan QR or enter code below' : 'Not enabled · Adds a second layer of security'}</div></div>
-                    <button className={`toggle ${tfaEnabled || showTfaSetup ? 'on' : ''}`} onClick={toggle2FA}></button>
+                
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <div className="setting-name">Global Sign-out</div>
+                    <div className="setting-desc">Revoke all active sessions and log out from all devices</div>
                   </div>
-                  {showTfaSetup && (
-                    <div style={{ width: '100%', background: 'var(--surface2)', borderRadius: '10px', padding: '16px' }}>
-                      <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)', marginBottom: '10px' }}>Scan with Google Authenticator or Authy</div>
-                      <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-                        <div style={{ width: '80px', height: '80px', background: '#fff', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '10px', color: '#aaa', textAlign: 'center', padding: '4px' }}>QR Code here</div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: '12px', color: 'var(--text3)', marginBottom: '6px' }}>Manual code:</div>
-                          <code style={{ fontFamily: 'monospace', fontSize: '13px', color: 'var(--amber)', background: 'var(--surface3)', padding: '4px 8px', borderRadius: '4px', letterSpacing: '2px' }}>JBSW Y3DP EHPK 3PXP</code>
-                          <div style={{ marginTop: '10px' }}>
-                            <label className="form-label">Enter 6-digit code to activate</label>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                              <input type="text" className="form-input" placeholder="000 000" maxLength={7} style={{ flex: 1, letterSpacing: '4px', textAlign: 'center', fontFamily: 'monospace' }} />
-                              <button className="btn btn-primary btn-sm" onClick={confirm2FA}>Confirm</button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div className="setting-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '10px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                    <div className="setting-info"><div className="setting-name">Active sessions</div><div className="setting-desc">2 devices signed in</div></div>
-                    <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red)' }} onClick={revokeAllSessions}>Revoke all others</button>
-                  </div>
-                  <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--surface2)', borderRadius: '8px', padding: '10px 12px' }}>
-                      <span style={{ fontSize: '18px' }}>💻</span>
-                      <div style={{ flex: 1 }}><div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text)' }}>Chrome · macOS · Colombo, LK</div><div style={{ fontSize: '11px', color: 'var(--text3)' }}>Current session · Active now</div></div>
-                      <span style={{ fontSize: '11px', background: 'var(--green-l)', color: 'var(--green)', padding: '2px 7px', borderRadius: '4px', fontWeight: 600 }}>This device</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--surface2)', borderRadius: '8px', padding: '10px 12px' }}>
-                      <span style={{ fontSize: '18px' }}>📱</span>
-                      <div style={{ flex: 1 }}><div style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text)' }}>Safari · iPhone · Colombo, LK</div><div style={{ fontSize: '11px', color: 'var(--text3)' }}>Last active 2 hours ago</div></div>
-                      <button className="btn btn-ghost btn-sm" style={{ fontSize: '11px', color: 'var(--red)' }} onClick={revokeSession}>Revoke</button>
-                    </div>
-                  </div>
+                  <button className="btn btn-ghost btn-sm" style={{ color: 'var(--red)' }} onClick={revokeAllSessions}>Sign out everywhere</button>
                 </div>
               </div>
             </div>
 
+            {/* Notifications, Preferences, Connected Apps, Webhooks - Commented out for production readiness until implemented */}
+            {/* 
             <div className="settings-section mb16">
               <div className="settings-header">
                 <span className="settings-title">Notifications</span>
-                <button className="btn btn-ghost btn-sm" onClick={() => handleSaveSettings('notifications')}>{savingSettings ? 'Saving...' : 'Save'}</button>
               </div>
               <div className="settings-body">
-                <div className="setting-row"><div className="setting-info"><div className="setting-name">Weekly scan digest</div><div className="setting-desc">Summary email every Monday morning</div></div><button className="toggle on" onClick={e => e.currentTarget.classList.toggle('on')}></button></div>
-                <div className="setting-row"><div className="setting-info"><div className="setting-name">Scan milestone alerts</div><div className="setting-desc">Email at 100, 1K, 10K, 100K scans per QR</div></div><button className="toggle on" onClick={e => e.currentTarget.classList.toggle('on')}></button></div>
-                <div className="setting-row"><div className="setting-info"><div className="setting-name">Anomaly alerts</div><div className="setting-desc">Notify on sudden scan spikes or drops</div></div><button className="toggle" onClick={e => e.currentTarget.classList.toggle('on')}></button></div>
-                <div className="setting-row"><div className="setting-info"><div className="setting-name">New device sign-in</div><div className="setting-desc">Email when your account signs in from a new device</div></div><button className="toggle on" onClick={e => e.currentTarget.classList.toggle('on')}></button></div>
-                <div className="setting-row"><div className="setting-info"><div className="setting-name">Product updates</div><div className="setting-desc">Feature announcements and changelogs</div></div><button className="toggle on" onClick={e => e.currentTarget.classList.toggle('on')}></button></div>
-                <div className="setting-row"><div className="setting-info"><div className="setting-name">Billing reminders</div><div className="setting-desc">5 days before your subscription renews</div></div><button className="toggle on" onClick={e => e.currentTarget.classList.toggle('on')}></button></div>
+                <div className="setting-row"><div className="setting-info"><div className="setting-name">Weekly scan digest</div><div className="setting-desc">Summary email every Monday morning</div></div><button className="toggle on"></button></div>
               </div>
             </div>
-
-            <div className="settings-section mb16">
-              <div className="settings-header">
-                <span className="settings-title">Preferences</span>
-                <button className="btn btn-ghost btn-sm" onClick={() => handleSaveSettings('preferences')}>{savingPrefs ? 'Saving...' : 'Save'}</button>
-              </div>
-              <div className="settings-body">
-                <div className="setting-row"><div className="setting-info"><div className="setting-name">Default QR mode</div><div className="setting-desc">Mode when creating new QR codes</div></div><select className="form-input" style={{ width: '130px', padding: '6px 10px', fontSize: '12px' }}><option>Dynamic</option><option>Static</option></select></div>
-                <div className="setting-row"><div className="setting-info"><div className="setting-name">Analytics date range</div><div className="setting-desc">Default time window in analytics</div></div><select className="form-input" style={{ width: '130px', padding: '6px 10px', fontSize: '12px' }}><option>7 days</option><option>30 days</option><option>90 days</option></select></div>
-                <div className="setting-row"><div className="setting-info"><div className="setting-name">Dashboard language</div><div className="setting-desc">Interface language</div></div><select className="form-input" style={{ width: '130px', padding: '6px 10px', fontSize: '12px' }}><option>English</option><option>Sinhala</option><option>Tamil</option></select></div>
-                <div className="setting-row"><div className="setting-info"><div className="setting-name">Bot scan filtering</div><div className="setting-desc">Exclude bots from all analytics</div></div><button className="toggle on" onClick={e => e.currentTarget.classList.toggle('on')}></button></div>
-              </div>
-            </div>
-
-            <div className="settings-section mb16">
-              <div className="settings-header"><span className="settings-title">Connected apps</span></div>
-              <div className="settings-body">
-                <div className="setting-row">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><div style={{ width: '36px', height: '36px', background: '#fff', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border2)', fontSize: '18px', flexShrink: 0 }}>📊</div><div className="setting-info"><div className="setting-name">Google Analytics</div><div className="setting-desc">Forward scan events to GA4</div></div></div>
-                  <button className="btn btn-ghost btn-sm" onClick={() => showToast('success', 'Google Analytics connection started')}>Connect</button>
-                </div>
-                <div className="setting-row">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><div style={{ width: '36px', height: '36px', background: '#5865F2', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', flexShrink: 0 }}>💬</div><div className="setting-info"><div className="setting-name">Slack</div><div className="setting-desc">Post milestone alerts to a Slack channel</div></div></div>
-                  <button className="btn btn-ghost btn-sm" onClick={() => showToast('success', 'Slack connection started')}>Connect</button>
-                </div>
-                <div className="setting-row">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><div style={{ width: '36px', height: '36px', background: '#FF6B35', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', flexShrink: 0 }}>🔗</div><div className="setting-info"><div className="setting-name">Zapier</div><div className="setting-desc">Trigger workflows on scan events</div></div></div>
-                  <button className="btn btn-ghost btn-sm" onClick={() => showToast('success', 'Zapier connection started')}>Connect</button>
-                </div>
-              </div>
-            </div>
-
-            <div className="settings-section mb16">
-              <div className="settings-header">
-                <span className="settings-title">Webhook endpoint</span>
-                <button className="btn btn-ghost btn-sm" onClick={handleSaveWebhook}>{savingWebhook ? 'Saving...' : 'Save'}</button>
-              </div>
-              <div className="settings-body">
-                <div className="form-section mb16">
-                  <label className="form-label">POST endpoint URL</label>
-                  <input type="url" className="form-input" placeholder="https://yourapp.com/webhooks/scnr" value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} />
-                  <div style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '4px' }}>Scnr will POST scan events in real time. Requires Team plan for full access.</div>
-                </div>
-                <div>
-                  <label className="form-label" style={{ marginBottom: '8px', display: 'block' }}>Events to send</label>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}><input type="checkbox" defaultChecked style={{ accentColor: 'var(--coral)' }} /> qr.scanned</label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}><input type="checkbox" defaultChecked style={{ accentColor: 'var(--coral)' }} /> qr.created</label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}><input type="checkbox" style={{ accentColor: 'var(--coral)' }} /> qr.updated</label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}><input type="checkbox" style={{ accentColor: 'var(--coral)' }} /> scan.milestone</label>
-                  </div>
-                </div>
-                <div style={{ marginTop: '14px' }}><button className="btn btn-ghost btn-sm" onClick={testWebhook}>Send test event</button></div>
-              </div>
-            </div>
+            */}
 
             <div className="settings-section" style={{ borderColor: 'rgba(255,87,87,0.2)' }}>
               <div className="settings-header" style={{ borderColor: 'rgba(255,87,87,0.2)' }}><span className="settings-title" style={{ color: 'var(--red)' }}>Danger zone</span></div>

@@ -229,20 +229,166 @@ async function startServer() {
       const currentMonth = new Date().toISOString().slice(0, 7);
       const monthlyScansUsed = userSnap.data()?.monthly_scans?.[currentMonth] || 0;
 
+      const userDoc = userSnap.data();
       res.json({
         plan: license.effectivePlan,
         is_trial: license.isTrial,
         is_expired: license.isExpired,
-        plan_expires_at: userSnap.data()?.plan_expires_at || null,
+        plan_expires_at: userDoc?.plan_expires_at || null,
         limits: license.limits,
         addons: license.addons,
         remaining_qr,
         monthly_scans_used: monthlyScansUsed,
+        profile: {
+          company: userDoc?.company || '',
+          jobTitle: userDoc?.jobTitle || '',
+          country: userDoc?.country || 'LK',
+          timezone: userDoc?.timezone || 'Asia/Colombo'
+        },
         is_sandbox: process.env.PAYHERE_SANDBOX === 'true'
       });
     } catch (error) {
       logger.error('Plan fetch error:', error);
       res.status(500).json({ error: 'Failed to fetch plan' });
+    }
+  });
+
+  // User Profile Update API
+  app.put('/api/user/profile', authenticate, async (req, res) => {
+    try {
+      const uid = (req as any).user.uid;
+      const { company, jobTitle, country, timezone } = req.body;
+      const userRef = doc(db, 'users', uid);
+      
+      await updateDoc(userRef, {
+        company: company || '',
+        jobTitle: jobTitle || '',
+        country: country || 'LK',
+        timezone: timezone || 'Asia/Colombo',
+        updated_at: serverTimestamp()
+      });
+      
+      res.json({ success: true });
+    } catch (error) {
+      logger.error('Profile update error:', error);
+      res.status(500).json({ error: 'Failed to update profile' });
+    }
+  });
+
+  // Revoke All Sessions API
+  app.post('/api/user/revoke-sessions', authenticate, async (req, res) => {
+    try {
+      const uid = (req as any).user.uid;
+      await admin.auth().revokeRefreshTokens(uid);
+      res.json({ success: true });
+    } catch (error) {
+      logger.error('Session revocation error:', error);
+      res.status(500).json({ error: 'Failed to revoke sessions' });
+    }
+  });
+
+  // Export User Data API
+  app.get('/api/user/export', authenticate, async (req, res) => {
+    try {
+      const uid = (req as any).user.uid;
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      const qrs = qrSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      
+      const userSnap = await getDoc(doc(db, 'users', uid));
+      const profile = userSnap.exists() ? userSnap.data() : {};
+      
+      const exportData = {
+        exported_at: new Date().toISOString(),
+        profile: {
+          email: profile.email,
+          plan: profile.plan,
+          company: profile.company,
+          jobTitle: profile.jobTitle,
+          country: profile.country,
+          timezone: profile.timezone
+        },
+        qr_codes: qrs
+      };
+      
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename=dynamicqr-export-${uid}.json`);
+      res.json(exportData);
+    } catch (error) {
+      logger.error('Export error:', error);
+      res.status(500).json({ error: 'Failed to export data' });
+    }
+  });
+
+  // Deactivate All QR Codes API
+  app.put('/api/user/deactivate-all', authenticate, async (req, res) => {
+    try {
+      const uid = (req as any).user.uid;
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      
+      const batch = db.batch();
+      qrSnapshot.docs.forEach(d => {
+        batch.update(d.ref, { is_active: false, updated_at: serverTimestamp() });
+      });
+      await batch.commit();
+      
+      res.json({ success: true, count: qrSnapshot.size });
+    } catch (error) {
+      logger.error('Deactivate all error:', error);
+      res.status(500).json({ error: 'Failed to deactivate QR codes' });
+    }
+  });
+
+  // Delete Account API
+  app.delete('/api/user/account', authenticate, async (req, res) => {
+    try {
+      const uid = (req as any).user.uid;
+      
+      // 1. Delete all QR codes and stats
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      const batch = db.batch();
+      
+      for (const d of qrSnapshot.docs) {
+        batch.delete(d.ref); // Delete QR code
+        batch.delete(doc(db, 'qr_stats', d.id)); // Delete stats
+        
+        // Deleting scan_events in a loop might be too slow for a single request 
+        // if the user has a lot. We'll start a background cleanup for scan_events
+        // but for account deletion, we MUST try to be thorough.
+      }
+      
+      // 2. Delete user document
+      batch.delete(doc(db, 'users', uid));
+      
+      // 3. Delete subscriptions log
+      const subsSnapshot = await getDocs(query(collection(db, 'subscriptions'), where('uid', '==', uid)));
+      subsSnapshot.forEach(d => batch.delete(d.ref));
+      
+      await batch.commit();
+      
+      // 4. Delete Firebase Auth User
+      await admin.auth().deleteUser(uid);
+      
+      res.json({ success: true });
+      
+      // Background cleanup for scan_events
+      (async () => {
+        for (const qrDoc of qrSnapshot.docs) {
+          const slug = qrDoc.id;
+          let hasMore = true;
+          while (hasMore) {
+            const eventsSnap = await getDocs(query(collection(db, 'scan_events'), where('slug', '==', slug), limit(500)));
+            if (eventsSnap.empty) { hasMore = false; break; }
+            const cleanupBatch = db.batch();
+            eventsSnap.forEach((e: any) => cleanupBatch.delete(e.ref));
+            await cleanupBatch.commit();
+            if (eventsSnap.size < 500) hasMore = false;
+          }
+        }
+      })().catch(err => logger.error('Cleanup background error:', err));
+      
+    } catch (error) {
+      logger.error('Account deletion error:', error);
+      res.status(500).json({ error: 'Failed to delete account' });
     }
   });
 
