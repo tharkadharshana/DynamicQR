@@ -34,6 +34,7 @@ export default {
     `;
 
     // 1. Internal / Hidden Routes
+    const internalSecret = env.INTERNAL_SECRET;
     if (slug === 'internal' && url.pathname.startsWith('/internal/purge/')) {
       if (request.headers.get('x-internal-secret') !== internalSecret) {
         return new Response('Unauthorized', { status: 401 });
@@ -76,7 +77,6 @@ export default {
 
     // --- CONFIG FETCHING ---
     const apiUrl = env.API_URL;
-    const internalSecret = env.INTERNAL_SECRET;
     
     let config = await env.QR_CACHE.get(slug, { type: "json" });
 
@@ -221,6 +221,9 @@ export default {
     if (apiUrl) {
       const scanUrl = `${apiUrl.replace(/\/$/, '')}/internal/scan`;
       try {
+        // We await the scanResponse to check for 429 status code (Monthly Limit Reached).
+        // While this adds ~100ms latency, it is necessary to provide real-time quota enforcement
+        // and serve the QUOTA_EXCEEDED_HTML before the 302 redirect.
         const scanResponse = await fetch(scanUrl, {
           method: "POST",
           headers: {

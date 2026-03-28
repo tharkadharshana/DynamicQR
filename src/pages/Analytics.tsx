@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, BarChart, Bar
@@ -9,6 +9,7 @@ import { auth } from '../firebase';
 const COLORS = ['#1A1916', '#E85D3A', '#4D9EFF', '#3DCC7E', '#9B7FFF', '#F5A623', '#D0021B'];
 
 export default function Analytics() {
+  const { planData } = useOutletContext<{ planData: any }>();
   const { slug: initialSlug } = useParams();
   const navigate = useNavigate();
   const [qrCodes, setQrCodes] = useState<any[]>([]);
@@ -74,9 +75,10 @@ export default function Analytics() {
           queryParams = `?slugs=${selectedSlugs.join(',')}`;
         }
 
+        const historyDays = planData?.limits?.analytics_days || 7;
         const fetchPromises: Promise<any>[] = [
           fetchJson(`${baseUrl}/summary${queryParams}`),
-          fetchJson(`${baseUrl}/timeseries${queryParams}${queryParams ? '&' : '?'}days=30`),
+          fetchJson(`${baseUrl}/timeseries${queryParams}${queryParams ? '&' : '?'}days=${historyDays}`),
           fetchJson(`${baseUrl}/devices${queryParams}`),
           fetchJson(`${baseUrl}/countries${queryParams}`),
           fetchJson(`${baseUrl}/browsers${queryParams}`),
@@ -250,8 +252,13 @@ export default function Analytics() {
         {/* Line chart + Countries */}
         <div className="grid-21 mb16">
           <div className="card">
-            <div className="section-row">
-              <span className="section-title">Scan trend — 30 days</span>
+            <div className="topbar-right">
+              <span style={{ fontSize: '11px', color: 'var(--text3)', marginRight: '12px' }} className="hidden md:inline">
+                History: {planData?.limits?.analytics_days || 7} days
+              </span>
+              <button className="btn btn-ghost btn-sm hidden sm:flex" id="topbar-date">
+                Last {planData?.limits?.analytics_days || 7} days ▾
+              </button>
               <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--text3)' }}>
                   <span style={{ width: '10px', height: '2px', background: 'var(--coral)', display: 'inline-block', borderRadius: '1px' }}></span>Total

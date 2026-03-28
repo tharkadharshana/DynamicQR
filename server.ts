@@ -86,11 +86,16 @@ async function startServer() {
   logger.info(`Starting server in ${process.env.NODE_ENV} mode`);
   
   // CORS configuration
-  const corsOrigin = process.env.APP_URL || '*';
-  logger.info(`CORS Origin: ${corsOrigin}`);
+  const corsOrigin = process.env.APP_URL;
+  if (!corsOrigin && process.env.NODE_ENV === 'production') {
+    logger.error('CRITICAL: APP_URL environment variable is missing in production. Server exiting.');
+    process.exit(1);
+  }
+  
+  logger.info(`CORS Origin: ${corsOrigin || '*'}`);
   
   app.use(cors({ 
-    origin: corsOrigin,
+    origin: corsOrigin || '*',
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-internal-secret']
@@ -180,6 +185,7 @@ async function startServer() {
         ? Infinity 
         : baseLimits.qr_codes + (addons.extra_qr_codes || 0),
       monthly_scans: baseLimits.monthly_scans + (addons.extra_scans || 0),
+      analytics_days: baseLimits.analytics_days, // Plan-based history limit
       custom_domain: baseLimits.custom_domain || addons.custom_domain,
       api_access: baseLimits.api_access || addons.api_access,
     };
@@ -220,13 +226,18 @@ async function startServer() {
       const activeQrs = qrSnapshot.size;
       const remaining_qr = license.limits.qr_codes === Infinity ? Infinity : Math.max(0, license.limits.qr_codes - activeQrs);
       
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const monthlyScansUsed = userSnap.data()?.monthly_scans?.[currentMonth] || 0;
+
       res.json({
         plan: license.effectivePlan,
         is_trial: license.isTrial,
         is_expired: license.isExpired,
+        plan_expires_at: userSnap.data()?.plan_expires_at || null,
         limits: license.limits,
         addons: license.addons,
         remaining_qr,
+        monthly_scans_used: monthlyScansUsed,
         is_sandbox: process.env.PAYHERE_SANDBOX === 'true'
       });
     } catch (error) {
@@ -297,6 +308,30 @@ async function startServer() {
     } catch (error) {
       logger.error('Checkout error:', error);
       res.status(500).json({ error: 'Failed to generate checkout' });
+    }
+  });
+
+  // Invoice History API
+  app.get('/api/billing/invoices', authenticate, async (req, res) => {
+    try {
+      const uid = (req as any).user.uid;
+      const subs = await getDocs(query(
+        collection(db, 'subscriptions'), 
+        where('uid', '==', uid), 
+        orderBy('timestamp', 'desc'), 
+        limit(12)
+      ));
+      
+      const invoices = subs.docs.map((d: any) => ({
+        id: d.id,
+        ...d.data(),
+        date: d.data().timestamp?.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      }));
+      
+      res.json(invoices);
+    } catch (error) {
+      logger.error('Invoice fetch error:', error);
+      res.status(500).json({ error: 'Failed to fetch invoices' });
     }
   });
 
@@ -417,20 +452,28 @@ async function startServer() {
         } else {
           // Regular Plan Subscription
           const plan = metadata;
-          const expiry = new Date();
+          const userSnap = await getDoc(userRef);
+          const currentExpiry = userSnap.exists() ? userSnap.data()?.plan_expires_at?.toDate() : null;
+          
+          const base = currentExpiry && currentExpiry > new Date() ? currentExpiry : new Date();
+          const expiry = new Date(base);
           expiry.setMonth(expiry.getMonth() + 1);
 
-          await updateDoc(userRef, {
+          await setDoc(userRef, {
             plan,
             plan_expires_at: admin.firestore.Timestamp.fromDate(expiry),
             is_trial: false,
             updated_at: serverTimestamp(),
             payhere_order_id: order_id
-          });
+          }, { merge: true });
 
           // Log subscription
           await addDoc(collection(db, 'subscriptions'), {
-            uid, plan, order_id, amount: payhere_amount, expires_at: expiry, timestamp: serverTimestamp()
+            uid, plan, order_id, 
+            amount: payhere_amount, 
+            expires_at: expiry, 
+            timestamp: serverTimestamp(),
+            status: 'active'
           });
         }
       } else if (status_code === '-3') {
@@ -688,7 +731,7 @@ async function startServer() {
       if (style !== undefined) updateData.style = style;
       if (is_active !== undefined) updateData.is_active = is_active;
       
-      if (options) {
+      if (options && (req as any).user) {
         const license = await getLicense((req as any).user.uid);
 
         if (options.expiry_date_enabled !== undefined) {
@@ -749,13 +792,21 @@ async function startServer() {
 
       // Phase 12: Background orphan scan_events cleanup
       (async () => {
-        const eventsSnap = await getDocs(query(collection(db, 'scan_events'), where('slug', '==', slug), limit(500)));
-        if (eventsSnap.empty) return;
-        const cleanupBatch = db.batch();
-        eventsSnap.forEach((d: any) => cleanupBatch.delete(d.ref));
-        await cleanupBatch.commit();
-        logger.info(`Cleaned up ${eventsSnap.size} scan events for deleted QR ${slug}`);
-        // Note: For very high-volume QRs (>500), this should be a loop, but 500 covers most cases.
+        let deletedTotal = 0;
+        let hasMore = true;
+        while (hasMore) {
+          const eventsSnap = await getDocs(query(collection(db, 'scan_events'), where('slug', '==', slug), limit(500)));
+          if (eventsSnap.empty) {
+            hasMore = false;
+            break;
+          }
+          const cleanupBatch = db.batch();
+          eventsSnap.forEach((d: any) => cleanupBatch.delete(d.ref));
+          await cleanupBatch.commit();
+          deletedTotal += eventsSnap.size;
+          if (eventsSnap.size < 500) hasMore = false;
+        }
+        logger.info(`Cleaned up ${deletedTotal} scan events for deleted QR ${slug}`);
       })().catch(err => logger.error('scan_events cleanup failed', err));
 
     } catch (error) {
@@ -809,7 +860,14 @@ async function startServer() {
   app.get('/api/analytics/:slug/timeseries', authenticate, requireOwnership, async (req, res) => {
     try {
       const { slug } = req.params;
-      const days = parseInt(req.query.days as string) || 30;
+      const userUid = (req as any).user.uid;
+      const license = await getLicense(userUid);
+      
+      let days = parseInt(req.query.days as string) || 30;
+      // Backend enforcement: cap days by plan limit
+      if (days > license.limits.analytics_days) {
+        days = license.limits.analytics_days;
+      }
       
       const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
       const dailyStats: Record<string, any> = {};
@@ -1113,7 +1171,14 @@ async function startServer() {
       if (decodedUser.uid !== uid) {
         return res.status(403).send('Forbidden');
       }
-      const days = parseInt(req.query.days as string) || 30;
+
+      const license = await getLicense(uid);
+      let days = parseInt(req.query.days as string) || 30;
+      // Backend enforcement: cap days by plan limit
+      if (days > license.limits.analytics_days) {
+        days = license.limits.analytics_days;
+      }
+      
       const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
 
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
@@ -1529,7 +1594,7 @@ async function startServer() {
         return res.status(429).json({ blocked: true, reason: 'monthly_quota' });
       }
 
-      await captureAnalyticsFromPayload(req.body);
+      await captureAnalyticsFromPayload(req.body, qrOwnerUid);
       res.send('OK');
     } catch (error: any) {
       logger.error('Internal scan error details:', { 
@@ -1663,7 +1728,7 @@ async function startServer() {
 }
 
 // Analytics Capture Logic
-async function captureAnalyticsFromPayload(payload: any) {
+async function captureAnalyticsFromPayload(payload: any, qrOwnerUid?: string) {
   const { slug, ip, ua, country, asn, colo, tls, lang, is_eu, is_unique: payloadIsUnique, status } = payload;
   if (isBot(ua)) return;
 
@@ -1673,8 +1738,6 @@ async function captureAnalyticsFromPayload(payload: any) {
 
   let isUnique = payloadIsUnique;
   if (isUnique === undefined) {
-    // Fallback: If not provided, we just assume unique to avoid the composite query for now
-    // (Or we can just log that it was missing)
     isUnique = true;
     logger.debug(`Uniqueness flag missing for slug ${slug}, defaulting to true`);
   }
@@ -1686,7 +1749,7 @@ async function captureAnalyticsFromPayload(payload: any) {
 
   const isFailed = status === 'failed_password';
 
-  // 1. EXACT SCHEMA for scan_events per user prompt (plus CF extensions)
+  // 1. EXACT SCHEMA for scan_events
   await addDoc(collection(db, 'scan_events'), {
     slug,
     date: dateStr,
@@ -1696,8 +1759,6 @@ async function captureAnalyticsFromPayload(payload: any) {
     os: parsed.os,
     is_unique: isUnique,
     scanned_at: serverTimestamp(),
-    
-    // Kept behind the scenes for uniqueness check / CF data
     visitor_hash: visitorHash,
     asn: asn || null,
     colo: colo || null,
@@ -1707,7 +1768,7 @@ async function captureAnalyticsFromPayload(payload: any) {
     status: status || 'success'
   });
 
-  // 2. EXACT SCHEMA for qr_stats per user prompt (plus CF atomic increments)
+  // 2. EXACT SCHEMA for qr_stats
   const statsRef = doc(db, 'qr_stats', slug);
   const inc = increment(1);
   
@@ -1725,21 +1786,24 @@ async function captureAnalyticsFromPayload(payload: any) {
     updateData[`hours.${hourStr}`] = inc;
     updateData[`browsers.${parsed.browser}`] = inc;
     updateData[`os.${parsed.os}`] = inc;
-
     if (asn) updateData[`isps.AS${asn}`] = inc;
     if (colo) updateData[`regions.${colo}`] = inc;
     if (lang) updateData[`languages.${lang.substring(0, 2)}`] = inc;
     if (parsed.osVersion) updateData[`os_versions.${parsed.os} ${parsed.osVersion}`] = inc;
     if (tls) updateData[`tls_protocols.${tls}`] = inc;
     if (is_eu) updateData[`eu_scans`] = inc;
-
-    if (isUnique) {
-      updateData.unique_scans = inc;
-    }
+    if (isUnique) updateData.unique_scans = inc;
 
     // Track monthly scans for quota enforcement
     const currentMonth = new Date().toISOString().slice(0, 7);
     updateData[`monthly_scans.${currentMonth}`] = inc;
+
+    // OPTIMIZATION: Maintain per-user monthly counter to avoid O(N) reads on billing page
+    if (qrOwnerUid) {
+      await updateDoc(doc(db, 'users', qrOwnerUid), {
+        [`monthly_scans.${currentMonth}`]: inc
+      }).catch(err => logger.error('User monthly_scans update failed', err));
+    }
   }
 
   await setDoc(statsRef, updateData, { merge: true });
@@ -1757,7 +1821,11 @@ async function captureAnalytics(req: express.Request, slug: string) {
     asn: null, colo: null, tls: null, is_eu: false
   };
 
-  await captureAnalyticsFromPayload(payload);
+  // For internal dev redirects, find the owner too
+  const qrSnap = await getDoc(doc(db, 'qr_codes', slug));
+  const ownerUid = qrSnap.exists() ? qrSnap.data()?.user_uid : undefined;
+
+  await captureAnalyticsFromPayload(payload, ownerUid);
 }
 
 function parseUA(ua: string) {

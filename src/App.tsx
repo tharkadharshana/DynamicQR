@@ -21,11 +21,25 @@ import ErrorBoundary from './components/ErrorBoundary';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
+  const [planData, setPlanData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+      if (currentUser) {
+        try {
+          const res = await fetch('/api/user/plan');
+          if (res.ok) {
+            const data = await res.json();
+            setPlanData(data);
+          }
+        } catch (err) {
+          console.error("Failed to fetch plan:", err);
+        }
+      } else {
+        setPlanData(null);
+      }
       setLoading(false);
     });
     return () => unsubscribe();
@@ -45,7 +59,7 @@ export default function App() {
           <Route path="/legal/refund-policy" element={<RefundPolicy />} />
 
           {user ? (
-            <Route path="/" element={<ScnrLayout />}>
+            <Route path="/" element={<ScnrLayout planData={planData} />}>
               <Route index element={<Dashboard />} />
               <Route path="create" element={<CreateQR />} />
               <Route path="edit/:id" element={<CreateQR />} />

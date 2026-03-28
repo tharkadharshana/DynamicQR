@@ -2,12 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { auth, logout } from '../firebase';
 
-export default function ScnrLayout() {
+export default function ScnrLayout({ planData }: { planData?: any }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [userEmail, setUserEmail] = useState('');
   const [userName, setUserName] = useState('');
   const [userInitials, setUserInitials] = useState('');
+
+  const currentPlan = planData?.plan || 'free';
+  const planLabel = currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1);
+  const isTrial = planData?.is_trial;
 
   useEffect(() => {
     if (auth.currentUser) {
@@ -39,7 +43,7 @@ export default function ScnrLayout() {
     ) },
     { name: 'Billing', path: '/billing', icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M2 6h12"/><path d="M5 10h2"/></svg>
-    ), badge: <span className="nav-badge">Pro</span> },
+    ), badge: <span className={`nav-badge ${currentPlan === 'free' ? '' : 'amber'}`}>{isTrial ? 'Trial' : planLabel}</span> },
     { name: 'API Docs', path: '/api-docs', icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M5 4l-3 4 3 4M11 4l3 4-3 4M9 3l-2 10"/></svg>
     ) }
@@ -174,7 +178,7 @@ export default function ScnrLayout() {
               <div className="user-av">{userInitials}</div>
               <div className="user-info">
                 <div className="user-name">{userName}</div>
-                <div className="user-plan"><span className="plan-badge">Pro</span></div>
+                <div className="user-plan"><span className={`plan-badge ${currentPlan === 'free' ? '' : 'amber'}`}>{isTrial ? 'Trial' : planLabel}</span></div>
               </div>
             </div>
           </Link>
@@ -207,7 +211,7 @@ export default function ScnrLayout() {
             </button>
           </div>
         </div>
-        <Outlet />
+        <Outlet context={{ planData }} />
       </div>
     </div>
   );

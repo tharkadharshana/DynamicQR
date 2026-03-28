@@ -102,7 +102,8 @@ export default function Pricing() {
       // Build PayHere checkout form and submit
       const form = document.createElement('form');
       form.method = 'POST';
-      form.action = 'https://sandbox.payhere.lk/pay/checkout'; // Use 'https://www.payhere.lk/pay/checkout' for production
+      // Use sandbox if explicitly flag is set, otherwise default to production
+      form.action = data.is_sandbox ? 'https://sandbox.payhere.lk/pay/checkout' : 'https://www.payhere.lk/pay/checkout';
 
       const fields = [
         'merchant_id', 'return_url', 'cancel_url', 'notify_url',
