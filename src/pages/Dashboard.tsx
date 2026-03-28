@@ -19,6 +19,7 @@ export default function Dashboard() {
     qrId: '',
     slug: ''
   });
+  const [planData, setPlanData] = useState<any>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -59,6 +60,9 @@ export default function Dashboard() {
         setDevices(Array.isArray(devData) ? devData : []);
         setCountries(Array.isArray(countryData) ? countryData : []);
         setRecentScans(Array.isArray(recentData) ? recentData : []);
+
+        const pData = await fetchJson('/api/user/plan').catch(() => null);
+        setPlanData(pData);
 
         setLoading(false);
       } catch (err) {
@@ -161,18 +165,24 @@ export default function Dashboard() {
           <div className="stat-card">
             <div className="stat-label">
               <svg className="stat-icon" viewBox="0 0 16 16" fill="var(--purple)"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
-              Active QR Codes
+              QR Codes
             </div>
-            <div className="stat-val">{activeCodes}</div>
-            <span className="stat-change neutral">{activeCodes} of {qrCodes.length} used</span>
+            <div className="stat-val">{qrCodes.length}</div>
+            <span className="stat-change neutral">
+              {planData ? `${planData.limits.qr_codes === Infinity ? 'Unlimited' : planData.limits.qr_codes} limit` : 'Loading...'}
+            </span>
           </div>
           <div className="stat-card">
             <div className="stat-label">
               <svg className="stat-icon" viewBox="0 0 16 16" fill="var(--amber)"><path d="M8 1l2 4 5 .7-3.5 3.4.8 5L8 12l-4.3 2.1.8-5L1 5.7 6 5z"/></svg>
-              Scan Rate
+              Account Plan
             </div>
-            <div className="stat-val">{Math.round(totalScans / 30).toLocaleString()}</div>
-            <span className="stat-change neutral">avg scans/day</span>
+            <div className="stat-val" style={{ fontSize: '20px', textTransform: 'uppercase' }}>
+              {planData?.plan || 'Free'}
+            </div>
+            <span className="stat-change neutral" style={{ cursor: 'pointer', color: 'var(--coral)' }} onClick={() => navigate('/billing')}>
+              Upgrade →
+            </span>
           </div>
         </div>
 

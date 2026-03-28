@@ -32,34 +32,39 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if true; // Allow backend to read
+      allow read: if isOwner(userId);
       allow create: if isOwner(userId) && hasRequiredFields(['email', 'plan', 'created_at']);
-      allow update: if isOwner(userId) && request.resource.data.plan == resource.data.plan; // Users can't change their own plan
+      allow update: if isOwner(userId) && request.resource.data.plan == resource.data.plan;
       allow delete: if false;
     }
 
     match /qr_codes/{qrId} {
-      allow read: if true; // Publicly readable for redirects and analytics
+      allow read: if true; 
       allow create: if isAuthenticated() && 
-                    !exists(/databases/$(database)/documents/qr_codes/$(qrId)) &&
                     request.resource.data.user_uid == request.auth.uid &&
-                    hasRequiredFields(['slug', 'destination_url', 'title', 'is_active']) &&
-                    isValidUrl(request.resource.data.destination_url);
-      allow update: if isDocOwner() && 
-                    uidNotModified() &&
-                    request.resource.data.slug == resource.data.slug && // slug is immutable
-                    (!('destination_url' in request.resource.data) || isValidUrl(request.resource.data.destination_url));
-      allow delete: if false; // Soft delete only via is_active
+                    hasRequiredFields(['slug', 'destination_url', 'title', 'is_active']);
+      allow update: if isDocOwner() && uidNotModified();
+      allow delete: if false;
     }
 
     match /qr_stats/{slug} {
-      allow read: if true; // Allow backend and frontend to read
-      allow write: if true; // Allow backend to write
+      allow read: if false; // All via API
+      allow write: if false; 
     }
 
     match /scan_events/{eventId} {
-      allow read: if true; // Allow backend and frontend to read
-      allow write: if true; // Allow backend to write
+      allow read: if false; // All via API
+      allow write: if false;
+    }
+
+    match /subscriptions/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
+    match /addon_purchases/{docId} {
+      allow read: if resource.data.uid == request.auth.uid;
+      allow write: if false;
     }
   }
 }

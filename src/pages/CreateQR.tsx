@@ -13,6 +13,7 @@ export default function CreateQR() {
   const [qrType, setQrType] = useState('url');
   const [isDynamic, setIsDynamic] = useState(true);
   const [urlError, setUrlError] = useState(false);
+  const [planData, setPlanData] = useState<any>(null);
   
   const [formData, setFormData] = useState({
     title: '',
@@ -56,6 +57,7 @@ export default function CreateQR() {
   }, []);
 
   useEffect(() => {
+    fetchPlan();
     if (id) {
       const fetchQR = async () => {
         try {
@@ -108,6 +110,20 @@ export default function CreateQR() {
       fetchQR();
     }
   }, [id, navigate]);
+
+  const fetchPlan = async () => {
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch('/api/user/plan', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setPlanData(await res.json());
+      }
+    } catch (err) {
+      console.error('Plan fetch failed', err);
+    }
+  };
 
   useEffect(() => {
     if (qrType === 'wifi') {
@@ -241,6 +257,12 @@ export default function CreateQR() {
         });
         
         if (!res.ok) {
+          if (res.status === 403) {
+            const errorData = await res.json();
+            alert(errorData.error || 'Plan limit reached. Please upgrade.');
+            navigate('/billing');
+            return;
+          }
           throw new Error('Failed to create QR code on the server');
         }
       }
@@ -581,12 +603,18 @@ export default function CreateQR() {
 
               <div className="toggle-wrap" style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 500, marginBottom: '4px' }}>Password protect</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ fontWeight: 500 }}>Password protect</div>
+                    {planData?.plan === 'free' && <span className="chip" style={{ background: 'var(--amber-ll)', color: 'var(--amber)', fontSize: '10px' }}>PRO</span>}
+                  </div>
                   <div style={{ fontSize: '13px', color: 'var(--text3)' }}>Require a PIN before redirecting</div>
                 </div>
                 <button 
                   className={`toggle ${formData.options.password_protect ? 'on' : ''}`} 
-                  onClick={() => setFormData({...formData, options: {...formData.options, password_protect: !formData.options.password_protect}})}
+                  onClick={() => {
+                    if (planData?.plan === 'free') return navigate('/billing');
+                    setFormData({...formData, options: {...formData.options, password_protect: !formData.options.password_protect}});
+                  }}
                 ></button>
               </div>
               {formData.options.password_protect && (
@@ -597,12 +625,18 @@ export default function CreateQR() {
 
               <div className="toggle-wrap" style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 500, marginBottom: '4px' }}>Expiry date</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ fontWeight: 500 }}>Expiry date</div>
+                    {planData?.plan === 'free' && <span className="chip" style={{ background: 'var(--amber-ll)', color: 'var(--amber)', fontSize: '10px' }}>PRO</span>}
+                  </div>
                   <div style={{ fontSize: '13px', color: 'var(--text3)' }}>QR deactivates automatically after this date</div>
                 </div>
                 <button 
                   className={`toggle ${formData.options.expiry_date_enabled ? 'on' : ''}`} 
-                  onClick={() => setFormData({...formData, options: {...formData.options, expiry_date_enabled: !formData.options.expiry_date_enabled}})}
+                  onClick={() => {
+                    if (planData?.plan === 'free') return navigate('/billing');
+                    setFormData({...formData, options: {...formData.options, expiry_date_enabled: !formData.options.expiry_date_enabled}});
+                  }}
                 ></button>
               </div>
               {formData.options.expiry_date_enabled && (
@@ -613,12 +647,18 @@ export default function CreateQR() {
 
               <div className="toggle-wrap" style={{ padding: '16px 0' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 500, marginBottom: '4px' }}>Scan limit</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ fontWeight: 500 }}>Scan limit</div>
+                    {planData?.plan === 'free' && <span className="chip" style={{ background: 'var(--amber-ll)', color: 'var(--amber)', fontSize: '10px' }}>PRO</span>}
+                  </div>
                   <div style={{ fontSize: '13px', color: 'var(--text3)' }}>Deactivate after N total scans</div>
                 </div>
                 <button 
                   className={`toggle ${formData.options.scan_limit_enabled ? 'on' : ''}`} 
-                  onClick={() => setFormData({...formData, options: {...formData.options, scan_limit_enabled: !formData.options.scan_limit_enabled}})}
+                  onClick={() => {
+                    if (planData?.plan === 'free') return navigate('/billing');
+                    setFormData({...formData, options: {...formData.options, scan_limit_enabled: !formData.options.scan_limit_enabled}});
+                  }}
                 ></button>
               </div>
               {formData.options.scan_limit_enabled && (

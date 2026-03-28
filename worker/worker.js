@@ -8,6 +8,30 @@ export default {
       '', 'create', 'edit', 'analytics', 'settings', 'billing', 
       'login', 'legal', 'pricing', 'api-docs'
     ]);
+    
+    const QUOTA_EXCEEDED_HTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Limit Reached</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body { font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #fdf2f2; }
+          .card { background: white; padding: 40px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); width: 90%; max-width: 400px; text-align: center; border: 1px solid #fecaca; }
+          h2 { color: #991b1b; margin-bottom: 12px; }
+          p { color: #7f1d1d; line-height: 1.5; margin-bottom: 24px; }
+          .btn { display: inline-block; padding: 12px 24px; background: #991b1b; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <h2>Monthly Limit Reached</h2>
+          <p>The monthly scan quota for this QR code's owner has been exhausted. Please contact the owner or try again next month.</p>
+          <a href="https://dynamicqr.scnr.link/pricing" class="btn">Upgrade Plan</a>
+        </div>
+      </body>
+      </html>
+    `;
 
     // 1. Internal / Hidden Routes
     if (slug === 'internal' && url.pathname.startsWith('/internal/purge/')) {
@@ -196,20 +220,27 @@ export default {
 
     if (apiUrl) {
       const scanUrl = `${apiUrl.replace(/\/$/, '')}/internal/scan`;
-      ctx.waitUntil(
-        fetch(scanUrl, {
+      try {
+        const scanResponse = await fetch(scanUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "x-internal-secret": internalSecret
           },
-          body: JSON.stringify({ ...payload, status: 'success' })
-        }).then(r => {
-          if (!r.ok) console.error(`Analytics failed: ${r.status}`);
-        }).catch(err => {
-          console.error(`Analytics network error: ${err.message}`);
-        })
-      );
+          body: JSON.stringify({ ...payload, status: 'success' }),
+          signal: AbortSignal.timeout(4000)
+        });
+
+        if (scanResponse.status === 429) {
+          return new Response(QUOTA_EXCEEDED_HTML, { 
+            status: 429, 
+            headers: { "Content-Type": "text/html" } 
+          });
+        }
+      } catch (err) {
+        console.error(`Analytics sync error: ${err.message}`);
+        // Fallback: Proceed with redirect even if analytics fails
+      }
     }
 
     return Response.redirect(config.destination_url, 302);

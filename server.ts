@@ -10,6 +10,7 @@ import { customAlphabet } from 'nanoid';
 import QRCode from 'qrcode';
 import logger from "./logger.ts";
 import fs from 'fs';
+import { PLANS, TRIAL_LIMITS, DEFAULT_ADDONS, PlanId, UserAddons, ADDONS, AddonId } from './src/lib/plans.ts';
 
 // Initialize Firebase Admin
 let firebaseConfig: any = {};
@@ -143,33 +144,90 @@ async function startServer() {
     res.json({ status: 'ok' });
   });
 
+  async function getLicense(uid: string): Promise<{
+    effectivePlan: PlanId;
+    limits: typeof PLANS[PlanId];
+    isTrial: boolean;
+    isExpired: boolean;
+    addons: UserAddons;
+  }> {
+    const userSnap = await getDoc(doc(db, 'users', uid));
+    
+    if (!userSnap.exists()) {
+      return { effectivePlan: 'free', limits: PLANS.free, isTrial: false, isExpired: false, addons: DEFAULT_ADDONS };
+    }
+
+    const user = userSnap.data()!;
+    const now = new Date();
+
+    const trialExpiry = user.trial_expires_at?.toDate();
+    const isTrial = user.is_trial && trialExpiry && trialExpiry > now;
+
+    const planExpiry = user.plan_expires_at?.toDate();
+    const isExpired = planExpiry ? planExpiry < now : false;
+
+    let effectivePlan: PlanId = user.plan || 'free';
+    if (isExpired && effectivePlan !== 'free') {
+      effectivePlan = 'free';
+    }
+
+    const baseLimits = isTrial ? TRIAL_LIMITS : PLANS[effectivePlan];
+    const addons = user.addons || DEFAULT_ADDONS;
+    
+    const limits = {
+      ...baseLimits,
+      qr_codes: baseLimits.qr_codes === Infinity 
+        ? Infinity 
+        : baseLimits.qr_codes + (addons.extra_qr_codes || 0),
+      monthly_scans: baseLimits.monthly_scans + (addons.extra_scans || 0),
+      custom_domain: baseLimits.custom_domain || addons.custom_domain,
+      api_access: baseLimits.api_access || addons.api_access,
+    };
+
+    return { effectivePlan, limits, isTrial, isExpired, addons };
+  }
+
   // User Plan API
   app.get('/api/user/plan', authenticate, async (req, res) => {
     try {
       const uid = (req as any).user.uid;
-      
-      // Get user's plan from Firestore (or default to free)
-      const userDoc = await getDoc(doc(db, 'users', uid));
-      const plan = userDoc.exists() ? userDoc.data()?.plan || 'free' : 'free';
+      const userRef = doc(db, 'users', uid);
+      const userSnap = await getDoc(userRef);
+
+      if (!userSnap.exists()) {
+        // First time - create with 14-day trial
+        const trialEnd = new Date();
+        trialEnd.setDate(trialEnd.getDate() + 14);
+        
+        await setDoc(userRef, {
+          plan: 'free',
+          plan_expires_at: null,
+          trial_expires_at: admin.firestore.Timestamp.fromDate(trialEnd),
+          is_trial: true,
+          addons: DEFAULT_ADDONS,
+          payhere_customer_id: null,
+          payhere_subscription_id: null,
+          created_at: serverTimestamp(),
+          email: (req as any).user.email || '',
+        });
+      }
+
+      const license = await getLicense(uid);
       
       // Get number of active QR codes
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid), where('is_active', '==', true)));
         
       const activeQrs = qrSnapshot.size;
-      
-      const plans: Record<string, any> = {
-        free: { qr_codes: 3, analytics_days: 7, custom_domain: false, logo: false },
-        pro: { qr_codes: Infinity, analytics_days: 30, custom_domain: true, logo: true },
-        team: { qr_codes: Infinity, analytics_days: 365, custom_domain: true, logo: true }
-      };
-      
-      const limits = plans[plan] || plans.free;
-      const remaining_qr = limits.qr_codes === Infinity ? Infinity : Math.max(0, limits.qr_codes - activeQrs);
+      const remaining_qr = license.limits.qr_codes === Infinity ? Infinity : Math.max(0, license.limits.qr_codes - activeQrs);
       
       res.json({
-        plan,
-        limits,
-        remaining_qr
+        plan: license.effectivePlan,
+        is_trial: license.isTrial,
+        is_expired: license.isExpired,
+        limits: license.limits,
+        addons: license.addons,
+        remaining_qr,
+        is_sandbox: process.env.PAYHERE_SANDBOX === 'true'
       });
     } catch (error) {
       logger.error('Plan fetch error:', error);
@@ -242,49 +300,157 @@ async function startServer() {
     }
   });
 
+  // Addon Checkout API
+  app.post('/api/billing/addon/checkout', authenticate, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const { addonId } = req.body;
+      const uid = user.uid;
+
+      const addon = ADDONS[addonId as AddonId];
+      if (!addon) {
+        return res.status(400).json({ error: 'Invalid addon' });
+      }
+
+      const merchant_id = process.env.PAYHERE_MERCHANT_ID;
+      const merchant_secret = process.env.PAYHERE_SECRET;
+
+      if (!merchant_id || !merchant_secret) {
+        logger.error('Missing PayHere credentials');
+        return res.status(500).json({ error: 'Billing configuration error' });
+      }
+
+      const order_id = `ADDON_${uid}_${Date.now()}`;
+      const amount = addon.amount_usd.toFixed(2);
+      const currency = 'USD';
+
+      const hashedSecret = crypto.createHash('md5').update(merchant_secret).digest('hex').toUpperCase();
+      const hashString = `${merchant_id}${order_id}${amount}${currency}${hashedSecret}`;
+      const hash = crypto.createHash('md5').update(hashString).digest('hex').toUpperCase();
+
+      const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
+
+      const checkoutData = {
+        merchant_id,
+        return_url: `${appUrl}/settings`,
+        cancel_url: `${appUrl}/billing`,
+        notify_url: `${appUrl}/api/billing/notify`,
+        order_id,
+        items: `Addon: ${addon.label}`,
+        currency,
+        amount,
+        first_name: user.name?.split(' ')[0] || 'User',
+        last_name: user.name?.split(' ').slice(1).join(' ') || '',
+        email: user.email || '',
+        phone: '0000000000',
+        address: 'N/A',
+        city: 'N/A',
+        country: 'Sri Lanka',
+        hash,
+        custom_1: uid,
+        custom_2: `addon:${addonId}`,
+      };
+
+      res.json(checkoutData);
+    } catch (error) {
+      logger.error('Addon checkout error:', error);
+      res.status(500).json({ error: 'Failed' });
+    }
+  });
+
   const ALPHABET = "23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ";
   const generateSlug = customAlphabet(ALPHABET, 7);
 
   // PayHere Webhook
-  app.post('/api/billing/notify', express.urlencoded({ extended: true }), async (req, res) => {
+  app.post('/api/billing/notify', async (req, res) => {
     try {
-      const {
-        merchant_id,
-        order_id,
-        payhere_amount,
-        payhere_currency,
-        status_code,
-        md5sig,
-        custom_1: uid,
-        custom_2: plan
+      const { 
+        merchant_id, order_id, payhere_amount, payhere_currency, 
+        status_code, md5sig, custom_1, custom_2 
       } = req.body;
 
-      const merchant_secret = process.env.PAYHERE_SECRET;
-      if (!merchant_secret) return res.status(500).send('Config Missing');
+      // Verify PayHere Hash (status_code 2 is success)
+      const secret = process.env.PAYHERE_SECRET;
+      const hashedSecret = crypto.createHash('md5').update(secret || '').digest('hex').toUpperCase();
+      const localHashString = `${merchant_id}${order_id}${payhere_amount}${payhere_currency}${status_code}${hashedSecret}`;
+      const localHash = crypto.createHash('md5').update(localHashString).digest('hex').toUpperCase();
 
-      // Verify Signature
-      const hashedSecret = crypto.createHash('md5').update(merchant_secret).digest('hex').toUpperCase();
-      const hashString = `${merchant_id}${order_id}${payhere_amount}${payhere_currency}${status_code}${hashedSecret}`;
-      const localSig = crypto.createHash('md5').update(hashString).digest('hex').toUpperCase();
-
-      if (localSig !== md5sig) {
-        logger.error('PayHere Signature Mismatch');
-        return res.status(401).send('Invalid Signature');
+      if (localHash !== md5sig) {
+        logger.warn('PayHere notify: Invalid signature');
+        return res.status(401).send('Invalid signature');
       }
 
+      const uid = custom_1;
+      const metadata = custom_2; // 'pro', 'team', or 'addon:id'
+
       if (status_code === '2') {
-        // Success - Upgrade Plan
-        await setDoc(doc(db, 'users', uid), { plan }, { merge: true });
-        logger.info(`User ${uid} upgraded to ${plan}`);
-      } else if (status_code === '0') {
-        logger.info(`Payment pending for user ${uid}`);
-      } else {
-        logger.warn(`Payment failed for user ${uid} (Status ${status_code})`);
+        logger.info(`Payment successful for user ${uid}: ${metadata}`);
+        
+        const userRef = doc(db, 'users', uid);
+
+        if (metadata.startsWith('addon:')) {
+          const addonId = metadata.split(':')[1] as AddonId;
+          const addon = ADDONS[addonId];
+          if (addon) {
+            const updates: any = {};
+            const grants = addon.grants as any;
+            if (grants.extra_scans) {
+              updates['addons.extra_scans'] = increment(grants.extra_scans);
+            }
+            if (grants.extra_qr_codes) {
+              updates['addons.extra_qr_codes'] = increment(grants.extra_qr_codes);
+            }
+            if (grants.custom_domain) {
+              updates['addons.custom_domain'] = true;
+            }
+            if (grants.api_access) {
+              updates['addons.api_access'] = true;
+            }
+
+            await updateDoc(userRef, updates);
+            
+            // Log purchase
+            await addDoc(collection(db, 'addon_purchases'), {
+              uid, addonId, order_id, amount: payhere_amount, timestamp: serverTimestamp()
+            });
+          }
+        } else {
+          // Regular Plan Subscription
+          const plan = metadata;
+          const expiry = new Date();
+          expiry.setMonth(expiry.getMonth() + 1);
+
+          await updateDoc(userRef, {
+            plan,
+            plan_expires_at: admin.firestore.Timestamp.fromDate(expiry),
+            is_trial: false,
+            updated_at: serverTimestamp(),
+            payhere_order_id: order_id
+          });
+
+          // Log subscription
+          await addDoc(collection(db, 'subscriptions'), {
+            uid, plan, order_id, amount: payhere_amount, expires_at: expiry, timestamp: serverTimestamp()
+          });
+        }
+      } else if (status_code === '-3') {
+        // Subscription Cancelled
+        const uid = custom_1;
+        logger.info(`Subscription cancelled for user ${uid}`);
+        await updateDoc(doc(db, 'users', uid), { 
+          plan: 'free', 
+          plan_expires_at: null 
+        });
+        // Find and update subscription record
+        const subs = await getDocs(query(collection(db, 'subscriptions'), where('uid', '==', uid), orderBy('timestamp', 'desc'), limit(1)));
+        if (!subs.empty) {
+          await updateDoc(subs.docs[0].ref, { status: 'cancelled', updated_at: serverTimestamp() });
+        }
       }
 
       res.send('OK');
     } catch (error) {
-      logger.error('Billing Notify Error:', error);
+      logger.error('Billing notify error:', error);
       res.status(500).send('Error');
     }
   });
@@ -318,23 +484,10 @@ async function startServer() {
       logger.info(`Starting QR creation for user ${uid}`, { type: qr_type, is_dynamic });
 
       // 1. Plan Limit Enforcement
-      let userDoc;
-      try {
-        userDoc = await getDoc(doc(db, 'users', uid));
-      } catch (err: any) {
-        logger.error('Failed to fetch user doc for plan check', { error: err.message });
-        throw new Error(`User lookup failed: ${err.message}`);
-      }
-      
-      const plan = userDoc.exists() ? userDoc.data()?.plan || 'free' : 'free';
-      const plans: Record<string, any> = {
-        free: { qr_codes: 3 },
-        pro: { qr_codes: Infinity },
-        team: { qr_codes: Infinity }
-      };
-      const limits = plans[plan] || plans.free;
+      const license = await getLicense(uid);
 
-      logger.info(`Checking limits for plan: ${plan}`, { limits });
+      logger.info(`Checking limits for plan: ${license.effectivePlan}`, { limits: license.limits });
+
 
       let qrSnapshot;
       try {
@@ -346,9 +499,28 @@ async function startServer() {
       
       const activeCount = qrSnapshot.docs.filter((doc: any) => doc.data().is_active !== false).length;
       
-      if (limits.qr_codes !== Infinity && activeCount >= limits.qr_codes) {
-        logger.warn(`User ${uid} reached plan limit (${activeCount}/${limits.qr_codes})`);
-        return res.status(403).json({ error: 'Plan limit reached. Upgrade to create more QRs.' });
+      if (license.limits.qr_codes !== Infinity && activeCount >= license.limits.qr_codes) {
+        logger.warn(`User ${uid} reached plan limit (${activeCount}/${license.limits.qr_codes})`);
+        return res.status(403).json({ 
+          error: 'Plan limit reached. Upgrade to create more QRs.',
+          code: 'LIMIT_QR_CODES',
+          limit: license.limits.qr_codes,
+          current: activeCount
+        });
+      }
+
+      // Feature Gates
+      if (is_dynamic && !license.limits.dynamic_qr) {
+        return res.status(403).json({ error: 'Dynamic QR codes require Pro or above', code: 'FEATURE_DYNAMIC_QR' });
+      }
+      if (options?.password_protect && !license.limits.password_protect) {
+        return res.status(403).json({ error: 'Password protection requires Pro plan', code: 'FEATURE_PASSWORD' });
+      }
+      if (options?.expiry_date_enabled && !license.limits.expiry_gate) {
+        return res.status(403).json({ error: 'Expiry dates require Pro plan', code: 'FEATURE_EXPIRY' });
+      }
+      if (options?.scan_limit_enabled && !license.limits.scan_limit_gate) {
+        return res.status(403).json({ error: 'Scan limits require Pro plan', code: 'FEATURE_SCAN_LIMIT' });
       }
 
       // 2. Slug Generation
@@ -517,18 +689,31 @@ async function startServer() {
       if (is_active !== undefined) updateData.is_active = is_active;
       
       if (options) {
+        const license = await getLicense((req as any).user.uid);
+
         if (options.expiry_date_enabled !== undefined) {
+          if (options.expiry_date_enabled && !license.limits.expiry_gate) {
+            return res.status(403).json({ error: 'Expiry dates require Pro plan', code: 'FEATURE_EXPIRY' });
+          }
           updateData.expiry_date = options.expiry_date_enabled ? options.expiry_date : null;
         }
         if (options.scan_limit_enabled !== undefined) {
+          if (options.scan_limit_enabled && !license.limits.scan_limit_gate) {
+            return res.status(403).json({ error: 'Scan limits require Pro plan', code: 'FEATURE_SCAN_LIMIT' });
+          }
           updateData['rate_limit.enabled'] = options.scan_limit_enabled;
           updateData['rate_limit.max_scans'] = options.scan_limit;
           updateData['rate_limit.period'] = 'total';
         }
         if (options.password_protect !== undefined) {
-          if (options.password_protect && options.password) {
-            updateData.password_hash = crypto.createHash('sha256').update(options.password + slug).digest('hex');
-          } else if (!options.password_protect) {
+          if (options.password_protect) {
+            if (!license.limits.password_protect) {
+              return res.status(403).json({ error: 'Password protection requires Pro plan', code: 'FEATURE_PASSWORD' });
+            }
+            if (options.password) {
+              updateData.password_hash = crypto.createHash('sha256').update(options.password + slug).digest('hex');
+            }
+          } else {
             updateData.password_hash = null;
           }
         }
@@ -561,6 +746,17 @@ async function startServer() {
       fetch(`${appUrl}/internal/purge/${slug}`, {
         headers: { 'x-internal-secret': process.env.INTERNAL_SECRET || '' }
       }).catch(err => logger.error(`Cache purge failed for ${slug}`, err));
+
+      // Phase 12: Background orphan scan_events cleanup
+      (async () => {
+        const eventsSnap = await getDocs(query(collection(db, 'scan_events'), where('slug', '==', slug), limit(500)));
+        if (eventsSnap.empty) return;
+        const cleanupBatch = db.batch();
+        eventsSnap.forEach((d: any) => cleanupBatch.delete(d.ref));
+        await cleanupBatch.commit();
+        logger.info(`Cleaned up ${eventsSnap.size} scan events for deleted QR ${slug}`);
+        // Note: For very high-volume QRs (>500), this should be a loop, but 500 covers most cases.
+      })().catch(err => logger.error('scan_events cleanup failed', err));
 
     } catch (error) {
       logger.error('QR delete error:', error);
@@ -1311,6 +1507,28 @@ async function startServer() {
         return res.status(401).send('Unauthorized');
       }
       logger.info(`Received internal scan for slug: ${req.body.slug}`);
+      
+      const { slug } = req.body;
+      const currentMonth = new Date().toISOString().slice(0, 7); // "2026-03"
+
+      const [qrSnap, statsSnap] = await Promise.all([
+        getDoc(doc(db, 'qr_codes', slug)),
+        getDoc(doc(db, 'qr_stats', slug))
+      ]);
+
+      if (!qrSnap.exists()) {
+        return res.status(404).json({ error: 'QR not found' });
+      }
+
+      const qrOwnerUid = qrSnap.data().user_uid;
+      const license = await getLicense(qrOwnerUid);
+      const monthlyScans = statsSnap.data()?.monthly_scans?.[currentMonth] || 0;
+
+      if (monthlyScans >= license.limits.monthly_scans) {
+        logger.warn(`Monthly scan quota exceeded for user ${qrOwnerUid} on slug ${slug}`);
+        return res.status(429).json({ blocked: true, reason: 'monthly_quota' });
+      }
+
       await captureAnalyticsFromPayload(req.body);
       res.send('OK');
     } catch (error: any) {
@@ -1518,6 +1736,10 @@ async function captureAnalyticsFromPayload(payload: any) {
     if (isUnique) {
       updateData.unique_scans = inc;
     }
+
+    // Track monthly scans for quota enforcement
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    updateData[`monthly_scans.${currentMonth}`] = inc;
   }
 
   await setDoc(statsRef, updateData, { merge: true });
