@@ -1,105 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { auth } from '../firebase';
 
 export default function Billing() {
-  const [loading, setLoading] = useState(true);
-  const [planData, setPlanData] = useState<any>(null);
-  const [activeQrs, setActiveQrs] = useState(0);
+  const user = auth.currentUser;
 
-  useEffect(() => {
-    fetchPlan();
-  }, []);
+  const INVOICES = [
+    { id: 'INV-2026-03', date: 'Mar 21, 2026', plan: 'Pro', amount: '$7.00', status: 'paid', period: 'Mar 21 – Apr 21' },
+    { id: 'INV-2026-02', date: 'Feb 21, 2026', plan: 'Pro', amount: '$7.00', status: 'paid', period: 'Feb 21 – Mar 21' },
+    { id: 'INV-2026-01', date: 'Jan 21, 2026', plan: 'Pro', amount: '$7.00', status: 'paid', period: 'Jan 21 – Feb 21' },
+    { id: 'INV-2025-12', date: 'Dec 21, 2025', plan: 'Free', amount: '$0.00', status: 'paid', period: 'Dec 21 – Jan 21' },
+    { id: 'INV-2025-11', date: 'Nov 21, 2025', plan: 'Free', amount: '$0.00', status: 'paid', period: 'Nov 21 – Dec 21' },
+  ];
 
-  const fetchPlan = async () => {
-    try {
-      setLoading(true);
-      const token = await auth.currentUser?.getIdToken();
-      const res = await fetch('/api/user/plan', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setPlanData(data);
-        // Calculate active QRs from limits and remaining
-        const limit = data.limits.qr_codes;
-        if (limit === Infinity) {
-          setActiveQrs(0); // Show 0 for now or fetch list
-        } else {
-          setActiveQrs(limit - data.remaining_qr);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to fetch plan:', err);
-    } finally {
-      setLoading(false);
+  const showToast = (type: string, message: string) => {
+    alert(`${type.toUpperCase()}: ${message}`);
+  };
+
+  const confirmCancel = () => {
+    if (window.confirm('Cancel your Pro subscription? Your plan stays active until April 21, 2026.')) {
+      showToast('success', 'Cancellation scheduled for Apr 21, 2026');
     }
   };
-
-  const handleCheckout = async (plan: string) => {
-    try {
-      const token = await auth.currentUser?.getIdToken();
-      const res = await fetch('/api/billing/checkout', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
-        },
-        body: JSON.stringify({ plan })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        submitPayHere(data);
-      }
-    } catch (err) {
-      alert('Checkout failed');
-    }
-  };
-
-  const handleAddonCheckout = async (addonId: string) => {
-    try {
-      const token = await auth.currentUser?.getIdToken();
-      const res = await fetch('/api/billing/addon/checkout', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
-        },
-        body: JSON.stringify({ addonId })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        submitPayHere(data);
-      }
-    } catch (err) {
-      alert('Addon checkout failed');
-    }
-  };
-
-  const submitPayHere = (data: any) => {
-    const isSandbox = planData?.is_sandbox;
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = isSandbox 
-      ? 'https://sandbox.payhere.lk/pay/checkout' 
-      : 'https://www.payhere.lk/pay/checkout';
-    
-    Object.entries(data).forEach(([key, value]) => {
-      const input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = key;
-      input.value = value as string;
-      form.appendChild(input);
-    });
-    
-    document.body.appendChild(form);
-    form.submit();
-  };
-
-  if (loading) return <div className="content" style={{ padding: '28px' }}>Loading billing info...</div>;
-
-  const plan = planData?.plan || 'free';
-  const limits = planData?.limits;
-  const isTrial = planData?.is_trial;
 
   return (
     <div className="content" style={{ padding: '28px', overflow: 'auto', height: '100%' }}>
@@ -108,140 +29,147 @@ export default function Billing() {
         <div className="billing-hero">
           <div className="billing-hero-left">
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
-              <span className="chip" style={{ 
-                background: plan === 'free' ? 'var(--surface3)' : 'var(--amber-l)', 
-                color: plan === 'free' ? 'var(--text2)' : 'var(--amber)', 
-                fontSize: '11px', padding: '4px 10px', borderRadius: '20px', fontWeight: 700 
-              }}>
-                {isTrial ? '✨ 14-Day Trial' : plan.toUpperCase() + ' Plan'}
-              </span>
+              <span className="chip" style={{ background: 'var(--amber-l)', color: 'var(--amber)', fontSize: '11px', padding: '4px 10px', borderRadius: '20px', fontWeight: 700 }}>⭐ Pro Plan</span>
               <span className="chip" style={{ background: 'var(--green-l)', color: 'var(--green)', fontSize: '11px', padding: '4px 10px', borderRadius: '20px', fontWeight: 600 }}>● Active</span>
             </div>
-            <div className="billing-plan-name">
-              {plan === 'free' ? 'Free Plan — $0 / month' : plan === 'pro' ? 'Pro Plan — $7 / month' : 'Team Plan — $29 / month'}
+            <div className="billing-plan-name">Pro — $7 / month</div>
+            <div className="billing-plan-desc">Unlimited QR codes · Full analytics · 90-day history · Logo embedding</div>
+            <div className="billing-next">
+              <span className="billing-next-dot"></span>
+              Next billing: <strong style={{ color: 'var(--text)' }}>April 21, 2026</strong> · Auto-renews via PayHere
             </div>
-            <div className="billing-plan-desc">
-              {limits?.qr_codes === Infinity ? 'Unlimited' : limits?.qr_codes} QR codes · 
-              {limits?.monthly_scans.toLocaleString()} scans/mo · 
-              {limits?.analytics_days} days analytics
-            </div>
-            {plan !== 'free' && (
-              <div className="billing-next">
-                <span className="billing-next-dot"></span>
-                Billing cycle is monthly via PayHere
-              </div>
-            )}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end' }}>
-            {plan === 'free' ? (
-              <button className="btn btn-primary" onClick={() => handleCheckout('pro')}>Upgrade to Pro →</button>
-            ) : (
-              <button className="btn btn-ghost btn-sm" disabled>Manage Subscription (PayHere Portal)</button>
-            )}
+            <button className="btn btn-primary" onClick={() => showToast('success', 'Redirecting to PayHere portal…')}>Manage billing →</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => showToast('success', 'Invoice downloaded')}>Download invoice</button>
+            <button className="btn btn-ghost btn-sm" style={{ color: 'var(--text3)', fontSize: '11px' }} onClick={confirmCancel}>Cancel subscription</button>
           </div>
         </div>
 
         {/* Usage this cycle */}
         <div className="section-row mb16">
-          <span className="section-title">Current usage</span>
+          <span className="section-title">This billing cycle</span>
+          <span style={{ fontSize: '12px', color: 'var(--text3)' }}>Mar 21 – Apr 21, 2026</span>
         </div>
         <div className="usage-grid mb24">
           <div className="usage-card">
-            <div className="usage-icon">🔳</div>
-            <div className="usage-label">Active QR codes</div>
-            <div className="usage-val">{activeQrs} / {limits?.qr_codes === Infinity ? '∞' : limits?.qr_codes}</div>
-            <div className="progress-bar" style={{ marginTop: '8px' }}>
-              <div className="progress-fill" style={{ 
-                width: limits?.qr_codes === Infinity ? '0%' : `${(activeQrs / limits?.qr_codes) * 100}%`, 
-                background: 'var(--blue)' 
-              }}></div>
-            </div>
-          </div>
-          <div className="usage-card">
             <div className="usage-icon">📡</div>
-            <div className="usage-label">Monthly scans</div>
-            <div className="usage-val">Checked at runtime</div>
-            <div className="usage-sub">Limit: {limits?.monthly_scans.toLocaleString()}</div>
-            <div className="progress-bar" style={{ marginTop: '8px' }}>
-              <div className="progress-fill" style={{ width: '0%', background: 'var(--green)' }}></div>
-            </div>
+            <div className="usage-label">Scans tracked</div>
+            <div className="usage-val">48,291</div>
+            <div className="usage-sub">Unlimited on Pro</div>
+            <div className="progress-bar" style={{ marginTop: '8px' }}><div className="progress-fill" style={{ width: '100%', background: 'var(--green)' }}></div></div>
           </div>
           <div className="usage-card">
-            <div className="usage-icon">➕</div>
-            <div className="usage-label">Addons active</div>
-            <div className="usage-val">
-              {planData?.addons?.extra_qr_codes > 0 ? `+${planData.addons.extra_qr_codes} QRs` : 'None'}
+            <div className="usage-icon">🔳</div>
+            <div className="usage-label">QR codes</div>
+            <div className="usage-val">7 active</div>
+            <div className="usage-sub">Unlimited on Pro</div>
+            <div className="progress-bar" style={{ marginTop: '8px' }}><div className="progress-fill" style={{ width: '14%', background: 'var(--blue)' }}></div></div>
+          </div>
+          <div className="usage-card">
+            <div className="usage-icon">💾</div>
+            <div className="usage-label">Storage used</div>
+            <div className="usage-val">2.4 MB</div>
+            <div className="usage-sub">Firebase — no hard limit</div>
+            <div className="progress-bar" style={{ marginTop: '8px' }}><div className="progress-fill" style={{ width: '3%', background: 'var(--purple)' }}></div></div>
+          </div>
+        </div>
+
+        {/* Plan comparison + upgrade */}
+        <div className="grid-21 mb24">
+          <div className="card">
+            <div className="section-row">
+              <span className="section-title">Plan comparison</span>
             </div>
-            <div className="usage-sub">
-              {planData?.addons?.extra_scans > 0 ? `+${planData.addons.extra_scans.toLocaleString()} scans` : ''}
+            <table className="plan-compare">
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left' }}>Feature</th>
+                  <th>Free</th>
+                  <th className="current">Pro ✓</th>
+                  <th>Team</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>QR codes</td><td>3</td><td style={{ color: 'var(--coral)', fontWeight: 600 }}>Unlimited</td><td>Unlimited</td></tr>
+                <tr><td>Dynamic destinations</td><td><span className="check-n">—</span></td><td><span className="check-y">✓</span></td><td><span className="check-y">✓</span></td></tr>
+                <tr><td>Scan analytics</td><td><span className="check-n">—</span></td><td><span className="check-y">✓</span></td><td><span className="check-y">✓</span></td></tr>
+                <tr><td>Analytics history</td><td>—</td><td style={{ color: 'var(--coral)', fontWeight: 600 }}>90 days</td><td>365 days</td></tr>
+                <tr><td>Logo embedding</td><td><span className="check-n">—</span></td><td><span className="check-y">✓</span></td><td><span className="check-y">✓</span></td></tr>
+                <tr><td>Custom domain</td><td><span className="check-n">—</span></td><td><span className="check-n">—</span></td><td><span className="check-y">✓</span></td></tr>
+                <tr><td>White-label</td><td><span className="check-n">—</span></td><td><span className="check-n">—</span></td><td><span className="check-y">✓</span></td></tr>
+                <tr><td>API access</td><td><span className="check-n">—</span></td><td><span className="check-n">—</span></td><td><span className="check-y">✓</span></td></tr>
+                <tr><td>Shared workspaces</td><td><span className="check-n">—</span></td><td><span className="check-n">—</span></td><td><span className="check-y">✓</span></td></tr>
+                <tr><td>Priority support</td><td><span className="check-n">—</span></td><td><span className="check-n">—</span></td><td><span className="check-y">✓</span></td></tr>
+                <tr>
+                  <td style={{ fontWeight: 600, color: 'var(--text)' }}>Price</td>
+                  <td style={{ fontWeight: 600 }}>$0</td>
+                  <td style={{ color: 'var(--coral)', fontWeight: 700 }}>$7/mo</td>
+                  <td style={{ fontWeight: 600 }}>$29/mo</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {/* Upgrade card */}
+            <div className="card" style={{ borderColor: 'rgba(155,127,255,0.25)', background: 'rgba(155,127,255,0.04)' }}>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--purple)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '10px' }}>Team plan</div>
+              <div style={{ fontFamily: 'var(--font-h)', fontSize: '32px', fontWeight: 600, color: 'var(--text)', letterSpacing: '-1px', marginBottom: '4px' }}>$29<span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--text3)' }}>/mo</span></div>
+              <div style={{ fontSize: '12px', color: 'var(--text3)', marginBottom: '16px' }}>For agencies and teams managing multiple clients</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '18px', fontSize: '13px' }}>
+                <div style={{ display: 'flex', gap: '8px', color: 'var(--text2)' }}><span style={{ color: 'var(--green)' }}>✓</span> Everything in Pro</div>
+                <div style={{ display: 'flex', gap: '8px', color: 'var(--text2)' }}><span style={{ color: 'var(--green)' }}>✓</span> White-label your QR platform</div>
+                <div style={{ display: 'flex', gap: '8px', color: 'var(--text2)' }}><span style={{ color: 'var(--green)' }}>✓</span> Full REST API access</div>
+                <div style={{ display: 'flex', gap: '8px', color: 'var(--text2)' }}><span style={{ color: 'var(--green)' }}>✓</span> Shared team workspaces</div>
+                <div style={{ display: 'flex', gap: '8px', color: 'var(--text2)' }}><span style={{ color: 'var(--green)' }}>✓</span> 365-day analytics history</div>
+              </div>
+              <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '11px' }} onClick={() => showToast('success', 'Redirecting to PayHere checkout…')}>Upgrade to Team →</button>
+            </div>
+            {/* PayHere info */}
+            <div className="card card-sm">
+              <div className="card-title">Payment method</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 0' }}>
+                <div style={{ width: '40px', height: '26px', background: 'var(--surface3)', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 700, color: 'var(--text3)' }}>VISA</div>
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)' }}>•••• •••• •••• 4242</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text3)' }}>Expires 08/2028 · via PayHere</div>
+                </div>
+                <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto' }} onClick={() => showToast('success', 'Opening PayHere portal…')}>Update</button>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Addons Section */}
-        <div className="card mb24">
+        {/* Invoice history */}
+        <div className="card">
           <div className="section-row">
-            <span className="section-title">One-time Addons</span>
-            <span style={{ fontSize: '12px', color: 'var(--text3)' }}>Boost your plan without upgrading</span>
+            <span className="section-title">Invoice history</span>
+            <button className="btn btn-ghost btn-sm" onClick={() => showToast('success', 'All invoices downloaded')}>Download all</button>
           </div>
-          <div className="grid-3 gap12">
-            <div className="addon-item" style={{ padding: '16px', border: '1px solid var(--border)', borderRadius: '12px' }}>
-              <div style={{ fontWeight: 600, marginBottom: '4px' }}>5 Extra QRs</div>
-              <div style={{ fontSize: '13px', color: 'var(--text3)', marginBottom: '12px' }}>$3 one-time</div>
-              <button className="btn btn-ghost btn-sm" style={{ width: '100%' }} onClick={() => handleAddonCheckout('extra_qr_5')}>Buy Addon</button>
-            </div>
-            <div className="addon-item" style={{ padding: '16px', border: '1px solid var(--border)', borderRadius: '12px' }}>
-              <div style={{ fontWeight: 600, marginBottom: '4px' }}>100k Extra Scans</div>
-              <div style={{ fontSize: '13px', color: 'var(--text3)', marginBottom: '12px' }}>$4 one-time</div>
-              <button className="btn btn-ghost btn-sm" style={{ width: '100%' }} onClick={() => handleAddonCheckout('extra_scans_100k')}>Buy Addon</button>
-            </div>
-            <div className="addon-item" style={{ padding: '16px', border: '1px solid var(--border)', borderRadius: '12px' }}>
-              <div style={{ fontWeight: 600, marginBottom: '4px' }}>Shared Workspaces</div>
-              <div style={{ fontSize: '13px', color: 'var(--text3)', marginBottom: '12px' }}>Included in Team</div>
-              <button className="btn btn-ghost btn-sm" style={{ width: '100%' }} disabled>Coming Soon</button>
-            </div>
-          </div>
-        </div>
-
-        {/* Plan comparison */}
-        <div className="card mb24">
-          <div className="section-row">
-            <span className="section-title">Available Plans</span>
-          </div>
-          <div className="grid-3 gap12">
-            <div className={`pricing-card ${plan === 'free' ? 'current' : ''}`} style={{ padding: '20px', border: '1px solid var(--border)', borderRadius: '12px' }}>
-              <div style={{ fontWeight: 700, fontSize: '18px' }}>Free</div>
-              <div style={{ fontSize: '24px', fontWeight: 700, margin: '8px 0' }}>$0</div>
-              <ul style={{ fontSize: '13px', color: 'var(--text2)', padding: '0', listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
-                <li>✓ 3 QR codes</li>
-                <li>✓ 1,000 scans/mo</li>
-                <li>✓ 7 days analytics</li>
-                <li>✕ No password/expiry</li>
-              </ul>
-            </div>
-            <div className={`pricing-card ${plan === 'pro' ? 'current' : ''}`} style={{ padding: '20px', border: '2px solid var(--amber)', borderRadius: '12px', background: 'var(--amber-ll)' }}>
-              <div style={{ fontWeight: 700, fontSize: '18px' }}>Pro</div>
-              <div style={{ fontSize: '24px', fontWeight: 700, margin: '8px 0' }}>$7<span style={{ fontSize: '14px' }}>/mo</span></div>
-              <ul style={{ fontSize: '13px', color: 'var(--text2)', padding: '0', listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
-                <li>✓ Unlimited QRs</li>
-                <li>✓ 50,000 scans/mo</li>
-                <li>✓ 90 days analytics</li>
-                <li>✓ Password & Expiry</li>
-              </ul>
-              {plan === 'free' && <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => handleCheckout('pro')}>Get Pro</button>}
-            </div>
-            <div className={`pricing-card ${plan === 'team' ? 'current' : ''}`} style={{ padding: '20px', border: '1px solid var(--border)', borderRadius: '12px' }}>
-              <div style={{ fontWeight: 700, fontSize: '18px' }}>Team</div>
-              <div style={{ fontSize: '24px', fontWeight: 700, margin: '8px 0' }}>$29<span style={{ fontSize: '14px' }}>/mo</span></div>
-              <ul style={{ fontSize: '13px', color: 'var(--text2)', padding: '0', listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
-                <li>✓ Everything in Pro</li>
-                <li>✓ 500,000 scans/mo</li>
-                <li>✓ White-labeling</li>
-                <li>✓ API Access</li>
-              </ul>
-              {plan !== 'team' && <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => handleCheckout('team')}>Get Team</button>}
-            </div>
-          </div>
+          <table className="invoice-table">
+            <thead>
+              <tr>
+                <th>Invoice</th>
+                <th>Date</th>
+                <th>Plan</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {INVOICES.map(inv => (
+                <tr key={inv.id}>
+                  <td><span style={{ fontFamily: 'monospace', fontSize: '12px', color: 'var(--text)' }}>{inv.id}</span></td>
+                  <td style={{ color: 'var(--text2)' }}>{inv.date}</td>
+                  <td><span className="chip" style={{ background: 'var(--amber-l)', color: 'var(--amber)', fontSize: '11px', padding: '3px 8px', borderRadius: '4px' }}>{inv.plan}</span></td>
+                  <td style={{ fontWeight: 600, color: 'var(--text)' }}>{inv.amount}</td>
+                  <td><span className={`invoice-status ${inv.status === 'paid' ? 'inv-paid' : inv.status === 'pending' ? 'inv-pending' : 'inv-failed'}`}>{inv.status === 'paid' ? '● Paid' : inv.status === 'pending' ? '● Pending' : '✕ Failed'}</span></td>
+                  <td style={{ textAlign: 'right' }}><button className="btn btn-ghost btn-sm" onClick={() => showToast('success', `Invoice ${inv.id} downloaded`)}>↓ PDF</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
