@@ -160,7 +160,7 @@ export default function ScnrLayout({ planData }: { planData?: any }) {
           </div>
         </div>
 
-        <div className="nav-section">
+        {/* <div className="nav-section">
           <div className="nav-label">Legal</div>
           {legalItems.map(item => (
             <Link key={item.path} to={item.path} style={{ textDecoration: 'none' }}>
@@ -170,7 +170,7 @@ export default function ScnrLayout({ planData }: { planData?: any }) {
               </div>
             </Link>
           ))}
-        </div>
+        </div> */}
 
         <div className="sidebar-footer">
           <Link to="/settings" style={{ textDecoration: 'none' }}>
