@@ -96,12 +96,12 @@ export default function ApiDocs() {
           
           {/* INTRO */}
           <div className="docs-section" id="intro">
-            <div className="docs-h1">Scnr REST API</div>
+            <div className="docs-h1">DynamicQR REST API</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
               <span className="chip" style={{ background: 'var(--green-l)', color: 'var(--green)', padding: '4px 10px', borderRadius: '20px', fontWeight: 600, fontSize: '12px' }}>● v1 — Stable</span>
               <span style={{ fontSize: '12px', color: 'var(--text3)' }}>Base URL: <code style={{ fontFamily: 'monospace', color: 'var(--coral)' }}>{baseUrl}</code></span>
             </div>
-            <div className="docs-p">The Scnr API gives you programmatic access to everything in the dashboard — create and manage QR codes, fetch real-time analytics, and listen to scan events via webhooks. The API is available on the <strong style={{ color: 'var(--text)' }}>Team plan</strong> and above.</div>
+            <div className="docs-p">The DynamicQR API gives you programmatic access to everything in the dashboard — create and manage QR codes, fetch real-time analytics, and listen to scan events via webhooks. The API is available on the <strong style={{ color: 'var(--text)' }}>Team plan</strong> and above.</div>
             <div className="alert-box alert-info">
               <span className="alert-icon">ℹ</span>
               <span>All requests must include your API key in the <code style={{ fontFamily: 'monospace' }}>Authorization</code> header. Keys are scoped to read, write, or admin. <a href="#">Generate your first key →</a></span>
@@ -111,14 +111,14 @@ export default function ApiDocs() {
           {/* AUTH */}
           <div className="docs-section" id="auth-section">
             <div className="docs-h2"><span className="method-tag post" style={{ fontSize: '11px' }}>AUTH</span> Authentication</div>
-            <div className="docs-p">Scnr uses Bearer token authentication. Pass your API key in every request header:</div>
+            <div className="docs-p">DynamicQR uses Bearer token authentication. Pass your API key in every request header:</div>
             <CodeBlock code="Authorization: Bearer sk_live_your_api_key_here">
               <span className="hl-k">Authorization</span>: Bearer <span className="hl-s">sk_live_your_api_key_here</span>
             </CodeBlock>
             <div className="docs-p">Keys are prefixed with <code style={{ fontFamily: 'monospace', color: 'var(--amber)' }}>sk_live_</code> for production and <code style={{ fontFamily: 'monospace', color: 'var(--blue)' }}>sk_test_</code> for testing. Never expose keys in client-side code or public repositories.</div>
             <div className="alert-box alert-warn">
               <span className="alert-icon">⚠</span>
-              <span>Treat your API key like a password. If compromised, rotate it immediately from your <a href="#">API Keys settings</a>. Scnr will never ask for your key via email or chat.</span>
+              <span>Treat your API key like a password. If compromised, rotate it immediately from your <a href="#">API Keys settings</a>. DynamicQR will never ask for your key via email or chat.</span>
             </div>
           </div>
 
@@ -198,13 +198,13 @@ export default function ApiDocs() {
                 <button className="resp-tab active">200 OK</button>
                 <button className="resp-tab">401</button>
               </div>
-              <CodeBlock code={`{\n  "data": [\n    {\n      "id":              "qr_x9Km4p",\n      "slug":           "x9Km4p",\n      "short_url":      "https://scnr.app/x9Km4p",\n      "destination_url":"https://yoursite.com/menu",\n      "title":          "Restaurant Menu",\n      "is_active":      true,\n      "type":           "url",\n      "total_scans":    18420,\n      "created_at":     "2026-02-14T10:32:00Z",\n      "updated_at":     "2026-03-18T08:11:00Z"\n    }\n  ],\n  "meta": {\n    "total":  7,\n    "limit":  10,\n    "offset": 0\n  }\n}`}>
+              <CodeBlock code={`{\n  "data": [\n    {\n      "id":              "qr_x9Km4p",\n      "slug":           "x9Km4p",\n      "short_url":      "https://dynamicqr.app/x9Km4p",\n      "destination_url":"https://yoursite.com/menu",\n      "title":          "Restaurant Menu",\n      "is_active":      true,\n      "type":           "url",\n      "total_scans":    18420,\n      "created_at":     "2026-02-14T10:32:00Z",\n      "updated_at":     "2026-03-18T08:11:00Z"\n    }\n  ],\n  "meta": {\n    "total":  7,\n    "limit":  10,\n    "offset": 0\n  }\n}`}>
                 {'{'}{'\n'}
                 {'  '}<span className="hl-k">"data"</span>: [{'\n'}
                 {'    '}{'{'}{'\n'}
                 {'      '}<span className="hl-k">"id"</span>:              <span className="hl-s">"qr_x9Km4p"</span>,{'\n'}
                 {'      '}<span className="hl-k">"slug"</span>:           <span className="hl-s">"x9Km4p"</span>,{'\n'}
-                {'      '}<span className="hl-k">"short_url"</span>:      <span className="hl-s">"https://scnr.app/x9Km4p"</span>,{'\n'}
+                {'      '}<span className="hl-k">"short_url"</span>:      <span className="hl-s">"https://dynamicqr.app/x9Km4p"</span>,{'\n'}
                 {'      '}<span className="hl-k">"destination_url"</span>:<span className="hl-s">"https://yoursite.com/menu"</span>,{'\n'}
                 {'      '}<span className="hl-k">"title"</span>:          <span className="hl-s">"Restaurant Menu"</span>,{'\n'}
                 {'      '}<span className="hl-k">"is_active"</span>:      <span className="hl-v">true</span>,{'\n'}
@@ -360,7 +360,7 @@ export default function ApiDocs() {
           {/* WEBHOOKS */}
           <div className="docs-section" id="webhooks">
             <div className="docs-h2">Webhooks — Overview</div>
-            <div className="docs-p">Scnr can POST to your server in real time when a QR is scanned, created, updated, or deactivated. Configure your endpoint URL in the dashboard under Settings → Webhooks.</div>
+            <div className="docs-p">DynamicQR can POST to your server in real time when a QR is scanned, created, updated, or deactivated. Configure your endpoint URL in the dashboard under Settings → Webhooks.</div>
             <div className="alert-box alert-info"><span className="alert-icon">ℹ</span><span>Webhook deliveries are retried up to 5 times with exponential backoff if your server returns a non-200 status. Your endpoint must respond within 5 seconds.</span></div>
           </div>
 
@@ -394,7 +394,7 @@ export default function ApiDocs() {
 
           <div className="docs-section" id="webhook-verify">
             <div className="docs-h2">Signature verification</div>
-            <div className="docs-p">Every webhook POST includes an <code style={{ fontFamily: 'monospace', color: 'var(--amber)' }}>X-Scnr-Signature</code> header. Verify it to confirm the request came from Scnr and not a third party.</div>
+            <div className="docs-p">Every webhook POST includes an <code style={{ fontFamily: 'monospace', color: 'var(--amber)' }}>X-DynamicQR-Signature</code> header. Verify it to confirm the request came from DynamicQR and not a third party.</div>
             <CodeBlock code={`// Node.js verification\nconst crypto = require('crypto')\n\nfunction verifyWebhook(body, signature, secret) {\n  const expected = crypto\n    .createHmac('sha256', secret)\n    .update(body)\n    .digest('hex')\n  return crypto.timingSafeEqual(\n    Buffer.from(expected),\n    Buffer.from(signature)\n  )\n}`}>
               <span className="hl-c">// Node.js verification</span>{'\n'}
               <span className="hl-k">const</span> crypto = <span className="hl-n">require</span>(<span className="hl-s">'crypto'</span>){'\n\n'}

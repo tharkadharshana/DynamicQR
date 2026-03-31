@@ -4,7 +4,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase';
 import { apiFetch } from './lib/api';
 
-import ScnrLayout from './components/ScnrLayout';
+import DynamicQRLayout from './components/DynamicQRLayout';
 import Dashboard from './pages/Dashboard';
 import CreateQR from './pages/CreateQR';
 import Analytics from './pages/Analytics';
@@ -57,7 +57,7 @@ export default function App() {
           <Route path="/legal/refund-policy" element={<RefundPolicy />} />
 
           {user ? (
-            <Route path="/" element={<ScnrLayout planData={planData} />}>
+            <Route path="/" element={<DynamicQRLayout planData={planData} />}>
               <Route index element={<Dashboard />} />
               <Route path="create" element={<CreateQR />} />
               <Route path="edit/:id" element={<CreateQR />} />
