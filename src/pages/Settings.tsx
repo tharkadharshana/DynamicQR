@@ -221,6 +221,9 @@ export default function Settings() {
               <div className="profile-name" id="profile-display-name">{firstName} {lastName}</div>
               <div className="profile-email" id="profile-display-email">{user?.email}</div>
               <div className="profile-plan-chip">⭐ {planLabel} Plan · {planData.is_expired ? 'Expired' : 'Active'}</div>
+              <div style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '8px', textAlign: 'center' }}>
+                Member since {user?.metadata.creationTime ? new Date(user.metadata.creationTime).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'}
+              </div>
               <div className="profile-stats">
                 <div className="p-stat"><div className="p-stat-val">{qrUsed}</div><div className="p-stat-key">QR Codes</div></div>
                 <div className="p-stat"><div className="p-stat-val">{formatNumber(planData.total_scans || 0)}</div><div className="p-stat-key">Scans</div></div>

@@ -240,6 +240,8 @@ async function startServer() {
         is_trial: license.isTrial,
         is_expired: license.isExpired,
         plan_expires_at: userDoc?.plan_expires_at || null,
+        plan_since: userDoc?.plan_since || null,
+        email: (req as any).user.email || userDoc?.email || '',
         limits: license.limits,
         addons: license.addons,
         remaining_qr,
@@ -610,9 +612,12 @@ async function startServer() {
           const expiry = new Date(base);
           expiry.setMonth(expiry.getMonth() + 1);
 
+          const planSince = userSnap.exists() && userSnap.data()?.plan_since ? userSnap.data()?.plan_since : new Date().toISOString();
+
           await setDoc(userRef, {
             plan,
             plan_expires_at: admin.firestore.Timestamp.fromDate(expiry),
+            plan_since: planSince,
             is_trial: false,
             updated_at: serverTimestamp(),
             payhere_order_id: order_id
@@ -1014,22 +1019,42 @@ async function startServer() {
       const userUid = (req as any).user.uid;
       const license = await getLicense(userUid);
       
+      const startParam = req.query.start as string;
+      const endParam = req.query.end as string;
       let days = parseInt(req.query.days as string) || 30;
-      // Backend enforcement: cap days by plan limit
-      if (days > license.limits.analytics_days) {
-        days = license.limits.analytics_days;
+      
+      const dailyStats: Record<string, any> = {};
+      
+      if (startParam && endParam) {
+        const start = new Date(startParam);
+        const end = new Date(endParam);
+        const diffTime = Math.abs(end.getTime() - start.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        
+        // Enforcement: cap by plan limit if needed (optional, usually range is fine)
+        
+        for (let i = 0; i < diffDays; i++) {
+          const d = new Date(start);
+          d.setDate(d.getDate() + i);
+          const dateStr = d.toISOString().split('T')[0];
+          dailyStats[dateStr] = { date: dateStr, total_scans: 0, unique_scans: 0, mobile_scans: 0 };
+        }
+      } else {
+        // Backend enforcement: cap days by plan limit
+        if (days > license.limits.analytics_days) {
+          days = license.limits.analytics_days;
+        }
+        
+        // Initialize all days
+        for (let i = days - 1; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          const dateStr = d.toISOString().split('T')[0];
+          dailyStats[dateStr] = { date: dateStr, total_scans: 0, unique_scans: 0, mobile_scans: 0 };
+        }
       }
       
       const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
-      const dailyStats: Record<string, any> = {};
-      
-      // Initialize all days
-      for (let i = days - 1; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        const dateStr = d.toISOString().split('T')[0];
-        dailyStats[dateStr] = { date: dateStr, total_scans: 0, unique_scans: 0, mobile_scans: 0 };
-      }
 
       if (statsDoc.exists()) {
         const data = statsDoc.data()!;
@@ -1324,11 +1349,9 @@ async function startServer() {
       }
 
       const license = await getLicense(uid);
+      const startParam = req.query.start as string;
+      const endParam = req.query.end as string;
       let days = parseInt(req.query.days as string) || 30;
-      // Backend enforcement: cap days by plan limit
-      if (days > license.limits.analytics_days) {
-        days = license.limits.analytics_days;
-      }
       
       const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
 
@@ -1341,11 +1364,30 @@ async function startServer() {
 
       const dailyStats: Record<string, any> = {};
       
-      for (let i = days - 1; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        const dateStr = d.toISOString().split('T')[0];
-        dailyStats[dateStr] = { date: dateStr, total_scans: 0, unique_scans: 0 };
+      if (startParam && endParam) {
+        const start = new Date(startParam);
+        const end = new Date(endParam);
+        const diffTime = Math.abs(end.getTime() - start.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        
+        for (let i = 0; i < diffDays; i++) {
+          const d = new Date(start);
+          d.setDate(d.getDate() + i);
+          const dateStr = d.toISOString().split('T')[0];
+          dailyStats[dateStr] = { date: dateStr, total_scans: 0, unique_scans: 0 };
+        }
+      } else {
+        // Backend enforcement: cap days by plan limit
+        if (days > license.limits.analytics_days) {
+          days = license.limits.analytics_days;
+        }
+        
+        for (let i = days - 1; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          const dateStr = d.toISOString().split('T')[0];
+          dailyStats[dateStr] = { date: dateStr, total_scans: 0, unique_scans: 0 };
+        }
       }
 
       if (slugs.length > 0) {

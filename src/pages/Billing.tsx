@@ -30,8 +30,10 @@ export default function Billing() {
     );
   }
 
-  const { plan, plan_expires_at, monthly_scans_used, limits, is_trial, is_expired } = planData;
+  const { plan, plan_expires_at, monthly_scans_used, limits, is_trial, is_expired, plan_since, email } = planData;
   const expiryDate = plan_expires_at ? new Date(plan_expires_at._seconds * 1000).toLocaleDateString() : 'N/A';
+  const planSince = plan_since ? new Date(plan_since).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '—';
+  const billingEmail = email || auth.currentUser?.email || '—';
   
   const showToast = (type: string, message: string) => {
     alert(`${type.toUpperCase()}: ${message}`);
@@ -90,9 +92,13 @@ export default function Billing() {
             <div className="billing-plan-desc">
               {plan === 'free' ? 'Basic QR creation' : plan === 'pro' ? 'Unlimited QRs · Full Analytics · 90d History' : 'Everything in Pro · API · White-label'}
             </div>
-            {plan !== 'free' && (
-              <div className="billing-next">
-                <span className="billing-next-dot"></span>
+            <div className="billing-next">
+              <span className="billing-next-dot"></span>
+              Active since: <strong style={{ color: 'var(--text)' }}>{planSince}</strong> · Billing email: <strong style={{ color: 'var(--text)' }}>{billingEmail}</strong>
+            </div>
+            {plan !== 'free' && plan_expires_at && (
+              <div className="billing-next" style={{ marginTop: '4px' }}>
+                <span className="billing-next-dot" style={{ background: 'var(--blue)' }}></span>
                 Next billing: <strong style={{ color: 'var(--text)' }}>{expiryDate}</strong> · Auto-renews via PayHere
               </div>
             )}

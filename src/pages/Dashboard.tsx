@@ -11,6 +11,11 @@ export default function Dashboard() {
   const [qrCodes, setQrCodes] = useState<any[]>([]);
   const [stats, setStats] = useState<Record<string, any>>({});
   const [timeseries, setTimeseries] = useState<any[]>([]);
+  const [rangeMode, setRangeMode] = useState<'days' | 'range'>('days');
+  const [days, setDays] = useState(30);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
   const [devices, setDevices] = useState<any[]>([]);
   const [countries, setCountries] = useState<any[]>([]);
   const [recentScans, setRecentScans] = useState<any[]>([]);
@@ -22,6 +27,28 @@ export default function Dashboard() {
   });
   const [planData, setPlanData] = useState<any>(null);
   const navigate = useNavigate();
+
+  const fetchTimeseries = async () => {
+    if (!auth.currentUser) return;
+    try {
+      let url = `/api/analytics/account/${auth.currentUser.uid}/timeseries`;
+      if (rangeMode === 'days') {
+        url += `?days=${days}`;
+      } else if (startDate && endDate) {
+        url += `?start=${startDate}&end=${endDate}`;
+      } else {
+        return; // Don't fetch if range is incomplete
+      }
+      const data = await apiFetch(url);
+      setTimeseries(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to fetch timeseries", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchTimeseries();
+  }, [auth.currentUser, days, rangeMode, startDate, endDate]);
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -41,14 +68,12 @@ export default function Dashboard() {
         setStats(newStats);
 
         // Fetch account level data
-        const [tsData, devData, countryData, recentData] = await Promise.all([
-          apiFetch(`/api/analytics/account/${auth.currentUser?.uid}/timeseries?days=30`).catch(() => []),
+        const [devData, countryData, recentData] = await Promise.all([
           apiFetch(`/api/analytics/account/${auth.currentUser?.uid}/devices`).catch(() => []),
           apiFetch(`/api/analytics/account/${auth.currentUser?.uid}/countries`).catch(() => []),
           apiFetch(`/api/analytics/account/${auth.currentUser?.uid}/recent`).catch(() => [])
         ]);
         
-        setTimeseries(Array.isArray(tsData) ? tsData : []);
         setDevices(Array.isArray(devData) ? devData : []);
         setCountries(Array.isArray(countryData) ? countryData : []);
         setRecentScans(Array.isArray(recentData) ? recentData : []);
@@ -96,7 +121,7 @@ export default function Dashboard() {
           content = `${window.location.origin}/${qr.slug}`;
         } else {
           if (qr.qr_type === 'url') {
-            content = qr.destination_url || 'https://dynamicqr.app';
+            content = qr.destination_url || 'https://scnr.app';
           } else if (qr.qr_type === 'vcard') {
             content = `BEGIN:VCARD\nVERSION:3.0\nN:${qr.content_data?.last_name || ''};${qr.content_data?.first_name || ''}\nFN:${qr.content_data?.first_name || ''} ${qr.content_data?.last_name || ''}\nTEL:${qr.content_data?.phone || ''}\nEMAIL:${qr.content_data?.email || ''}\nORG:${qr.content_data?.company || ''}\nURL:${qr.content_data?.website || ''}\nEND:VCARD`;
           } else if (qr.qr_type === 'wifi') {
@@ -106,7 +131,7 @@ export default function Dashboard() {
           } else if (qr.qr_type === 'email') {
             content = `mailto:${qr.content_data?.email || ''}?subject=${encodeURIComponent(qr.content_data?.subject || '')}&body=${encodeURIComponent(qr.content_data?.body || '')}`;
           } else {
-            content = qr.destination_url || 'https://dynamicqr.app';
+            content = qr.destination_url || 'https://scnr.app';
           }
         }
 
@@ -180,8 +205,47 @@ export default function Dashboard() {
           <div className="card">
             <div className="section-row">
               <span className="card-title">Scans over time</span>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                <button className="btn btn-ghost btn-sm active-range" style={{ fontSize: '11px', padding: '4px 8px', background: 'var(--surface3)' }}>30d</button>
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <select 
+                  className="btn btn-ghost btn-sm" 
+                  value={rangeMode} 
+                  onChange={(e) => setRangeMode(e.target.value as any)}
+                  style={{ fontSize: '11px', padding: '2px 6px' }}
+                >
+                  <option value="days">Last X Days</option>
+                  <option value="range">Custom Range</option>
+                </select>
+
+                {rangeMode === 'days' ? (
+                  <select 
+                    className="btn btn-ghost btn-sm" 
+                    value={days} 
+                    onChange={(e) => setDays(Number(e.target.value))}
+                    style={{ fontSize: '11px', padding: '2px 6px' }}
+                  >
+                    <option value={7}>7d</option>
+                    <option value={30}>30d</option>
+                    <option value={90}>90d</option>
+                  </select>
+                ) : (
+                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    <input 
+                      type="date" 
+                      className="btn btn-ghost btn-sm" 
+                      value={startDate} 
+                      onChange={(e) => setStartDate(e.target.value)}
+                      style={{ fontSize: '11px', padding: '2px 4px' }}
+                    />
+                    <span style={{ fontSize: '10px', color: 'var(--text3)' }}>-</span>
+                    <input 
+                      type="date" 
+                      className="btn btn-ghost btn-sm" 
+                      value={endDate} 
+                      onChange={(e) => setEndDate(e.target.value)}
+                      style={{ fontSize: '11px', padding: '2px 4px' }}
+                    />
+                  </div>
+                )}
               </div>
             </div>
             <div style={{ height: '100px', width: '100%', marginTop: '10px' }}>
@@ -195,8 +259,12 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
-              <span style={{ fontSize: '10px', color: 'var(--text3)' }}>30 days ago</span>
-              <span style={{ fontSize: '10px', color: 'var(--text3)' }}>Today</span>
+              <span style={{ fontSize: '10px', color: 'var(--text3)' }}>
+                {rangeMode === 'days' ? `${days} days ago` : startDate || 'Start'}
+              </span>
+              <span style={{ fontSize: '10px', color: 'var(--text3)' }}>
+                {rangeMode === 'days' ? 'Today' : endDate || 'End'}
+              </span>
             </div>
           </div>
           <div className="card">

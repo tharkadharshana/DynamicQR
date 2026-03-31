@@ -18,6 +18,11 @@ export default function Analytics() {
   const [showMultiSelect, setShowMultiSelect] = useState(false);
   const [summary, setSummary] = useState<any>(null);
   const [timeseries, setTimeseries] = useState<any[]>([]);
+  const [rangeMode, setRangeMode] = useState<'days' | 'range'>('days');
+  const [days, setDays] = useState(planData?.limits?.analytics_days || 30);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
   const [devices, setDevices] = useState<any[]>([]);
   const [countries, setCountries] = useState<any[]>([]);
   const [browsers, setBrowsers] = useState<any[]>([]);
@@ -41,6 +46,43 @@ export default function Analytics() {
     fetchQRs();
   }, [auth.currentUser]);
 
+  const fetchTimeseries = async () => {
+    if (!auth.currentUser) return;
+    try {
+      let baseUrl = `/api/analytics/account/${auth.currentUser.uid}`;
+      let queryParams = '';
+
+      if (selectedSlugs.length === 1) {
+        baseUrl = `/api/analytics/${selectedSlugs[0]}`;
+      } else if (selectedSlugs.length > 1) {
+        queryParams = `slugs=${selectedSlugs.join(',')}`;
+      }
+
+      let tsUrl = `${baseUrl}/timeseries`;
+      let params = [];
+      if (queryParams) params.push(queryParams);
+      
+      if (rangeMode === 'days') {
+        params.push(`days=${days}`);
+      } else if (startDate && endDate) {
+        params.push(`start=${startDate}`);
+        params.push(`end=${endDate}`);
+      } else {
+        return;
+      }
+
+      tsUrl += `?${params.join('&')}`;
+      const data = await apiFetch(tsUrl);
+      setTimeseries(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to fetch timeseries", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchTimeseries();
+  }, [selectedSlugs, auth.currentUser, days, rangeMode, startDate, endDate]);
+
   useEffect(() => {
     const fetchAnalytics = async () => {
       setLoading(true);
@@ -59,10 +101,8 @@ export default function Analytics() {
           queryParams = `?slugs=${selectedSlugs.join(',')}`;
         }
 
-        const historyDays = planData?.limits?.analytics_days || 7;
         const fetchPromises: Promise<any>[] = [
           apiFetch(`${baseUrl}/summary${queryParams}`),
-          apiFetch(`${baseUrl}/timeseries${queryParams}${queryParams ? '&' : '?'}days=${historyDays}`),
           apiFetch(`${baseUrl}/devices${queryParams}`),
           apiFetch(`${baseUrl}/countries${queryParams}`),
           apiFetch(`${baseUrl}/browsers${queryParams}`),
@@ -78,16 +118,15 @@ export default function Analytics() {
         const results = await Promise.all(fetchPromises);
         
         setSummary(results[0]);
-        setTimeseries(Array.isArray(results[1]) ? results[1] : []);
-        setDevices(Array.isArray(results[2]) ? results[2] : []);
-        setCountries(Array.isArray(results[3]) ? results[3] : []);
-        setBrowsers(Array.isArray(results[4]) ? results[4] : []);
-        setOsData(Array.isArray(results[5]) ? results[5] : []);
-        setReferrers(Array.isArray(results[6]) ? results[6] : []);
-        setRecentScans(Array.isArray(results[7]) ? results[7] : []);
+        setDevices(Array.isArray(results[1]) ? results[1] : []);
+        setCountries(Array.isArray(results[2]) ? results[2] : []);
+        setBrowsers(Array.isArray(results[3]) ? results[3] : []);
+        setOsData(Array.isArray(results[4]) ? results[4] : []);
+        setReferrers(Array.isArray(results[5]) ? results[5] : []);
+        setRecentScans(Array.isArray(results[6]) ? results[6] : []);
         
         if (selectedSlugs.length === 1) {
-          setQrDetails(results[8]);
+          setQrDetails(results[7]);
           try {
             const advRes = await apiFetch(`${baseUrl}/advanced`);
             setAdvanced(advRes);
@@ -236,13 +275,49 @@ export default function Analytics() {
         {/* Line chart + Countries */}
         <div className="grid-21 mb16">
           <div className="card">
-            <div className="topbar-right">
-              <span style={{ fontSize: '11px', color: 'var(--text3)', marginRight: '12px' }} className="hidden md:inline">
-                History: {planData?.limits?.analytics_days || 7} days
-              </span>
-              <button className="btn btn-ghost btn-sm hidden sm:flex" id="topbar-date">
-                Last {planData?.limits?.analytics_days || 7} days ▾
-              </button>
+            <div className="section-row" style={{ marginBottom: '12px' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <select 
+                  className="btn btn-ghost btn-sm" 
+                  value={rangeMode} 
+                  onChange={(e) => setRangeMode(e.target.value as any)}
+                  style={{ fontSize: '11px' }}
+                >
+                  <option value="days">Last X Days</option>
+                  <option value="range">Custom Range</option>
+                </select>
+
+                {rangeMode === 'days' ? (
+                  <select 
+                    className="btn btn-ghost btn-sm" 
+                    value={days} 
+                    onChange={(e) => setDays(Number(e.target.value))}
+                    style={{ fontSize: '11px' }}
+                  >
+                    <option value={7}>7 days</option>
+                    <option value={30}>30 days</option>
+                    <option value={90}>90 days</option>
+                  </select>
+                ) : (
+                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    <input 
+                      type="date" 
+                      className="btn btn-ghost btn-sm" 
+                      value={startDate} 
+                      onChange={(e) => setStartDate(e.target.value)}
+                      style={{ fontSize: '11px', padding: '2px 6px' }}
+                    />
+                    <span style={{ fontSize: '11px', color: 'var(--text3)' }}>to</span>
+                    <input 
+                      type="date" 
+                      className="btn btn-ghost btn-sm" 
+                      value={endDate} 
+                      onChange={(e) => setEndDate(e.target.value)}
+                      style={{ fontSize: '11px', padding: '2px 6px' }}
+                    />
+                  </div>
+                )}
+              </div>
               <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--text3)' }}>
                   <span style={{ width: '10px', height: '2px', background: 'var(--coral)', display: 'inline-block', borderRadius: '1px' }}></span>Total

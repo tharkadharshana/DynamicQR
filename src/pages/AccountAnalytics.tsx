@@ -12,25 +12,50 @@ const COLORS = ['#1A1916', '#E85D3A', '#4D9EFF', '#3DCC7E', '#9B7FFF', '#F5A623'
 export default function AccountAnalytics() {
   const [accountStats, setAccountStats] = useState<any>(null);
   const [accountTimeseries, setAccountTimeseries] = useState<any[]>([]);
+  const [rangeMode, setRangeMode] = useState<'days' | 'range'>('days');
+  const [days, setDays] = useState(30);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
   const [qrPerformance, setQrPerformance] = useState<any[]>([]);
   const [accountCountries, setAccountCountries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+
+  const fetchTimeseries = async () => {
+    if (!auth.currentUser) return;
+    try {
+      let tsUrl = `/api/analytics/account/${auth.currentUser.uid}/timeseries`;
+      if (rangeMode === 'days') {
+        tsUrl += `?days=${days}`;
+      } else if (startDate && endDate) {
+        tsUrl += `?start=${startDate}&end=${endDate}`;
+      } else {
+        return;
+      }
+      const data = await apiFetch(tsUrl);
+      setAccountTimeseries(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to fetch timeseries", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchTimeseries();
+  }, [auth.currentUser, days, rangeMode, startDate, endDate]);
 
   useEffect(() => {
     if (!auth.currentUser) return;
 
     const fetchStats = async () => {
       try {
-        const [stats, timeseries, performance, countries] = await Promise.all([
+        const [stats, performance, countries] = await Promise.all([
           apiFetch(`/api/analytics/account/${auth.currentUser?.uid}`),
-          apiFetch(`/api/analytics/account/${auth.currentUser?.uid}/timeseries?days=30`),
           apiFetch(`/api/analytics/account/${auth.currentUser?.uid}/performance`),
           apiFetch(`/api/analytics/account/${auth.currentUser?.uid}/countries`),
         ]);
 
         setAccountStats(stats);
-        setAccountTimeseries(Array.isArray(timeseries) ? timeseries : []);
         setQrPerformance(Array.isArray(performance) ? performance : []);
         setAccountCountries(Array.isArray(countries) ? countries : []);
       } catch (err) {
@@ -85,14 +110,56 @@ export default function AccountAnalytics() {
         <div className="grid-21 mb16">
           <div className="card">
             <div className="section-row">
-              <span className="section-title">Scan trend — 30 days</span>
-              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--text3)' }}>
-                  <span style={{ width: '10px', height: '2px', background: 'var(--coral)', display: 'inline-block', borderRadius: '1px' }}></span>Total
-                </span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--text3)' }}>
-                  <span style={{ width: '10px', height: '2px', background: 'var(--blue)', display: 'inline-block', borderRadius: '1px' }}></span>Unique
-                </span>
+              <span className="section-title">Scan trend</span>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <select 
+                  className="btn btn-ghost btn-sm" 
+                  value={rangeMode} 
+                  onChange={(e) => setRangeMode(e.target.value as any)}
+                  style={{ fontSize: '11px' }}
+                >
+                  <option value="days">Last X Days</option>
+                  <option value="range">Custom Range</option>
+                </select>
+
+                {rangeMode === 'days' ? (
+                  <select 
+                    className="btn btn-ghost btn-sm" 
+                    value={days} 
+                    onChange={(e) => setDays(Number(e.target.value))}
+                    style={{ fontSize: '11px' }}
+                  >
+                    <option value={7}>7 days</option>
+                    <option value={30}>30 days</option>
+                    <option value={90}>90 days</option>
+                  </select>
+                ) : (
+                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    <input 
+                      type="date" 
+                      className="btn btn-ghost btn-sm" 
+                      value={startDate} 
+                      onChange={(e) => setStartDate(e.target.value)}
+                      style={{ fontSize: '11px', padding: '2px 6px' }}
+                    />
+                    <span style={{ fontSize: '11px', color: 'var(--text3)' }}>to</span>
+                    <input 
+                      type="date" 
+                      className="btn btn-ghost btn-sm" 
+                      value={endDate} 
+                      onChange={(e) => setEndDate(e.target.value)}
+                      style={{ fontSize: '11px', padding: '2px 6px' }}
+                    />
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: '6px', marginLeft: '10px' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--text3)' }}>
+                    <span style={{ width: '10px', height: '2px', background: 'var(--coral)', display: 'inline-block', borderRadius: '1px' }}></span>Total
+                  </span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--text3)' }}>
+                    <span style={{ width: '10px', height: '2px', background: 'var(--blue)', display: 'inline-block', borderRadius: '1px' }}></span>Unique
+                  </span>
+                </div>
               </div>
             </div>
             <div style={{ height: '200px', position: 'relative', marginTop: '16px' }}>
