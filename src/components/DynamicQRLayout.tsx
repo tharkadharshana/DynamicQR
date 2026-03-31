@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { auth, logout } from '../firebase';
 
-export default function ScnrLayout({ planData }: { planData?: any }) {
+export default function DynamicQRLayout({ planData }: { planData?: any }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [userEmail, setUserEmail] = useState('');
@@ -78,7 +78,7 @@ export default function ScnrLayout({ planData }: { planData?: any }) {
       case '/legal/privacy-policy': return { title: 'Privacy Policy', sub: 'Legal documentation' };
       case '/legal/terms-and-conditions': return { title: 'Terms & Conditions', sub: 'Legal documentation' };
       case '/legal/refund-policy': return { title: 'Refund Policy', sub: 'Legal documentation' };
-      default: return { title: 'Scnr', sub: '' };
+      default: return { title: 'Dynamic QR Codes', sub: 'with Real-Time Analytics' };
     }
   };
 
@@ -120,7 +120,7 @@ export default function ScnrLayout({ planData }: { planData?: any }) {
               <rect x="15.5" y="15.5" width="2.5" height="2.5" fill="white"/>
             </svg>
           </div>
-          <span className="logo-text">Scnr</span>
+          <span className="logo-text">Dynamic QR</span>
           <button 
             className="btn btn-icon btn-sm md:hidden" 
             style={{ marginLeft: 'auto', border: 'none' }}

@@ -41,7 +41,7 @@ export default function Landing() {
     const renderQR = async () => {
       if (!canvasRef.current) return;
       try {
-        await QRCode.toCanvas(canvasRef.current, cardUrl || 'https://scnr.app', {
+        await QRCode.toCanvas(canvasRef.current, cardUrl || 'https://dynamicqr.app', {
           width: 120,
           margin: 1,
           color: {
@@ -68,7 +68,7 @@ export default function Landing() {
   const downloadQR = () => {
     if (!canvasRef.current) return;
     const a = document.createElement('a');
-    a.download = 'scnr-qr.png';
+    a.download = 'dynamicqr-qr.png';
     a.href = canvasRef.current.toDataURL('image/png');
     a.click();
   };
@@ -101,7 +101,7 @@ export default function Landing() {
                 <rect x="12" y="12" width="2" height="2" fill="white"/>
               </svg>
             </div>
-            Scnr
+            Dynamic QR
           </a>
           <ul className="nav-links">
             <li><a href="#features">Features</a></li>
@@ -156,7 +156,7 @@ export default function Landing() {
             </div>
             <div className="qr-live-meta">
               <div className="meta-label">Short link</div>
-              <div className="meta-slug">scnr.app/{qrSlug}</div>
+              <div className="meta-slug">dynamicqr.app/{qrSlug}</div>
               <div className="meta-dest">
                 → {cardUrl.replace(/^https?:\/\/(www\.)?/, '').split('/')[0].slice(0, 28) + (cardUrl.replace(/^https?:\/\/(www\.)?/, '').split('/')[0].length > 28 ? '…' : '')}
               </div>
@@ -300,7 +300,7 @@ export default function Landing() {
                   <div className="step-n">01</div>
                   <div className="step-content">
                     <div className="step-title">Paste your destination</div>
-                    <p className="step-desc">Any URL, PDF, contact card, WiFi password, or payment link. Scnr handles every format.</p>
+                    <p className="step-desc">Any URL, PDF, contact card, WiFi password, or payment link. Dynamic QR handles every format.</p>
                   </div>
                 </div>
                 <div className="step-item">
@@ -602,7 +602,7 @@ export default function Landing() {
                 <rect x="12" y="12" width="2" height="2" fill="white"/>
               </svg>
             </div>
-            Scnr
+            Dynamic QR
           </a>
           <div className="footer-links">
             <a href="#features">Features</a>
@@ -611,7 +611,7 @@ export default function Landing() {
             <Link to="/legal/privacy-policy">Privacy</Link>
             <Link to="/legal/terms-and-conditions">Terms</Link>
           </div>
-          <div className="footer-copy">© 2026 Scnr. All rights reserved.</div>
+          <div className="footer-copy">© 2026 Dynamic QR. All rights reserved.</div>
         </div>
       </footer>
     </div>
