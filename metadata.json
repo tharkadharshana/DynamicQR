@@ -1,5 +1,5 @@
 {
   "name": "Dynamic QR Codes with Real-Time Analytics",
-  "description": "Create, customize, and track dynamic QR codes in real-time. Change destinations without reprinting and get detailed scan analytics.",
+  "description": "A comprehensive QR code generation and analytics platform.",
   "requestFramePermissions": []
 }

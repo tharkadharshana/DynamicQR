@@ -133,7 +133,7 @@ export default function Analytics() {
               </div>
               {selectedSlugs.length === 1 && (
                 <div style={{ fontSize: '12px', color: 'var(--text3)', marginTop: '2px' }}>
-                  qr.tharkak.com/{selectedSlugs[0]}
+                  scnr.tharkak.com/{selectedSlugs[0]}
                 </div>
               )}
             </div>

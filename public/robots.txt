@@ -1,17 +1,12 @@
 User-agent: Googlebot
 Allow: /
-
 User-agent: Bingbot
 Allow: /
-
 User-agent: PerplexityBot
 Allow: /
-
 User-agent: ClaudeBot
 Allow: /
-
 User-agent: GPTBot
-Allow: /   # Allow for citation, block training if you want
-Disallow: /admin/   # Keep private areas blocked
-
-Sitemap: https://qr.tharkak.com/sitemap.xml
+Allow: / # Allow for citation, block training if you want
+Disallow: /admin/ # Keep private areas blocked
+Sitemap: https://scnr.tharkak.com/sitemap.xml

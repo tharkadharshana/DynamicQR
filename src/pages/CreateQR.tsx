@@ -125,7 +125,7 @@ export default function CreateQR() {
         content = formData.slug ? `${window.location.origin}/${formData.slug}` : `${window.location.origin}/preview`;
       } else {
         if (qrType === 'url') {
-          content = formData.destination_url || 'https://dynamicqr.app';
+          content = formData.destination_url || 'https://scnr.app';
         } else if (qrType === 'vcard') {
           content = `BEGIN:VCARD\nVERSION:3.0\nN:${formData.content_data?.last_name || ''};${formData.content_data?.first_name || ''}\nFN:${formData.content_data?.first_name || ''} ${formData.content_data?.last_name || ''}\nTEL:${formData.content_data?.phone || ''}\nEMAIL:${formData.content_data?.email || ''}\nORG:${formData.content_data?.company || ''}\nURL:${formData.content_data?.website || ''}\nEND:VCARD`;
         } else if (qrType === 'wifi') {
@@ -267,7 +267,7 @@ export default function CreateQR() {
   const downloadPreview = (fmt: string) => {
     if (!qrCodeRef.current) return;
     const extension = fmt === 'print' ? 'png' : fmt;
-    qrCodeRef.current.download({ name: 'dynamicqr-qr', extension: extension as any });
+    qrCodeRef.current.download({ name: 'scnr-qr', extension: extension as any });
   };
 
   const getShortUrl = () => {
@@ -700,7 +700,7 @@ export default function CreateQR() {
               <div ref={canvasRef} id="preview-canvas"></div>
             </div>
             <div className="qr-preview-slug" id="preview-slug">
-              {isDynamic ? `qr.tharkak.com/${formData.slug || '———'}` : 'Static QR'}
+              {isDynamic ? `scnr.tharkak.com/${formData.slug || '———'}` : 'Static QR'}
             </div>
             <div style={{ marginBottom: '16px' }}>
               <div style={{ fontSize: '11px', color: 'var(--text3)', marginBottom: '4px' }}>Destination</div>
