@@ -5,6 +5,7 @@ import {
   PieChart, Pie, Cell, BarChart, Bar
 } from 'recharts';
 import { auth } from '../firebase';
+import { apiFetch } from '../lib/api';
 
 const COLORS = ['#1A1916', '#E85D3A', '#4D9EFF', '#3DCC7E', '#9B7FFF', '#F5A623', '#D0021B'];
 
@@ -30,16 +31,9 @@ export default function Analytics() {
   useEffect(() => {
     const fetchQRs = async () => {
       try {
-        const user = auth.currentUser;
-        if (!user) return;
-        const token = await user.getIdToken();
-        const res = await fetch('/api/qr', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setQrCodes(data);
-        }
+        if (!auth.currentUser) return;
+        const data = await apiFetch('/api/qr');
+        setQrCodes(data);
       } catch (error) {
         console.error("Error fetching QRs:", error);
       }
@@ -51,22 +45,12 @@ export default function Analytics() {
     const fetchAnalytics = async () => {
       setLoading(true);
       try {
-        const user = auth.currentUser;
-        if (!user) {
+        if (!auth.currentUser) {
           console.log("No user found, waiting...");
           return;
         }
 
-        const token = await user.getIdToken();
-        const headers = { 'Authorization': `Bearer ${token}` };
-
-        const fetchJson = async (url: string) => {
-          const res = await fetch(url, { headers });
-          if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-          return res.json();
-        };
-
-        let baseUrl = `/api/analytics/account/${user.uid}`;
+        let baseUrl = `/api/analytics/account/${auth.currentUser.uid}`;
         let queryParams = '';
 
         if (selectedSlugs.length === 1) {
@@ -77,18 +61,18 @@ export default function Analytics() {
 
         const historyDays = planData?.limits?.analytics_days || 7;
         const fetchPromises: Promise<any>[] = [
-          fetchJson(`${baseUrl}/summary${queryParams}`),
-          fetchJson(`${baseUrl}/timeseries${queryParams}${queryParams ? '&' : '?'}days=${historyDays}`),
-          fetchJson(`${baseUrl}/devices${queryParams}`),
-          fetchJson(`${baseUrl}/countries${queryParams}`),
-          fetchJson(`${baseUrl}/browsers${queryParams}`),
-          fetchJson(`${baseUrl}/os${queryParams}`),
-          fetchJson(`${baseUrl}/referrers${queryParams}`),
-          fetchJson(`${baseUrl}/recent${queryParams}`),
+          apiFetch(`${baseUrl}/summary${queryParams}`),
+          apiFetch(`${baseUrl}/timeseries${queryParams}${queryParams ? '&' : '?'}days=${historyDays}`),
+          apiFetch(`${baseUrl}/devices${queryParams}`),
+          apiFetch(`${baseUrl}/countries${queryParams}`),
+          apiFetch(`${baseUrl}/browsers${queryParams}`),
+          apiFetch(`${baseUrl}/os${queryParams}`),
+          apiFetch(`${baseUrl}/referrers${queryParams}`),
+          apiFetch(`${baseUrl}/recent${queryParams}`),
         ];
 
         if (selectedSlugs.length === 1) {
-          fetchPromises.push(fetchJson(`/api/qr/${selectedSlugs[0]}`));
+          fetchPromises.push(apiFetch(`/api/qr/${selectedSlugs[0]}`));
         }
 
         const results = await Promise.all(fetchPromises);
@@ -105,7 +89,7 @@ export default function Analytics() {
         if (selectedSlugs.length === 1) {
           setQrDetails(results[8]);
           try {
-            const advRes = await fetchJson(`${baseUrl}/advanced`);
+            const advRes = await apiFetch(`${baseUrl}/advanced`);
             setAdvanced(advRes);
           } catch (e) {
             console.error("Error fetching advanced analytics:", e);

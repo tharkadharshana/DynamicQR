@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { auth } from '../firebase';
+import { apiFetch } from '../lib/api';
 
 export default function Billing() {
   const { planData } = useOutletContext<{ planData: any }>();
@@ -9,14 +10,14 @@ export default function Billing() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/billing/invoices')
-      .then(res => res.ok ? res.json() : [])
+    apiFetch('/api/billing/invoices')
       .then(data => {
         setInvoices(data);
         setLoadingInvoices(false);
       })
       .catch(err => {
         console.error("Failed to load invoices", err);
+        setInvoices([]);
         setLoadingInvoices(false);
       });
   }, []);
@@ -38,12 +39,10 @@ export default function Billing() {
 
   const handleCheckout = async (targetPlan: string) => {
     try {
-      const res = await fetch('/api/billing/checkout', {
+      const data = await apiFetch('/api/billing/checkout', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plan: targetPlan })
       });
-      const data = await res.json();
       if (data.hash) {
         // Submit hidden form to PayHere
         const form = document.createElement('form');

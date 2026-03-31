@@ -5,6 +5,7 @@ import { db, auth } from '../firebase';
 import QRCode from 'qrcode';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
+import { apiFetch } from '../lib/api';
 
 export default function Dashboard() {
   const [qrCodes, setQrCodes] = useState<any[]>([]);
@@ -27,17 +28,8 @@ export default function Dashboard() {
 
     const fetchData = async () => {
       try {
-        const token = await auth.currentUser?.getIdToken();
-        const headers = { 'Authorization': `Bearer ${token}` };
-
-        const fetchJson = async (url: string) => {
-          const res = await fetch(url, { headers });
-          if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-          return res.json();
-        };
-
         // Fetch QR Codes (now includes stats from server-side join)
-        const codes = await fetchJson('/api/qr');
+        const codes = await apiFetch('/api/qr');
         const codesArray = Array.isArray(codes) ? codes : [];
         setQrCodes(codesArray);
         
@@ -50,10 +42,10 @@ export default function Dashboard() {
 
         // Fetch account level data
         const [tsData, devData, countryData, recentData] = await Promise.all([
-          fetchJson(`/api/analytics/account/${auth.currentUser?.uid}/timeseries?days=30`).catch(() => []),
-          fetchJson(`/api/analytics/account/${auth.currentUser?.uid}/devices`).catch(() => []),
-          fetchJson(`/api/analytics/account/${auth.currentUser?.uid}/countries`).catch(() => []),
-          fetchJson(`/api/analytics/account/${auth.currentUser?.uid}/recent`).catch(() => [])
+          apiFetch(`/api/analytics/account/${auth.currentUser?.uid}/timeseries?days=30`).catch(() => []),
+          apiFetch(`/api/analytics/account/${auth.currentUser?.uid}/devices`).catch(() => []),
+          apiFetch(`/api/analytics/account/${auth.currentUser?.uid}/countries`).catch(() => []),
+          apiFetch(`/api/analytics/account/${auth.currentUser?.uid}/recent`).catch(() => [])
         ]);
         
         setTimeseries(Array.isArray(tsData) ? tsData : []);
@@ -61,7 +53,7 @@ export default function Dashboard() {
         setCountries(Array.isArray(countryData) ? countryData : []);
         setRecentScans(Array.isArray(recentData) ? recentData : []);
 
-        const pData = await fetchJson('/api/user/plan').catch(() => null);
+        const pData = await apiFetch('/api/user/plan').catch(() => null);
         setPlanData(pData);
 
         setLoading(false);
@@ -81,12 +73,9 @@ export default function Dashboard() {
   const confirmDelete = async () => {
     const { qrId, slug } = deleteModal;
     try {
-      const token = await auth.currentUser?.getIdToken();
-      const res = await fetch(`/api/qr/${slug}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+      await apiFetch(`/api/qr/${slug}`, {
+        method: 'DELETE'
       });
-      if (!res.ok) throw new Error('Failed to delete');
       
       setQrCodes(prev => prev.filter(qr => qr.id !== qrId));
       const newStats = { ...stats };

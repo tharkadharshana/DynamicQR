@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase';
+import { apiFetch } from './lib/api';
 
 import ScnrLayout from './components/ScnrLayout';
 import Dashboard from './pages/Dashboard';
@@ -29,11 +30,8 @@ export default function App() {
       setUser(currentUser);
       if (currentUser) {
         try {
-          const res = await fetch('/api/user/plan');
-          if (res.ok) {
-            const data = await res.json();
-            setPlanData(data);
-          }
+          const data = await apiFetch('/api/user/plan');
+          setPlanData(data);
         } catch (err) {
           console.error("Failed to fetch plan:", err);
         }

@@ -4,6 +4,7 @@ import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import QRCodeStyling from 'qr-code-styling';
 import ConfirmationModal from '../components/ConfirmationModal';
+import { apiFetch } from '../lib/api';
 
 export default function CreateQR() {
   const { id } = useParams();
@@ -61,20 +62,8 @@ export default function CreateQR() {
     if (id) {
       const fetchQR = async () => {
         try {
-          const token = await auth.currentUser?.getIdToken();
-          const res = await fetch(`/api/qr/${id}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
+          const data = await apiFetch(`/api/qr/${id}`);
           
-          if (res.status === 403 || res.status === 401) {
-            alert("You don't have permission to edit this QR code.");
-            navigate('/');
-            return;
-          }
-          
-          if (!res.ok) throw new Error('Failed to fetch');
-          
-          const data = await res.json();
           setQrType(data.qr_type || 'url');
           setIsDynamic(data.is_dynamic !== false);
           setFormData({
@@ -102,8 +91,11 @@ export default function CreateQR() {
               scan_limit: data.rate_limit?.max_scans || 100
             }
           });
-        } catch (err) {
+        } catch (err: any) {
           console.error("Error fetching QR", err);
+          if (err.status === 403 || err.status === 401) {
+            alert("You don't have permission to edit this QR code.");
+          }
           navigate('/');
         }
       };
@@ -113,13 +105,8 @@ export default function CreateQR() {
 
   const fetchPlan = async () => {
     try {
-      const token = await auth.currentUser?.getIdToken();
-      const res = await fetch('/api/user/plan', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        setPlanData(await res.json());
-      }
+      const data = await apiFetch('/api/user/plan');
+      setPlanData(data);
     } catch (err) {
       console.error('Plan fetch failed', err);
     }
@@ -226,50 +213,34 @@ export default function CreateQR() {
     setLoading(true);
 
     try {
-      const token = await auth.currentUser.getIdToken();
       if (id) {
         // Update via API
-        const res = await fetch(`/api/qr/${id}`, {
+        await apiFetch(`/api/qr/${id}`, {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
           body: JSON.stringify({
             ...formData,
             is_dynamic: isDynamic
           })
         });
-        
-        if (!res.ok) throw new Error('Failed to update');
       } else {
         // Create via exact schema backend API
-        const res = await fetch('/api/qr', {
+        await apiFetch('/api/qr', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
           body: JSON.stringify({
             ...formData,
             is_dynamic: isDynamic
           })
         });
-        
-        if (!res.ok) {
-          if (res.status === 403) {
-            const errorData = await res.json();
-            alert(errorData.error || 'Plan limit reached. Please upgrade.');
-            navigate('/billing');
-            return;
-          }
-          throw new Error('Failed to create QR code on the server');
-        }
       }
       navigate('/');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving QR code:', error);
-      alert('Failed to save QR code');
+      if (error.status === 403) {
+        alert(error.message || 'Plan limit reached. Please upgrade.');
+        navigate('/billing');
+      } else {
+        alert('Failed to save QR code');
+      }
     } finally {
       setLoading(false);
     }
@@ -282,12 +253,9 @@ export default function CreateQR() {
   const confirmDelete = async () => {
     try {
       setLoading(true);
-      const token = await auth.currentUser?.getIdToken();
-      const res = await fetch(`/api/qr/${formData.slug}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+      await apiFetch(`/api/qr/${formData.slug}`, {
+        method: 'DELETE'
       });
-      if (!res.ok) throw new Error('Failed to delete');
       navigate('/');
     } catch (err) {
       console.error(err);

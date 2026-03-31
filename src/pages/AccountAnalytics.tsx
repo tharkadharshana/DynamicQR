@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { auth } from '../firebase';
+import { apiFetch } from '../lib/api';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -21,20 +22,11 @@ export default function AccountAnalytics() {
 
     const fetchStats = async () => {
       try {
-        const token = await auth.currentUser.getIdToken();
-        const headers = { 'Authorization': `Bearer ${token}` };
-
-        const fetchJson = async (url: string) => {
-          const res = await fetch(url, { headers });
-          if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-          return res.json();
-        };
-
         const [stats, timeseries, performance, countries] = await Promise.all([
-          fetchJson(`/api/analytics/account/${auth.currentUser.uid}`),
-          fetchJson(`/api/analytics/account/${auth.currentUser.uid}/timeseries?days=30`),
-          fetchJson(`/api/analytics/account/${auth.currentUser.uid}/performance`),
-          fetchJson(`/api/analytics/account/${auth.currentUser.uid}/countries`),
+          apiFetch(`/api/analytics/account/${auth.currentUser?.uid}`),
+          apiFetch(`/api/analytics/account/${auth.currentUser?.uid}/timeseries?days=30`),
+          apiFetch(`/api/analytics/account/${auth.currentUser?.uid}/performance`),
+          apiFetch(`/api/analytics/account/${auth.currentUser?.uid}/countries`),
         ]);
 
         setAccountStats(stats);
