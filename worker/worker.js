@@ -27,7 +27,7 @@ export default {
         <div class="card">
           <h2>Monthly Limit Reached</h2>
           <p>The monthly scan quota for this QR code's owner has been exhausted. Please contact the owner or try again next month.</p>
-          <a href="https://dynamicqr.app/pricing" class="btn">Upgrade Plan</a>
+          <a href="https://dynamicqr.scnr.link/pricing" class="btn">Upgrade Plan</a>
         </div>
       </body>
       </html>

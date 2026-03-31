@@ -96,7 +96,7 @@ export default function Dashboard() {
           content = `${window.location.origin}/${qr.slug}`;
         } else {
           if (qr.qr_type === 'url') {
-            content = qr.destination_url || 'https://dynamicqr.app';
+            content = qr.destination_url || 'https://scnr.app';
           } else if (qr.qr_type === 'vcard') {
             content = `BEGIN:VCARD\nVERSION:3.0\nN:${qr.content_data?.last_name || ''};${qr.content_data?.first_name || ''}\nFN:${qr.content_data?.first_name || ''} ${qr.content_data?.last_name || ''}\nTEL:${qr.content_data?.phone || ''}\nEMAIL:${qr.content_data?.email || ''}\nORG:${qr.content_data?.company || ''}\nURL:${qr.content_data?.website || ''}\nEND:VCARD`;
           } else if (qr.qr_type === 'wifi') {
@@ -106,7 +106,7 @@ export default function Dashboard() {
           } else if (qr.qr_type === 'email') {
             content = `mailto:${qr.content_data?.email || ''}?subject=${encodeURIComponent(qr.content_data?.subject || '')}&body=${encodeURIComponent(qr.content_data?.body || '')}`;
           } else {
-            content = qr.destination_url || 'https://dynamicqr.app';
+            content = qr.destination_url || 'https://scnr.app';
           }
         }
 

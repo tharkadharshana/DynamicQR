@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DynamicQR — Dashboard</title>
+<title>Scnr — Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,300;1,9..144,400&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -677,7 +677,7 @@ select.form-input{cursor:pointer}
         <rect x="15.5" y="15.5" width="2.5" height="2.5" fill="white"/>
       </svg>
     </div>
-    <span class="logo-text">DynamicQR</span>
+    <span class="logo-text">Scnr</span>
   </div>
 
   <div class="nav-section">
@@ -1108,7 +1108,7 @@ select.form-input{cursor:pointer}
           <div class="qr-preview-frame">
             <canvas id="preview-canvas" width="180" height="180"></canvas>
           </div>
-          <div class="qr-preview-slug" id="preview-slug">dynamicqr.app/———</div>
+          <div class="qr-preview-slug" id="preview-slug">scnr.app/———</div>
           <div style="margin-bottom:16px">
             <div style="font-size:11px;color:var(--text3);margin-bottom:4px">Destination</div>
             <div style="font-size:13px;color:var(--text2);word-break:break-all;line-height:1.5" id="preview-dest">Enter a URL to generate your QR</div>
@@ -1540,12 +1540,12 @@ select.form-input{cursor:pointer}
 
           <!-- INTRO -->
           <div class="docs-section" id="intro">
-            <div class="docs-h1">DynamicQR REST API</div>
+            <div class="docs-h1">Scnr REST API</div>
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
               <span class="chip" style="background:var(--green-l);color:var(--green);padding:4px 10px;border-radius:20px;font-weight:600;font-size:12px">● v1 — Stable</span>
-              <span style="font-size:12px;color:var(--text3)">Base URL: <code style="font-family:monospace;color:var(--coral)">https://api.dynamicqr.app/v1</code></span>
+              <span style="font-size:12px;color:var(--text3)">Base URL: <code style="font-family:monospace;color:var(--coral)">https://api.scnr.app/v1</code></span>
             </div>
-            <div class="docs-p">The DynamicQR API gives you programmatic access to everything in the dashboard — create and manage QR codes, fetch real-time analytics, and listen to scan events via webhooks. The API is available on the <strong style="color:var(--text)">Team plan</strong> and above.</div>
+            <div class="docs-p">The Scnr API gives you programmatic access to everything in the dashboard — create and manage QR codes, fetch real-time analytics, and listen to scan events via webhooks. The API is available on the <strong style="color:var(--text)">Team plan</strong> and above.</div>
             <div class="alert-box alert-info">
               <span class="alert-icon">ℹ</span>
               <span>All requests must include your API key in the <code style="font-family:monospace">Authorization</code> header. Keys are scoped to read, write, or admin. <a href="#">Generate your first key →</a></span>
@@ -1555,7 +1555,7 @@ select.form-input{cursor:pointer}
           <!-- AUTH -->
           <div class="docs-section" id="auth-section">
             <div class="docs-h2"><span class="method-tag post" style="font-size:11px">AUTH</span> Authentication</div>
-            <div class="docs-p">DynamicQR uses Bearer token authentication. Pass your API key in every request header:</div>
+            <div class="docs-p">Scnr uses Bearer token authentication. Pass your API key in every request header:</div>
             <div class="code-block">
               <button class="code-copy" onclick="copyCode(this)">Copy</button>
               <pre><span class="hl-k">Authorization</span>: Bearer <span class="hl-s">sk_live_your_api_key_here</span></pre>
@@ -1563,7 +1563,7 @@ select.form-input{cursor:pointer}
             <div class="docs-p">Keys are prefixed with <code style="font-family:monospace;color:var(--amber)">sk_live_</code> for production and <code style="font-family:monospace;color:var(--blue)">sk_test_</code> for testing. Never expose keys in client-side code or public repositories.</div>
             <div class="alert-box alert-warn">
               <span class="alert-icon">⚠</span>
-              <span>Treat your API key like a password. If compromised, rotate it immediately from your <a href="#">API Keys settings</a>. DynamicQR will never ask for your key via email or chat.</span>
+              <span>Treat your API key like a password. If compromised, rotate it immediately from your <a href="#">API Keys settings</a>. Scnr will never ask for your key via email or chat.</span>
             </div>
           </div>
 
@@ -1574,10 +1574,10 @@ select.form-input{cursor:pointer}
             <div class="code-block">
               <button class="code-copy" onclick="copyCode(this)">Copy</button>
               <pre><span class="hl-c"># Production</span>
-<span class="hl-n">https://api.dynamicqr.app/v1</span>
+<span class="hl-n">https://api.scnr.app/v1</span>
 
 <span class="hl-c"># Example full endpoint</span>
-<span class="hl-n">https://api.dynamicqr.app/v1/qr</span></pre>
+<span class="hl-n">https://api.scnr.app/v1/qr</span></pre>
             </div>
           </div>
 
@@ -1649,7 +1649,7 @@ select.form-input{cursor:pointer}
                 <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px">Example request</div>
                 <div class="code-block">
                   <button class="code-copy" onclick="copyCode(this)">Copy</button>
-                  <pre><span class="hl-n">curl</span> https://api.dynamicqr.app/v1/qr?limit=10&active=true \
+                  <pre><span class="hl-n">curl</span> https://api.scnr.app/v1/qr?limit=10&active=true \
   -H <span class="hl-s">"Authorization: Bearer sk_live_xxxx"</span></pre>
                 </div>
                 <div class="response-tabs">
@@ -1663,7 +1663,7 @@ select.form-input{cursor:pointer}
     {
       <span class="hl-k">"id"</span>:              <span class="hl-s">"qr_x9Km4p"</span>,
       <span class="hl-k">"slug"</span>:           <span class="hl-s">"x9Km4p"</span>,
-      <span class="hl-k">"short_url"</span>:      <span class="hl-s">"https://dynamicqr.app/x9Km4p"</span>,
+      <span class="hl-k">"short_url"</span>:      <span class="hl-s">"https://scnr.app/x9Km4p"</span>,
       <span class="hl-k">"destination_url"</span>:<span class="hl-s">"https://yoursite.com/menu"</span>,
       <span class="hl-k">"title"</span>:          <span class="hl-s">"Restaurant Menu"</span>,
       <span class="hl-k">"is_active"</span>:      <span class="hl-v">true</span>,
@@ -1713,7 +1713,7 @@ select.form-input{cursor:pointer}
                 </table>
                 <div class="code-block">
                   <button class="code-copy" onclick="copyCode(this)">Copy</button>
-                  <pre><span class="hl-n">curl</span> -X POST https://api.dynamicqr.app/v1/qr \
+                  <pre><span class="hl-n">curl</span> -X POST https://api.scnr.app/v1/qr \
   -H <span class="hl-s">"Authorization: Bearer sk_live_xxxx"</span> \
   -H <span class="hl-s">"Content-Type: application/json"</span> \
   -d <span class="hl-s">'{
@@ -1737,7 +1737,7 @@ select.form-input{cursor:pointer}
               </div>
               <div class="endpoint-body">
                 <div class="docs-p">Returns the full QR code object including style config and total scan count.</div>
-                <div class="code-block"><button class="code-copy" onclick="copyCode(this)">Copy</button><pre><span class="hl-n">curl</span> https://api.dynamicqr.app/v1/qr/qr_x9Km4p \
+                <div class="code-block"><button class="code-copy" onclick="copyCode(this)">Copy</button><pre><span class="hl-n">curl</span> https://api.scnr.app/v1/qr/qr_x9Km4p \
   -H <span class="hl-s">"Authorization: Bearer sk_live_xxxx"</span></pre></div>
               </div>
             </div>
@@ -1771,7 +1771,7 @@ select.form-input{cursor:pointer}
               </div>
               <div class="endpoint-body">
                 <div class="alert-box alert-warn"><span class="alert-icon">⚠</span><span>QR codes are never fully deleted — the slug must remain reserved so printed codes don't resolve to a wrong URL. Deletion sets <code style="font-family:monospace">is_active=false</code> and returns 410 on scan.</span></div>
-                <div class="code-block"><button class="code-copy" onclick="copyCode(this)">Copy</button><pre><span class="hl-n">curl</span> -X DELETE https://api.dynamicqr.app/v1/qr/qr_x9Km4p \
+                <div class="code-block"><button class="code-copy" onclick="copyCode(this)">Copy</button><pre><span class="hl-n">curl</span> -X DELETE https://api.scnr.app/v1/qr/qr_x9Km4p \
   -H <span class="hl-s">"Authorization: Bearer sk_live_xxxx"</span>
 
 <span class="hl-c">// 200 OK</span>
@@ -1862,7 +1862,7 @@ select.form-input{cursor:pointer}
           <!-- WEBHOOKS -->
           <div class="docs-section" id="webhooks">
             <div class="docs-h2">Webhooks — Overview</div>
-            <div class="docs-p">DynamicQR can POST to your server in real time when a QR is scanned, created, updated, or deactivated. Configure your endpoint URL in the dashboard under Settings → Webhooks.</div>
+            <div class="docs-p">Scnr can POST to your server in real time when a QR is scanned, created, updated, or deactivated. Configure your endpoint URL in the dashboard under Settings → Webhooks.</div>
             <div class="alert-box alert-info"><span class="alert-icon">ℹ</span><span>Webhook deliveries are retried up to 5 times with exponential backoff if your server returns a non-200 status. Your endpoint must respond within 5 seconds.</span></div>
           </div>
 
@@ -1894,7 +1894,7 @@ select.form-input{cursor:pointer}
 
           <div class="docs-section" id="webhook-verify">
             <div class="docs-h2">Signature verification</div>
-            <div class="docs-p">Every webhook POST includes an <code style="font-family:monospace;color:var(--amber)">X-DynamicQR-Signature</code> header. Verify it to confirm the request came from DynamicQR and not a third party.</div>
+            <div class="docs-p">Every webhook POST includes an <code style="font-family:monospace;color:var(--amber)">X-Scnr-Signature</code> header. Verify it to confirm the request came from Scnr and not a third party.</div>
             <div class="code-block"><button class="code-copy" onclick="copyCode(this)">Copy</button><pre><span class="hl-c">// Node.js verification</span>
 <span class="hl-k">const</span> crypto = <span class="hl-n">require</span>(<span class="hl-s">'crypto'</span>)
 
@@ -2047,7 +2047,7 @@ function buildQRTable(tableId, limit) {
       <tr>
         <td><div style="display:flex;align-items:center;gap:10px">
           <div class="qr-thumb"><canvas id="thumb-${qr.slug}" width="32" height="32"></canvas></div>
-          <div><div class="qr-row-name">${qr.title}</div><div class="qr-row-slug">dynamicqr.app/${qr.slug}</div></div>
+          <div><div class="qr-row-name">${qr.title}</div><div class="qr-row-slug">scnr.app/${qr.slug}</div></div>
         </div></td>
         <td><div style="font-weight:600">${qr.scans.toLocaleString()}</div><div class="mini-bar"><div class="mini-fill" style="width:${qr.pct}%"></div></div></td>
         <td style="color:var(--text2)">${qr.unique.toLocaleString()}</td>
@@ -2228,11 +2228,11 @@ function updatePreview() {
       const dest = type==='url' ? content : `[${type.toUpperCase()}]`;
       const short = dest.replace(/^https?:\/\/(www\.)?/,'').split('/')[0];
       document.getElementById('preview-dest').textContent = '→ ' + (short.length>40 ? short.slice(0,40)+'…' : short);
-      document.getElementById('preview-slug').textContent = 'dynamicqr.app/' + randomSlug();
+      document.getElementById('preview-slug').textContent = 'scnr.app/' + randomSlug();
       renderQR('preview-canvas', content, currentFg, currentBg, 180);
     } else {
       document.getElementById('preview-dest').textContent = 'Enter content to generate QR';
-      document.getElementById('preview-slug').textContent = 'dynamicqr.app/———';
+      document.getElementById('preview-slug').textContent = 'scnr.app/———';
     }
   }, 250);
 }
@@ -2306,7 +2306,7 @@ function downloadPreview(fmt) {
   const canvas = document.getElementById('preview-canvas');
   if (!canvas) return;
   const a = document.createElement('a');
-  a.download = `dynamicqr-qr.${fmt==='print'?'png':fmt}`;
+  a.download = `scnr-qr.${fmt==='print'?'png':fmt}`;
   a.href = canvas.toDataURL('image/png');
   a.click();
   showToast('success', `Downloaded as ${fmt.toUpperCase()}`);

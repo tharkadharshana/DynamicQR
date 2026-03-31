@@ -24,7 +24,7 @@ export default function RefundPolicy() {
                 <rect x="12" y="12" width="2" height="2" fill="white"/>
               </svg>
             </div>
-            DynamicQR
+            Scnr
           </Link>
           <div className="nav-right">
             <Link to="/billing" className="btn-text">Back to Billing</Link>
@@ -116,9 +116,9 @@ export default function RefundPolicy() {
                 <rect x="12" y="12" width="2" height="2" fill="white"/>
               </svg>
             </div>
-            DynamicQR
+            Scnr
           </div>
-          <div style={{ fontSize: '13px', color: 'var(--ink4)' }}>© 2026 DynamicQR. All rights reserved.</div>
+          <div style={{ fontSize: '13px', color: 'var(--ink4)' }}>© 2026 Scnr. All rights reserved.</div>
         </div>
       </footer>
     </div>
