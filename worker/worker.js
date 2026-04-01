@@ -108,42 +108,6 @@ export default {
     const visitorKey = `uniq:${slug}:${visitorHash}`;
     let isUnique = await env.QR_CACHE.get(visitorKey).then(v => !v);
 
-    // --- VISITOR RATE LIMIT CHECK (NEW) ---
-    const rateLimitKey = `ratelimit:${slug}:${visitorHash}`;
-    const visitorCount = await env.QR_CACHE.get(rateLimitKey).then(v => parseInt(v) || 0);
-    
-    // Default limit applies only to Free plan owners
-    const isPaidPlan = config.owner_plan === 'pro' || config.owner_plan === 'team';
-    const effectiveLimit = (config.visitor_rate_limit !== undefined) 
-      ? config.visitor_rate_limit 
-      : (isPaidPlan ? 0 : 5); // Default 5 for Free, Unlimited for Paid
-
-    if (effectiveLimit > 0 && visitorCount >= effectiveLimit) {
-      return new Response(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>Too Many Scans</title>
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <style>
-            body { font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #fffcf0; }
-            .card { background: white; padding: 40px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); width: 90%; max-width: 400px; text-align: center; border: 1px solid #fef3c7; }
-            h2 { color: #92400e; margin-bottom: 12px; }
-            p { color: #b45309; line-height: 1.5; margin-bottom: 24px; }
-            .timer { font-weight: bold; background: #fffbeb; padding: 4px 12px; border-radius: 20px; color: #d97706; }
-          </style>
-        </head>
-        <body>
-          <div class="card">
-            <h2>Slow down!</h2>
-            <p>You have reached the temporary scan limit for this QR code. To prevent automated spam, we limit frequent scans from the same device.</p>
-            <p>Please try again in <span class="timer">1 hour</span> or wait a few minutes.</p>
-          </div>
-        </body>
-        </html>
-      `, { status: 429, headers: { "Content-Type": "text/html" } });
-    }
-
     if (config.password_hash) {
       const sessionKey = `uniq:${slug}:${visitorHash}:pw_ok`;
       const isUnlocked = await env.QR_CACHE.get(sessionKey);
@@ -231,13 +195,6 @@ export default {
     }
     // Update cache with new count
     ctx.waitUntil(env.QR_CACHE.put(slug, JSON.stringify(config), { expirationTtl: 300 }));
-
-    // Increment visitor rate limit counter (NEW)
-    if (effectiveLimit > 0) {
-      const newCount = visitorCount + 1;
-      const period = config.visitor_rate_period || 3600;
-      ctx.waitUntil(env.QR_CACHE.put(rateLimitKey, newCount.toString(), { expirationTtl: period }));
-    }
 
     // --- ANALYTICS (Successful redirect) ---
     if (isUnique) {
