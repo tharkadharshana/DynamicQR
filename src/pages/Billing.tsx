@@ -73,7 +73,10 @@ export default function Billing() {
   };
 
   const scanLimit = limits.monthly_scans;
-  const scanPct = scanLimit === Infinity ? 0 : Math.min(100, (monthly_scans_used / scanLimit) * 100);
+  const scanPct = Math.min(100, (monthly_scans_used / scanLimit) * 100);
+  const isUnlimitedQr = planData.limits.qr_codes === -1;
+  const qrUsed = isUnlimitedQr ? planData.total_qrs : (planData.limits.qr_codes - planData.remaining_qr);
+  const qrPct = isUnlimitedQr ? 0 : Math.min(100, (qrUsed / planData.limits.qr_codes) * 100);
 
   return (
     <div className="content" style={{ padding: '28px', overflow: 'auto', height: '100%' }}>
@@ -123,7 +126,7 @@ export default function Billing() {
             <div className="usage-icon">📡</div>
             <div className="usage-label">Scans tracked</div>
             <div className="usage-val">{monthly_scans_used.toLocaleString()}</div>
-            <div className="usage-sub">{scanLimit === Infinity ? 'Unlimited' : `${scanLimit.toLocaleString()} limit`}</div>
+            <div className="usage-sub">{scanLimit.toLocaleString()} limit</div>
             <div className="progress-bar" style={{ marginTop: '8px' }}>
               <div className="progress-fill" style={{ width: `${scanPct}%`, background: scanPct > 90 ? 'var(--red)' : 'var(--green)' }}></div>
             </div>
@@ -131,10 +134,10 @@ export default function Billing() {
           <div className="usage-card">
             <div className="usage-icon">🔳</div>
             <div className="usage-label">Active QR codes</div>
-            <div className="usage-val">{planData.limits.qr_codes === Infinity ? '∞' : `${planData.limits.qr_codes - planData.remaining_qr} active`}</div>
-            <div className="usage-sub">{planData.limits.qr_codes === Infinity ? 'Unlimited' : `${planData.limits.qr_codes} limit`}</div>
+            <div className="usage-val">{isUnlimitedQr ? `${qrUsed} active` : `${qrUsed} active`}</div>
+            <div className="usage-sub">{isUnlimitedQr ? 'Unlimited' : `${planData.limits.qr_codes} limit`}</div>
             <div className="progress-bar" style={{ marginTop: '8px' }}>
-              <div className="progress-fill" style={{ width: planData.limits.qr_codes === Infinity ? '100%' : `${((planData.limits.qr_codes - planData.remaining_qr) / planData.limits.qr_codes) * 100}%`, background: 'var(--blue)' }}></div>
+              <div className="progress-fill" style={{ width: isUnlimitedQr ? '0%' : `${qrPct}%`, background: 'var(--blue)' }}></div>
             </div>
           </div>
         </div>

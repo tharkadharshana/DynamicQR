@@ -295,6 +295,7 @@ export default function Analytics() {
                     style={{ fontSize: '11px' }}
                   >
                     <option value={7}>7 days</option>
+                    <option value={14}>14 days</option>
                     <option value={30}>30 days</option>
                     <option value={90}>90 days</option>
                   </select>
@@ -328,48 +329,60 @@ export default function Analytics() {
               </div>
             </div>
             <div style={{ height: '200px', position: 'relative', marginTop: '16px' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={timeseries}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
-                  <XAxis 
-                    dataKey="date" 
-                    tickFormatter={(val) => {
-                      const d = new Date(val + 'T00:00');
-                      return `${d.getMonth()+1}/${d.getDate()}`;
-                    }}
-                    stroke="var(--text3)"
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <YAxis 
-                    stroke="var(--text3)" 
-                    fontSize={11} 
-                    tickLine={false} 
-                    axisLine={false} 
-                    allowDecimals={false}
-                  />
-                  <Tooltip 
-                    contentStyle={{ borderRadius: '8px', border: '1px solid var(--border)', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}
-                  />
-                  <Line type="monotone" dataKey="total_scans" name="Total" stroke="var(--coral)" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="unique_scans" name="Unique" stroke="var(--blue)" strokeWidth={2} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
+              {timeseries.length === 0 ? (
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: '13px', background: 'var(--surface2)', borderRadius: '4px' }}>
+                  No scan data found for this period
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={timeseries}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
+                    <XAxis 
+                      dataKey="date" 
+                      tickFormatter={(val) => {
+                        const d = new Date(val + 'T00:00');
+                        return `${d.getMonth()+1}/${d.getDate()}`;
+                      }}
+                      stroke="var(--text3)"
+                      fontSize={11}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis 
+                      stroke="var(--text3)" 
+                      fontSize={11} 
+                      tickLine={false} 
+                      axisLine={false} 
+                      allowDecimals={false}
+                    />
+                    <Tooltip 
+                      contentStyle={{ borderRadius: '8px', border: '1px solid var(--border)', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}
+                    />
+                    <Line type="monotone" dataKey="total_scans" name="Total" stroke="var(--coral)" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="unique_scans" name="Unique" stroke="var(--blue)" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
           <div className="card">
             <div className="card-title">Top countries</div>
             <div style={{ height: '200px', marginTop: '16px' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={countries} layout="vertical" margin={{ top: 0, right: 0, left: 40, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="var(--border)" />
-                  <XAxis type="number" stroke="var(--text3)" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
-                  <YAxis dataKey="country" type="category" stroke="var(--text3)" fontSize={11} tickLine={false} axisLine={false} />
-                  <Tooltip cursor={{fill: 'var(--surface2)'}} />
-                  <Bar dataKey="scans" name="Total Scans" fill="var(--blue)" radius={[0, 4, 4, 0]} barSize={16} />
-                </BarChart>
-              </ResponsiveContainer>
+              {countries.length === 0 ? (
+                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: '13px', background: 'var(--surface2)', borderRadius: '4px' }}>
+                  No geographic data yet
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={countries} layout="vertical" margin={{ top: 0, right: 0, left: 40, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="var(--border)" />
+                    <XAxis type="number" stroke="var(--text3)" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+                    <YAxis dataKey="country" type="category" stroke="var(--text3)" fontSize={11} tickLine={false} axisLine={false} />
+                    <Tooltip cursor={{fill: 'var(--surface2)'}} />
+                    <Bar dataKey="scans" name="Total Scans" fill="var(--blue)" radius={[0, 4, 4, 0]} barSize={16} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
         </div>
@@ -382,25 +395,31 @@ export default function Analytics() {
               <div>
                 <div className="card-title">Device</div>
                 <div style={{ height: '160px', marginTop: '16px' }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={devices}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={40}
-                        outerRadius={60}
-                        paddingAngle={5}
-                        dataKey="count"
-                        nameKey="device_type"
-                      >
-                        {devices.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  {devices.length === 0 ? (
+                    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: '12px', background: 'var(--surface2)', borderRadius: '4px' }}>
+                      No device data
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={devices}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={40}
+                          outerRadius={60}
+                          paddingAngle={5}
+                          dataKey="count"
+                          nameKey="device_type"
+                        >
+                          {devices.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  )}
                 </div>
                 <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                   {devices.map((d, i) => (

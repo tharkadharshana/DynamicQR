@@ -202,10 +202,11 @@ export default function Settings() {
   const planLabel = currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1);
   const scanLimit = planData.limits.monthly_scans;
   const scanUsed = planData.monthly_scans_used || 0;
-  const scanPct = scanLimit === Infinity ? 0 : Math.min(100, (scanUsed / scanLimit) * 100);
-  const qrLimit = planData.limits.qr_codes;
-  const qrUsed = qrLimit === Infinity ? planData.total_qrs : (qrLimit - planData.remaining_qr);
-  const qrPct = qrLimit === Infinity ? 0 : Math.min(100, (qrUsed / qrLimit) * 100);
+  const scanPct = Math.min(100, (scanUsed / scanLimit) * 100);
+  const qrLimit = planData.limits.qr_codes; // -1 means unlimited
+  const isUnlimitedQr = qrLimit === -1;
+  const qrUsed = isUnlimitedQr ? planData.total_qrs : (qrLimit - planData.remaining_qr);
+  const qrPct = isUnlimitedQr ? 0 : Math.min(100, (qrUsed / qrLimit) * 100);
 
   return (
     <div className="content" style={{ padding: '28px', overflow: 'auto', height: '100%' }}>
@@ -242,10 +243,10 @@ export default function Settings() {
                 <button className="btn btn-ghost btn-sm" style={{ fontSize: '11px' }} onClick={() => navigate('/billing')}>Manage →</button>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>QR codes</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>{qrUsed} / {qrLimit === Infinity ? '∞' : qrLimit}</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: `${qrPct}%` }}></div></div></div>
+                <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>QR codes</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>{qrUsed} / {isUnlimitedQr ? '∞' : qrLimit}</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: `${qrPct}%` }}></div></div></div>
                 <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>Storage</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>0.4 MB</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: '1%', background: 'var(--blue)' }}></div></div></div>
                 <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>Analytics window</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>{planData.limits.analytics_days} days</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: '100%', background: 'var(--green)' }}></div></div></div>
-                <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>Scans this month</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>{formatNumber(scanUsed)} / {scanLimit === Infinity ? '∞' : formatNumber(scanLimit)}</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: `${scanPct}%`, background: scanPct > 90 ? 'var(--red)' : 'var(--coral)' }}></div></div></div>
+                <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px' }}><span style={{ color: 'var(--text2)' }}>Scans this month</span><span style={{ color: 'var(--text)', fontWeight: 600 }}>{formatNumber(scanUsed)} / {formatNumber(scanLimit)}</span></div><div className="progress-bar"><div className="progress-fill" style={{ width: `${scanPct}%`, background: scanPct > 90 ? 'var(--red)' : 'var(--coral)' }}></div></div></div>
               </div>
             </div>
 

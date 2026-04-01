@@ -186,11 +186,12 @@ async function startServer() {
     
     const limits = {
       ...baseLimits,
-      qr_codes: baseLimits.qr_codes === Infinity 
-        ? Infinity 
+      // Use -1 as a JSON-safe sentinel for "unlimited" (Infinity becomes null in JSON.stringify)
+      qr_codes: baseLimits.qr_codes === Infinity
+        ? -1
         : baseLimits.qr_codes + (addons.extra_qr_codes || 0),
       monthly_scans: baseLimits.monthly_scans + (addons.extra_scans || 0),
-      analytics_days: baseLimits.analytics_days, // Plan-based history limit
+      analytics_days: baseLimits.analytics_days,
       custom_domain: baseLimits.custom_domain || addons.custom_domain,
       api_access: baseLimits.api_access || addons.api_access,
     };
@@ -228,8 +229,9 @@ async function startServer() {
       // Fetch ALL QR codes (active + inactive) for accurate totals
       const allQrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
       const allSlugs: string[] = allQrSnapshot.docs.map((d: any) => d.data().slug);
+      logger.info(`Stats aggregation for user ${uid}: found ${allSlugs.length} slugs: ${allSlugs.join(', ')}`);
       const activeQrs = allQrSnapshot.docs.filter((d: any) => d.data().is_active !== false).length;
-      const remaining_qr = license.limits.qr_codes === Infinity ? Infinity : Math.max(0, license.limits.qr_codes - activeQrs);
+      const remaining_qr = license.limits.qr_codes === -1 ? -1 : Math.max(0, license.limits.qr_codes - activeQrs);
 
       // Aggregate stats across all QRs in 30-slug chunks (Firestore 'in' limit)
       let totalScans = 0;
@@ -242,16 +244,21 @@ async function startServer() {
       const currentMonth = new Date().toISOString().slice(0, 7);
 
       for (const chunk of chunks) {
-        const statsSnaps = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
-        statsSnaps.forEach((s: any) => {
-          const d = s.data();
-          totalScans += d.total_scans || 0;
-          Object.keys(d.countries || {}).forEach((c: string) => countriesSet.add(c));
-          const dayKeys = Object.keys(d.days || {}).sort();
-          if (dayKeys.length && (!earliestDay || dayKeys[0] < earliestDay)) earliestDay = dayKeys[0];
-          // Sum monthly scans from qr_stats as a reliable fallback
-          monthlyScansFromStats += d.monthly_scans?.[currentMonth] || 0;
-        });
+        try {
+          const statsSnaps = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          logger.info(`Plan fetch: chunk stats count: ${statsSnaps.size}`);
+          statsSnaps.forEach((s: any) => {
+            const d = s.data();
+            totalScans += d.total_scans || 0;
+            Object.keys(d.countries || {}).forEach((c: string) => countriesSet.add(c));
+            const dayKeys = Object.keys(d.days || {}).sort();
+            if (dayKeys.length && (!earliestDay || dayKeys[0] < earliestDay)) earliestDay = dayKeys[0];
+            // Sum monthly scans from qr_stats as a reliable fallback
+            monthlyScansFromStats += d.monthly_scans?.[currentMonth] || 0;
+          });
+        } catch (e: any) {
+          logger.error('Plan fetch error in stats chunk query', { error: e.message, chunk });
+        }
       }
 
       const daysActive = earliestDay
@@ -263,6 +270,9 @@ async function startServer() {
       const monthlyScansUsed = userLevelMonthly > 0 ? userLevelMonthly : monthlyScansFromStats;
 
       const userDoc = userSnap.data();
+      // Prevent browser/CDN caching of plan data — always needs to be fresh
+      res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.set('Pragma', 'no-cache');
       res.json({
         plan: license.effectivePlan,
         is_trial: license.isTrial,
@@ -742,12 +752,13 @@ async function startServer() {
       
       const activeCount = qrSnapshot.docs.filter((doc: any) => doc.data().is_active !== false).length;
       
-      if (license.limits.qr_codes !== Infinity && activeCount >= license.limits.qr_codes) {
+      // Sentinel -1 check for unlimited
+      if (license.limits.qr_codes !== -1 && activeCount >= license.limits.qr_codes) {
         logger.warn(`User ${uid} reached plan limit (${activeCount}/${license.limits.qr_codes})`);
         return res.status(403).json({ 
           error: 'Plan limit reached. Upgrade to create more QRs.',
           code: 'LIMIT_QR_CODES',
-          limit: license.limits.qr_codes,
+          limit: license.limits.qr_codes === -1 ? 'Unlimited' : license.limits.qr_codes,
           current: activeCount
         });
       }
@@ -1447,16 +1458,18 @@ async function startServer() {
 
         for (const chunk of chunks) {
           const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          logger.info(`Timeseries aggregation: chunk found ${statsSnapshot.size} stats docs`);
           statsSnapshot.forEach(doc => {
             const data = doc.data();
             const daysData = data.days || {};
-            const totalScans = data.total_scans || 1;
-            const totalUnique = data.unique_scans || 0;
+            const totalScans = (data.total_scans || 1) as number;
+            const totalUnique = (data.unique_scans || 0) as number;
             
             for (const [dateStr, count] of Object.entries(daysData)) {
               if (dailyStats[dateStr]) {
                 const dayCount = count as number;
                 dailyStats[dateStr].total_scans += dayCount;
+                // Heuristic for unique scans per day based on historical ratio
                 dailyStats[dateStr].unique_scans += Math.round(dayCount * (totalUnique / totalScans));
               }
             }

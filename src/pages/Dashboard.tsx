@@ -182,7 +182,7 @@ export default function Dashboard() {
             </div>
             <div className="stat-val">{qrCodes.length}</div>
             <span className="stat-change neutral">
-              {planData ? `${planData.limits.qr_codes === Infinity ? 'Unlimited' : planData.limits.qr_codes} limit` : 'Loading...'}
+              {planData ? `${planData.limits.qr_codes === -1 ? 'Unlimited' : planData.limits.qr_codes} limit` : 'Loading...'}
             </span>
           </div>
           <div className="stat-card">
