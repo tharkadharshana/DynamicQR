@@ -89,7 +89,7 @@ export default function Billing() {
               onClick={() => setIsAnnual(false)}
               style={{ 
                 padding: '8px 20px', borderRadius: '26px', border: 'none', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                background: !isAnnual ? 'white' : 'transparent', color: !isAnnual ? '#000' : 'var(--text3)',
+                background: !isAnnual ? 'white' : 'transparent', color: !isAnnual ? '#000' : 'var(--text2)',
                 boxShadow: !isAnnual ? '0 2px 8px rgba(0,0,0,0.05)' : 'none'
               }}
             >Monthly</button>
@@ -97,7 +97,7 @@ export default function Billing() {
               onClick={() => setIsAnnual(true)}
               style={{ 
                 padding: '8px 20px', borderRadius: '26px', border: 'none', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                background: isAnnual ? 'white' : 'transparent', color: isAnnual ? '#000' : 'var(--text3)',
+                background: isAnnual ? 'white' : 'transparent', color: isAnnual ? '#000' : 'var(--text2)',
                 boxShadow: isAnnual ? '0 2px 8px rgba(0,0,0,0.05)' : 'none',
                 display: 'flex', alignItems: 'center', gap: '6px'
               }}

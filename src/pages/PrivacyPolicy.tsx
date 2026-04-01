@@ -24,7 +24,7 @@ export default function PrivacyPolicy() {
                 <rect x="12" y="12" width="2" height="2" fill="white"/>
               </svg>
             </div>
-            Scnr
+            Dynamic QR
           </Link>
           <div className="nav-right">
             <Link to="/billing" className="btn-text">Back to Billing</Link>
@@ -42,7 +42,7 @@ export default function PrivacyPolicy() {
         
         <div style={{ color: 'var(--ink2)', fontSize: '16px', lineHeight: '1.8' }}>
           <p style={{ marginBottom: '24px' }}>
-            At Scnr, we are committed to protecting the privacy and security of our customers' personal information. This Privacy Policy outlines how we collect, use, and safeguard your information when you visit or make a purchase on our website. By using our website, you consent to the practices described in this policy.
+            At Dynamic QR, we are committed to protecting the privacy and security of our customers' personal information. This Privacy Policy outlines how we collect, use, and safeguard your information when you visit or make a purchase on our website. By using our website, you consent to the practices described in this policy.
           </p>
 
           <h3 style={{ fontFamily: 'var(--font-h)', fontSize: '24px', fontWeight: 600, color: 'var(--ink)', marginTop: '48px', marginBottom: '16px' }}>Information We Collect</h3>
@@ -109,7 +109,7 @@ export default function PrivacyPolicy() {
 
           <h3 style={{ fontFamily: 'var(--font-h)', fontSize: '24px', fontWeight: 600, color: 'var(--ink)', marginTop: '48px', marginBottom: '16px' }}>Contact Us</h3>
           <p style={{ marginBottom: '24px' }}>
-            If you have any questions, concerns, or requests regarding our Privacy Policy or the handling of your personal information, please contact us at support@scnr.tharkak.com.
+            If you have any questions, concerns, or requests regarding our Privacy Policy or the handling of your personal information, please contact us at support@dynamicqr.app.
           </p>
           
           <p style={{ fontSize: '13px', color: 'var(--ink4)', fontStyle: 'italic', marginTop: '48px', borderTop: '1px solid var(--border)', paddingTop: '24px' }}>
@@ -132,9 +132,9 @@ export default function PrivacyPolicy() {
                 <rect x="12" y="12" width="2" height="2" fill="white"/>
               </svg>
             </div>
-            Scnr
+            Dynamic QR
           </div>
-          <div style={{ fontSize: '13px', color: 'var(--ink4)' }}>© 2026 Scnr. All rights reserved.</div>
+          <div style={{ fontSize: '13px', color: 'var(--ink4)' }}>© 2026 Dynamic QR. All rights reserved.</div>
         </div>
       </footer>
     </div>

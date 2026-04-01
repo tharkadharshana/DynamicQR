@@ -36,13 +36,13 @@ Multi-Layered Quick Response Code
 
 ---
 
-## What is MLQR?
+## What is Dynamic QR?
 
-MLQR is a production-grade **Scnr QR code platform** where every scan passes through a configurable stack of layers — active status, expiry date, scan limit, password verification, device routing — before the user is redirected. Each layer is evaluated in under 50ms on a Cloudflare edge server nearest to the scanner, with no database roundtrip on the critical path.
+Dynamic QR is a production-grade **Dynamic QR code platform** where every scan passes through a configurable stack of layers — active status, expiry date, scan limit, password verification, device routing — before the user is redirected. Each layer is evaluated in under 50ms on a Cloudflare edge server nearest to the scanner, with no database roundtrip on the critical path.
 
-Businesses get a dashboard to create and manage QR codes, inspect real-time analytics, set gate rules, and manage their subscription. Developers on the Team plan get a REST API and webhook system to integrate MLQR into their own workflows.
+Businesses get a dashboard to create and manage QR codes, inspect real-time analytics, set gate rules, and manage their subscription. Developers on the Team plan get a REST API and webhook system to integrate Dynamic QR into their own workflows.
 
-MLQR is built to compete directly with platforms like Flowcode, QR TIGER, and Beaconstac — at a fraction of the infrastructure cost, with full ownership of the codebase.
+Dynamic QR is built to compete directly with platforms like Flowcode, QR TIGER, and Beaconstac — at a fraction of the infrastructure cost, with full ownership of the codebase.
 
 ---
 
@@ -50,7 +50,7 @@ MLQR is built to compete directly with platforms like Flowcode, QR TIGER, and Be
 
 A conventional QR code encodes a URL. That is a single layer: scan → destination.
 
-MLQR treats every scan as a request that passes through a programmable middleware stack:
+Dynamic QR treats every scan as a request that passes through a programmable middleware stack:
 
 ```
 Scan
@@ -133,7 +133,7 @@ All gate logic runs inside the Cloudflare Worker at the network edge — no serv
 ┌──────────────────────────────────────────────────────────────────┐
 │                        User scans QR code                         │
 └──────────────────────────────┬───────────────────────────────────┘
-                               │  HTTP GET  mlqr.app/{slug}
+                               │  HTTP GET  dynamicqr.app/{slug}
                                ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │                    Cloudflare Worker  (edge)                      │
@@ -196,7 +196,7 @@ All gate logic runs inside the Cloudflare Worker at the network edge — no serv
 ## Project structure
 
 ```
-mlqr/
+dynamicqr/
 ├── worker/                   Cloudflare Worker — all gate + redirect logic
 ├── api/                      Cloud Run API — dashboard endpoints + analytics
 ├── frontend/                 React SPA — full dashboard UI
@@ -245,7 +245,7 @@ Stores: plan tier, plan expiry timestamp, PayHere customer reference, and accoun
 ## Gate stack decision flow
 
 ```
-Scan arrives at mlqr.app/{slug}
+Scan arrives at dynamicqr.app/{slug}
         │
         ▼
   is_active = false? ──yes──▶  410 Gone
@@ -338,13 +338,13 @@ The only location where KV eventual consistency matters is near a scan limit. Wi
 | Pro | $7 | Unlimited dynamic | 90 days | No |
 | Team | $29 | Unlimited dynamic | 365 days | Full REST + webhooks |
 
-Static QR codes on the Free plan never expire and never require an active subscription to redirect. Scnr QR codes require an active Pro or Team plan — they return 410 if the subscription lapses.
+Static QR codes on the Free plan never expire and never require an active subscription to redirect. Dynamic QR codes require an active Pro or Team plan — they return 410 if the subscription lapses.
 
 ---
 
 ## Deployment overview
 
-MLQR consists of four independently deployable components. They can be deployed in any order, though the Worker requires the Cloud Run API URL to be configured before scans will resolve.
+Dynamic QR consists of four independently deployable components. They can be deployed in any order, though the Worker requires the Cloud Run API URL to be configured before scans will resolve.
 
 ### Prerequisites
 
@@ -426,7 +426,7 @@ MIT — see [LICENSE](LICENSE) for details.
 
 <div align="center">
 
-**MLQR — Multi-Layered Quick Response Code**
+**Dynamic QR — Multi-Layered Quick Response Code**
 
 Built on Cloudflare Workers · Firebase · Google Cloud Run · React
 

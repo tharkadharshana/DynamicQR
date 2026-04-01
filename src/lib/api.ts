@@ -1,9 +1,5 @@
 /**
- * Centralized API helper for the Scnr frontend.
- *
- * - Automatically refreshes Firebase ID tokens before every call
- * - Provides consistent error handling
- * - Numbers are locale-formatted via formatNumber()
+ * Centralized API helper for the Dynamic QR frontend.
  */
 import { auth } from '../firebase';
 

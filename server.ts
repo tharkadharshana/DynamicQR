@@ -780,7 +780,7 @@ async function startServer() {
 
       // Feature Gates
       if (is_dynamic && !license.limits.dynamic_qr) {
-        return res.status(403).json({ error: 'Scnr QR codes require Pro or above', code: 'FEATURE_DYNAMIC_QR' });
+        return res.status(403).json({ error: 'Dynamic QR codes require Pro or above', code: 'FEATURE_DYNAMIC_QR' });
       }
       if (options?.password_protect && !license.limits.password_protect) {
         return res.status(403).json({ error: 'Password protection requires Pro plan', code: 'FEATURE_PASSWORD' });
