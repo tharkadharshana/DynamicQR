@@ -24,7 +24,7 @@ export default function RefundPolicy() {
                 <rect x="12" y="12" width="2" height="2" fill="white"/>
               </svg>
             </div>
-            Dynamic QR
+            Scnr
           </Link>
           <div className="nav-right">
             <Link to="/billing" className="btn-text">Back to Billing</Link>
@@ -42,7 +42,7 @@ export default function RefundPolicy() {
         
         <div style={{ color: 'var(--ink2)', fontSize: '16px', lineHeight: '1.8' }}>
           <p style={{ marginBottom: '24px' }}>
-            Thank you for shopping at Dynamic QR. We value your satisfaction and strive to provide you with the best online experience possible. If, for any reason, you are not completely satisfied with your purchase, we are here to help.
+            Thank you for shopping at Scnr. We value your satisfaction and strive to provide you with the best online experience possible. If, for any reason, you are not completely satisfied with your purchase, we are here to help.
           </p>
 
           <h3 style={{ fontFamily: 'var(--font-h)', fontSize: '24px', fontWeight: 600, color: 'var(--ink)', marginTop: '48px', marginBottom: '16px' }}>Returns</h3>
@@ -116,9 +116,9 @@ export default function RefundPolicy() {
                 <rect x="12" y="12" width="2" height="2" fill="white"/>
               </svg>
             </div>
-            Dynamic QR
+            Scnr
           </div>
-          <div style={{ fontSize: '13px', color: 'var(--ink4)' }}>© 2026 Dynamic QR. All rights reserved.</div>
+          <div style={{ fontSize: '13px', color: 'var(--ink4)' }}>© 2026 Scnr. All rights reserved.</div>
         </div>
       </footer>
     </div>

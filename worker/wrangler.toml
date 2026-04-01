@@ -12,7 +12,7 @@ id = "f3238e1d104e4f59a85850f237edb9f8"
 
 [vars]
 # The base URL of your Cloud Run API server
-API_URL = "https://dynamicqr.tharkak.com"
+API_URL = "https://scnr.tharkak.com"
 
 # --- SECRETS (Do NOT commit to git) ---
 # Set these using the wrangler CLI:

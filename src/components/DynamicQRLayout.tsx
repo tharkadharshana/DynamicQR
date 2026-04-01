@@ -78,7 +78,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
       case '/legal/privacy-policy': return { title: 'Privacy Policy', sub: 'Legal documentation' };
       case '/legal/terms-and-conditions': return { title: 'Terms & Conditions', sub: 'Legal documentation' };
       case '/legal/refund-policy': return { title: 'Refund Policy', sub: 'Legal documentation' };
-      default: return { title: 'Dynamic QR Codes', sub: 'with Real-Time Analytics' };
+      default: return { title: 'Scnr QR Codes', sub: 'with Real-Time Analytics' };
     }
   };
 
@@ -87,7 +87,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
 
   // Update document title for SEO
   useEffect(() => {
-    document.title = `${title} | Dynamic QR`;
+    document.title = `${title} | Scnr`;
   }, [title]);
 
   // Close mobile menu on navigation
@@ -125,7 +125,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
               <rect x="15.5" y="15.5" width="2.5" height="2.5" fill="white"/>
             </svg>
           </div>
-          <span className="logo-text">Dynamic QR</span>
+          <span className="logo-text">Scnr</span>
           <button 
             className="btn btn-icon btn-sm md:hidden" 
             style={{ marginLeft: 'auto', border: 'none' }}

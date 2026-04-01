@@ -129,7 +129,7 @@ export default function CreateQR() {
         content = formData.slug ? `${window.location.origin}/${formData.slug}` : `${window.location.origin}/preview`;
       } else {
         if (qrType === 'url') {
-          content = formData.destination_url || 'https://dynamicqr.app';
+          content = formData.destination_url || 'https://scnr.app';
         } else if (qrType === 'vcard') {
           content = `BEGIN:VCARD\nVERSION:3.0\nN:${formData.content_data?.last_name || ''};${formData.content_data?.first_name || ''}\nFN:${formData.content_data?.first_name || ''} ${formData.content_data?.last_name || ''}\nTEL:${formData.content_data?.phone || ''}\nEMAIL:${formData.content_data?.email || ''}\nORG:${formData.content_data?.company || ''}\nURL:${formData.content_data?.website || ''}\nEND:VCARD`;
         } else if (qrType === 'wifi') {
@@ -271,7 +271,7 @@ export default function CreateQR() {
   const downloadPreview = (fmt: string) => {
     if (!qrCodeRef.current) return;
     const extension = fmt === 'print' ? 'png' : fmt;
-    qrCodeRef.current.download({ name: 'dynamic-qr', extension: extension as any });
+    qrCodeRef.current.download({ name: 'scnr-qr', extension: extension as any });
   };
 
   const getShortUrl = () => {
@@ -424,8 +424,9 @@ export default function CreateQR() {
                     <div className="color-preview" style={{ background: formData.style.dot_color }}></div>
                     <input 
                       type="color" 
-                      className="color-input" 
+                      className="form-input" 
                       value={formData.style.dot_color} 
+                      style={{ height: '36px', padding: '4px', cursor: 'pointer' }} 
                       onChange={(e) => setFormData({...formData, style: {...formData.style, dot_color: e.target.value}})}
                     />
                   </div>
@@ -435,11 +436,11 @@ export default function CreateQR() {
               <div className="form-section">
                 <label className="form-label">Background color</label>
                 <div className="color-row">
-                  {['#FFFFFF', '#F4F3EF', '#E85D3A', '#4D9EFF', '#1A1916', '#3DCC7E', '#9B7FFF'].map(color => (
+                  {['#FFFFFF', '#F4F3EF', '#FBE9E4', '#E8F5EC', '#EEF0FF'].map(color => (
                     <div 
                       key={color}
                       className={`color-swatch ${formData.style.bg_color === color ? 'selected' : ''}`} 
-                      style={{ background: color, border: color === '#FFFFFF' || color === '#F4F3EF' ? '1px solid var(--border)' : 'none' }} 
+                      style={{ background: color, border: color === '#FFFFFF' ? '1px solid var(--border)' : 'none' }} 
                       onClick={() => setFormData({...formData, style: {...formData.style, bg_color: color}})}
                     ></div>
                   ))}
@@ -447,8 +448,9 @@ export default function CreateQR() {
                     <div className="color-preview" style={{ background: formData.style.bg_color, border: '1px solid var(--border2)' }}></div>
                     <input 
                       type="color" 
-                      className="color-input" 
+                      className="form-input" 
                       value={formData.style.bg_color} 
+                      style={{ height: '36px', padding: '4px', cursor: 'pointer' }} 
                       onChange={(e) => setFormData({...formData, style: {...formData.style, bg_color: e.target.value}})}
                     />
                   </div>
@@ -766,7 +768,7 @@ export default function CreateQR() {
               <div ref={canvasRef} id="preview-canvas"></div>
             </div>
             <div className="qr-preview-slug" id="preview-slug">
-              {isDynamic ? `${window.location.hostname}/${formData.slug || '———'}` : 'Static QR'}
+              {isDynamic ? `scnr.tharkak.com/${formData.slug || '———'}` : 'Static QR'}
             </div>
             <div style={{ marginBottom: '16px' }}>
               <div style={{ fontSize: '11px', color: 'var(--text3)', marginBottom: '4px' }}>Destination</div>

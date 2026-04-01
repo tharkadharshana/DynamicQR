@@ -141,7 +141,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-b);font-size:
 }
 .btn-primary{background:var(--coral);color:#fff}
 .btn-primary:hover{background:var(--coral-d);transform:translateY(-1px)}
-.btn-ghost{background:none;border:1px solid var(--border2);color:var(--text)}
+.btn-ghost{background:none;border:1px solid var(--border2);color:var(--text2)}
 .btn-ghost:hover{background:var(--surface2);color:var(--text);border-color:var(--border3)}
 .btn-sm{padding:5px 10px;font-size:12px}
 .btn-icon{width:32px;height:32px;padding:0;justify-content:center;background:none;border:1px solid var(--border);color:var(--text2)}
@@ -352,32 +352,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-b);font-size:
 .error-msg{font-size:11px;color:var(--red);margin-top:4px}
 textarea.form-input{resize:vertical;min-height:80px}
 .color-row{display:flex;gap:10px;align-items:center}
-.color-input {
-  width: 44px;
-  height: 36px;
-  padding: 0;
-  border: 1.5px solid var(--border);
-  border-radius: 8px;
-  cursor: pointer;
-  background: none;
-  appearance: none;
-  -webkit-appearance: none;
-  flex-shrink: 0;
-}
-.color-input::-webkit-color-swatch-wrapper {
-  padding: 0;
-}
-.color-input::-webkit-color-swatch {
-  border: none;
-  border-radius: 6px;
-}
 .color-swatch{
   width:36px;height:36px;border-radius:8px;border:2px solid transparent;
   cursor:pointer;transition:border-color 0.15s,transform 0.1s;flex-shrink:0;
-  background-size: cover;
 }
 .color-swatch.selected{border-color:var(--coral);transform:scale(1.1)}
-.color-input-wrap{display:flex;align-items:center;gap:8px}
+.color-input-wrap{display:flex;align-items:center;gap:8px;flex:1}
 .color-preview{width:32px;height:32px;border-radius:6px;border:1px solid var(--border2);flex-shrink:0}
 .style-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
 .style-opt{

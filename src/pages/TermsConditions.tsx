@@ -24,7 +24,7 @@ export default function TermsConditions() {
                 <rect x="12" y="12" width="2" height="2" fill="white"/>
               </svg>
             </div>
-            Dynamic QR
+            Scnr
           </Link>
           <div className="nav-right">
             <Link to="/billing" className="btn-text">Back to Billing</Link>
@@ -42,7 +42,7 @@ export default function TermsConditions() {
         
         <div style={{ color: 'var(--ink2)', fontSize: '16px', lineHeight: '1.8' }}>
           <p style={{ marginBottom: '24px' }}>
-            Welcome to Dynamic QR. These Terms and Conditions govern your use of our website and the purchase and sale of products from our platform. By accessing and using our website, you agree to comply with these terms. Please read them carefully before proceeding with any transactions.
+            Welcome to Scnr. These Terms and Conditions govern your use of our website and the purchase and sale of products from our platform. By accessing and using our website, you agree to comply with these terms. Please read them carefully before proceeding with any transactions.
           </p>
 
           <h3 style={{ fontFamily: 'var(--font-h)', fontSize: '24px', fontWeight: 600, color: 'var(--ink)', marginTop: '48px', marginBottom: '16px' }}>Use of the Website</h3>
@@ -109,7 +109,7 @@ export default function TermsConditions() {
           <h3 style={{ fontFamily: 'var(--font-h)', fontSize: '24px', fontWeight: 600, color: 'var(--ink)', marginTop: '48px', marginBottom: '16px' }}>Intellectual Property</h3>
           <ul style={{ listStyle: 'none', paddingLeft: '0', marginBottom: '24px' }}>
             {[
-              "All content and materials on our website, including but not limited to text, images, logos, and graphics, are protected by intellectual property rights and are the property of Dynamic QR or its licensors.",
+              "All content and materials on our website, including but not limited to text, images, logos, and graphics, are protected by intellectual property rights and are the property of Scnr or its licensors.",
               "You may not use, reproduce, distribute, or modify any content from our website without our prior written consent."
             ].map((item, i) => (
               <li key={i} style={{ display: 'flex', gap: '12px', marginBottom: '12px', alignItems: 'flex-start' }}>
@@ -122,7 +122,7 @@ export default function TermsConditions() {
           <h3 style={{ fontFamily: 'var(--font-h)', fontSize: '24px', fontWeight: 600, color: 'var(--ink)', marginTop: '48px', marginBottom: '16px' }}>Limitation of Liability</h3>
           <ul style={{ listStyle: 'none', paddingLeft: '0', marginBottom: '24px' }}>
             {[
-              "In no event shall Dynamic QR, its directors, employees, or affiliates be liable for any direct, indirect, incidental, special, or consequential damages arising out of or in connection with your use of our website or the purchase and use of our products.",
+              "In no event shall Scnr, its directors, employees, or affiliates be liable for any direct, indirect, incidental, special, or consequential damages arising out of or in connection with your use of our website or the purchase and use of our products.",
               "We make no warranties or representations, express or implied, regarding the quality, accuracy, or suitability of the products offered on our website."
             ].map((item, i) => (
               <li key={i} style={{ display: 'flex', gap: '12px', marginBottom: '12px', alignItems: 'flex-start' }}>
@@ -157,9 +157,9 @@ export default function TermsConditions() {
                 <rect x="12" y="12" width="2" height="2" fill="white"/>
               </svg>
             </div>
-            Dynamic QR
+            Scnr
           </div>
-          <div style={{ fontSize: '13px', color: 'var(--ink4)' }}>© 2026 Dynamic QR. All rights reserved.</div>
+          <div style={{ fontSize: '13px', color: 'var(--ink4)' }}>© 2026 Scnr. All rights reserved.</div>
         </div>
       </footer>
     </div>
