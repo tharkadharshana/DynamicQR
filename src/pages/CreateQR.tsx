@@ -653,7 +653,7 @@ export default function CreateQR() {
                   This is highly effective against bot spam and automated crawlers.
                 </div>
                 
-                <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', opacity: planData?.plan === 'free' ? 0.6 : 1 }}>
                   <div className="form-section">
                     <label className="form-label" style={{ fontSize: '11px', textTransform: 'uppercase' }}>Scans per visitor</label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -662,11 +662,12 @@ export default function CreateQR() {
                          className="form-input" 
                          min="0"
                          style={{ flex: 1 }}
-                         value={formData.options.visitor_rate_limit} 
+                         disabled={planData?.plan === 'free'}
+                         value={planData?.plan === 'free' ? 5 : formData.options.visitor_rate_limit} 
                          onChange={(e) => setFormData({...formData, options: {...formData.options, visitor_rate_limit: parseInt(e.target.value) || 0}})} 
                        />
                        <span style={{ fontSize: '13px', color: 'var(--text3)', whiteSpace: 'nowrap' }}>
-                         {formData.options.visitor_rate_limit === 0 ? 'Unlimited' : 'scans'}
+                         {planData?.plan === 'free' ? 'scans' : (formData.options.visitor_rate_limit === 0 ? 'Unlimited' : 'scans')}
                        </span>
                     </div>
                   </div>
@@ -674,9 +675,10 @@ export default function CreateQR() {
                   <div className="form-section">
                     <label className="form-label" style={{ fontSize: '11px', textTransform: 'uppercase' }}>Time window</label>
                     <select 
-                      className="form-input" 
-                      value={formData.options.visitor_rate_period}
-                      onChange={(e) => setFormData({...formData, options: {...formData.options, visitor_rate_period: parseInt(e.target.value)}})}
+                       className="form-input" 
+                       disabled={planData?.plan === 'free'}
+                       value={planData?.plan === 'free' ? 3600 : formData.options.visitor_rate_period}
+                       onChange={(e) => setFormData({...formData, options: {...formData.options, visitor_rate_period: parseInt(e.target.value)}})}
                     >
                       <option value={60}>1 minute (Cooldown)</option>
                       <option value={3600}>1 hour</option>
@@ -686,12 +688,17 @@ export default function CreateQR() {
                   </div>
                 </div>
                 
-                {planData?.plan === 'free' && formData.options.visitor_rate_limit === 0 && (
+                {planData?.plan === 'free' ? (
+                  <div style={{ marginTop: '8px', padding: '10px', background: 'var(--surface2)', borderRadius: '6px', fontSize: '12px', color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>🛡️</span>
+                    <span>Standard Protection: 5 scans / 1 hour active. (Upgrade for custom limits).</span>
+                  </div>
+                ) : (formData.options.visitor_rate_limit === 0 && (
                   <div style={{ marginTop: '8px', padding: '10px', background: 'var(--amber-ll)', borderRadius: '6px', fontSize: '12px', color: 'var(--amber)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span>⚠️</span>
-                    <span>Note: Unlimited visitor scans is only available on Pro/Team plans. Free plan users default to 5 scans/hour.</span>
+                    <span>Unlimited scans per visitor is unlocked by your {planData?.plan} plan.</span>
                   </div>
-                )}
+                ))}
               </div>
             </div>
 

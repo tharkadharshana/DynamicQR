@@ -114,9 +114,7 @@ export default {
     
     // Default limit applies only to Free plan owners
     const isPaidPlan = config.owner_plan === 'pro' || config.owner_plan === 'team';
-    const effectiveLimit = (config.visitor_rate_limit !== undefined) 
-      ? config.visitor_rate_limit 
-      : (isPaidPlan ? 0 : 5); // Default 5 for Free, Unlimited for Paid
+    const effectiveLimit = config.owner_plan === 'free' ? 5 : (config.visitor_rate_limit !== undefined ? config.visitor_rate_limit : (isPaidPlan ? 0 : 5));
 
     if (effectiveLimit > 0 && visitorCount >= effectiveLimit) {
       return new Response(`

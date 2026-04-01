@@ -446,17 +446,21 @@ async function startServer() {
   app.post('/api/billing/checkout', authenticate, async (req, res) => {
     try {
       const user = (req as any).user;
-      const { plan } = req.body;
+      const { plan, interval } = req.body;
       const uid = user.uid;
       
-      const prices: Record<string, number> = {
-        pro: 7,
-        team: 29
+      const prices: Record<string, any> = {
+        pro: { monthly: 7, annual: 70 },
+        team: { monthly: 29, annual: 290 }
       };
       
-      if (!prices[plan]) {
+      const planPrice = prices[plan];
+      if (!planPrice) {
         return res.status(400).json({ error: 'Invalid plan' });
       }
+
+      const amountValue = (interval === 'annual') ? planPrice.annual : planPrice.monthly;
+      const recurrenceValue = (interval === 'annual') ? '1 Year' : '1 Month';
 
       const merchant_id = process.env.PAYHERE_MERCHANT_ID;
       const merchant_secret = process.env.PAYHERE_SECRET;
@@ -466,7 +470,7 @@ async function startServer() {
         return res.status(500).json({ error: 'Billing configuration error' });
       }
       const order_id = `ORDER_${uid}_${Date.now()}`;
-      const amount = prices[plan].toFixed(2);
+      const amount = amountValue.toFixed(2);
       const currency = 'USD';
       
       // Generate PayHere Hash
@@ -483,7 +487,7 @@ async function startServer() {
         cancel_url: `${appUrl}/pricing`,
         notify_url: `${appUrl}/api/billing/notify`,
         order_id,
-        items: `${plan.toUpperCase()} Plan Subscription`,
+        items: `${plan.toUpperCase()} Plan (${interval === 'annual' ? 'Annual' : 'Monthly'})`,
         currency,
         amount,
         first_name: user.name?.split(' ')[0] || 'User',
@@ -496,7 +500,7 @@ async function startServer() {
         hash,
         custom_1: uid,
         custom_2: plan,
-        recurrence: '1 Month',
+        recurrence: recurrenceValue,
         duration: 'Forever'
       };
 
@@ -735,13 +739,20 @@ async function startServer() {
       const password = options?.password_protect ? options.password : null;
       
       // Visitor Rate Limit (New)
-      const visitor_rate_limit = options?.visitor_rate_limit !== undefined ? Number(options.visitor_rate_limit) : 5;
-      const visitor_rate_period = options?.visitor_rate_period !== undefined ? Number(options.visitor_rate_period) : 3600;
+      let visitor_rate_limit = options?.visitor_rate_limit !== undefined ? Number(options.visitor_rate_limit) : 5;
+      let visitor_rate_period = options?.visitor_rate_period !== undefined ? Number(options.visitor_rate_period) : 3600;
 
       logger.info(`Starting QR creation for user ${uid}`, { type: qr_type, is_dynamic });
 
       // 1. Plan Limit Enforcement
       const license = await getLicense(uid);
+
+      // Force Visitor Guard limits for Free users
+      if (!license.limits.visitor_guard_gate) {
+        visitor_rate_limit = 5;
+        visitor_rate_period = 3600;
+        logger.info(`Enforcing hard-coded Visitor Guard for free user ${uid}`);
+      }
 
       logger.info(`Checking limits for plan: ${license.effectivePlan}`, { limits: license.limits });
 
@@ -967,10 +978,10 @@ async function startServer() {
         }
 
         if (options.visitor_rate_limit !== undefined) {
-          updateData.visitor_rate_limit = Number(options.visitor_rate_limit);
+          updateData.visitor_rate_limit = license.limits.visitor_guard_gate ? Number(options.visitor_rate_limit) : 5;
         }
         if (options.visitor_rate_period !== undefined) {
-          updateData.visitor_rate_period = Number(options.visitor_rate_period);
+          updateData.visitor_rate_period = license.limits.visitor_guard_gate ? Number(options.visitor_rate_period) : 3600;
         }
 
         if (options.password_protect !== undefined) {

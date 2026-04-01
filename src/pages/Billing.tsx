@@ -7,6 +7,7 @@ export default function Billing() {
   const { planData } = useOutletContext<{ planData: any }>();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loadingInvoices, setLoadingInvoices] = useState(true);
+  const [isAnnual, setIsAnnual] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -48,7 +49,7 @@ export default function Billing() {
     try {
       const data = await apiFetch('/api/billing/checkout', {
         method: 'POST',
-        body: JSON.stringify({ plan: targetPlan })
+        body: JSON.stringify({ plan: targetPlan, interval: isAnnual ? 'annual' : 'monthly' })
       });
       if (data.hash) {
         // Submit hidden form to PayHere
@@ -81,6 +82,31 @@ export default function Billing() {
   return (
     <div className="content" style={{ padding: '28px', overflow: 'auto', height: '100%' }}>
       <div className="page active">
+        {/* Billing Cycle Toggle */}
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
+          <div style={{ background: 'var(--surface2)', padding: '4px', borderRadius: '30px', display: 'flex', gap: '4px', border: '1px solid var(--border)' }}>
+            <button 
+              onClick={() => setIsAnnual(false)}
+              style={{ 
+                padding: '8px 20px', borderRadius: '26px', border: 'none', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                background: !isAnnual ? 'white' : 'transparent', color: !isAnnual ? 'var(--text)' : 'var(--text3)',
+                boxShadow: !isAnnual ? '0 2px 8px rgba(0,0,0,0.05)' : 'none'
+              }}
+            >Monthly</button>
+            <button 
+              onClick={() => setIsAnnual(true)}
+              style={{ 
+                padding: '8px 20px', borderRadius: '26px', border: 'none', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                background: isAnnual ? 'white' : 'transparent', color: isAnnual ? 'var(--text)' : 'var(--text3)',
+                boxShadow: isAnnual ? '0 2px 8px rgba(0,0,0,0.05)' : 'none',
+                display: 'flex', alignItems: 'center', gap: '6px'
+              }}
+            >
+              Annual <span style={{ background: 'var(--green-l)', color: 'var(--green)', fontSize: '10px', padding: '2px 6px', borderRadius: '10px' }}>Save 17%</span>
+            </button>
+          </div>
+        </div>
+
         {/* Hero: current plan */}
         <div className="billing-hero">
           <div className="billing-hero-left">
@@ -98,7 +124,7 @@ export default function Billing() {
             </div>
             <div className="billing-plan-name">{plan.charAt(0).toUpperCase() + plan.slice(1)} — {plan === 'free' ? '$0' : plan === 'pro' ? '$7' : '$29'} / month</div>
             <div className="billing-plan-desc">
-              {plan === 'free' ? 'Basic QR creation' : plan === 'pro' ? 'Unlimited QRs · Full Analytics · 90d History' : 'Everything in Pro · API · White-label'}
+              {plan === 'free' ? 'Basic QR creation & standard security' : plan === 'pro' ? 'Unlimited Dynamic QRs · 75k Scans · full Analytics' : 'Heavy volume scans · All features unlocked'}
             </div>
             <div className="billing-next">
               <span className="billing-next-dot"></span>
@@ -158,17 +184,24 @@ export default function Billing() {
                 </tr>
               </thead>
               <tbody>
-                <tr><td>QR codes</td><td>3</td><td>Unlimited</td><td>Unlimited</td></tr>
+                <tr><td>Total QR codes</td><td>3 (Static)</td><td>Unlimited</td><td>Unlimited</td></tr>
+                <tr><td>Monthly Scans</td><td>1,000</td><td>75,000</td><td>500,000</td></tr>
                 <tr><td>Dynamic destinations</td><td>—</td><td>✓</td><td>✓</td></tr>
                 <tr><td>Scan analytics</td><td>—</td><td>✓</td><td>✓</td></tr>
                 <tr><td>Analytics history</td><td>7 days</td><td>90 days</td><td>365 days</td></tr>
-                <tr><td>Custom domain</td><td>—</td><td>—</td><td>✓</td></tr>
-                <tr><td>API access</td><td>—</td><td>—</td><td>✓</td></tr>
+                <tr><td>Password protection</td><td>—</td><td>✓</td><td>✓</td></tr>
+                <tr><td>Expiry dates</td><td>—</td><td>✓</td><td>✓</td></tr>
+                <tr><td>Visitor Guard</td><td>5 scans/hr</td><td>Configurable</td><td>Configurable</td></tr>
+                <tr><td>Overage scans</td><td>—</td><td>$10 / 100k</td><td>$10 / 100k</td></tr>
                 <tr>
                   <td style={{ fontWeight: 600, color: 'var(--text)' }}>Price</td>
                   <td style={{ fontWeight: 600 }}>$0</td>
-                  <td style={{ color: 'var(--coral)', fontWeight: 700 }}>$7/mo</td>
-                  <td style={{ fontWeight: 600 }}>$29/mo</td>
+                  <td style={{ color: 'var(--coral)', fontWeight: 700 }}>
+                    {isAnnual ? '$70/yr' : '$7/mo'}
+                  </td>
+                  <td style={{ fontWeight: 600 }}>
+                    {isAnnual ? '$290/yr' : '$29/mo'}
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -180,7 +213,11 @@ export default function Billing() {
                   {plan === 'free' ? 'Pro Plan' : 'Team Plan'}
                 </div>
                 <div style={{ fontFamily: 'var(--font-h)', fontSize: '32px', fontWeight: 600, color: 'var(--text)', letterSpacing: '-1px', marginBottom: '4px' }}>
-                  ${plan === 'free' ? '7' : '29'}<span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--text3)' }}>/mo</span>
+                  {isAnnual ? (
+                    <>${plan === 'free' ? '70' : '290'}<span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--text3)' }}>/yr</span></>
+                  ) : (
+                    <>${plan === 'free' ? '7' : '29'}<span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--text3)' }}>/mo</span></>
+                  )}
                 </div>
                 <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '11px' }} onClick={() => handleCheckout(plan === 'free' ? 'pro' : 'team')}>
                   Upgrade Now →

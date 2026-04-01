@@ -7,10 +7,17 @@ export interface PlanLimits {
   password_protect: boolean;
   expiry_gate: boolean;
   scan_limit_gate: boolean;
+  visitor_guard_gate: boolean;
   analytics_days: number;
   custom_domain: boolean;
   api_access: boolean;
 }
+
+export const ANNUAL_PRICES = {
+  free: 0,
+  pro: 70,   // $70/yr (~$5.8/mo)
+  team: 290, // $290/yr (~$24/mo)
+};
 
 export const PLANS: Record<PlanId, PlanLimits> = {
   free: {
@@ -20,17 +27,19 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     password_protect: false,
     expiry_gate: false,
     scan_limit_gate: false,
+    visitor_guard_gate: false,
     analytics_days: 7,
     custom_domain: false,
     api_access: false,
   },
   pro: {
     qr_codes: Infinity,
-    monthly_scans: 50000,
+    monthly_scans: 75000,
     dynamic_qr: true,
     password_protect: true,
     expiry_gate: true,
     scan_limit_gate: true,
+    visitor_guard_gate: true,
     analytics_days: 90,
     custom_domain: false,
     api_access: false,
@@ -42,6 +51,7 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     password_protect: true,
     expiry_gate: true,
     scan_limit_gate: true,
+    visitor_guard_gate: true,
     analytics_days: 365,
     custom_domain: true,
     api_access: true,
