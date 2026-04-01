@@ -225,14 +225,42 @@ async function startServer() {
 
       const license = await getLicense(uid);
       
-      // Get number of active QR codes
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid), where('is_active', '==', true)));
-        
-      const activeQrs = qrSnapshot.size;
+      // Fetch ALL QR codes (active + inactive) for accurate totals
+      const allQrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      const allSlugs: string[] = allQrSnapshot.docs.map((d: any) => d.data().slug);
+      const activeQrs = allQrSnapshot.docs.filter((d: any) => d.data().is_active !== false).length;
       const remaining_qr = license.limits.qr_codes === Infinity ? Infinity : Math.max(0, license.limits.qr_codes - activeQrs);
-      
+
+      // Aggregate stats across all QRs in 30-slug chunks (Firestore 'in' limit)
+      let totalScans = 0;
+      const countriesSet = new Set<string>();
+      let earliestDay: string | null = null;
+      const chunks: string[][] = [];
+      for (let i = 0; i < allSlugs.length; i += 30) chunks.push(allSlugs.slice(i, i + 30));
+
+      let monthlyScansFromStats = 0;
       const currentMonth = new Date().toISOString().slice(0, 7);
-      const monthlyScansUsed = userSnap.data()?.monthly_scans?.[currentMonth] || 0;
+
+      for (const chunk of chunks) {
+        const statsSnaps = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+        statsSnaps.forEach((s: any) => {
+          const d = s.data();
+          totalScans += d.total_scans || 0;
+          Object.keys(d.countries || {}).forEach((c: string) => countriesSet.add(c));
+          const dayKeys = Object.keys(d.days || {}).sort();
+          if (dayKeys.length && (!earliestDay || dayKeys[0] < earliestDay)) earliestDay = dayKeys[0];
+          // Sum monthly scans from qr_stats as a reliable fallback
+          monthlyScansFromStats += d.monthly_scans?.[currentMonth] || 0;
+        });
+      }
+
+      const daysActive = earliestDay
+        ? Math.ceil((Date.now() - new Date(earliestDay + 'T00:00:00').getTime()) / 86400000)
+        : 0;
+
+      // Use user-level monthly counter if it exists; otherwise fall back to qr_stats aggregation
+      const userLevelMonthly = userSnap.data()?.monthly_scans?.[currentMonth] || 0;
+      const monthlyScansUsed = userLevelMonthly > 0 ? userLevelMonthly : monthlyScansFromStats;
 
       const userDoc = userSnap.data();
       res.json({
@@ -246,6 +274,11 @@ async function startServer() {
         addons: license.addons,
         remaining_qr,
         monthly_scans_used: monthlyScansUsed,
+        // Aggregated stats for Settings & Billing pages
+        total_qrs: allSlugs.length,
+        total_scans: totalScans,
+        days_active: daysActive,
+        countries_count: countriesSet.size,
         profile: {
           company: userDoc?.company || '',
           jobTitle: userDoc?.jobTitle || '',
@@ -1059,10 +1092,15 @@ async function startServer() {
       if (statsDoc.exists()) {
         const data = statsDoc.data()!;
         const daysData = data.days || {};
+        const totalScans = data.total_scans || 1; // avoid div by zero
+        const totalUnique = data.unique_scans || 0;
         
         for (const [dateStr, count] of Object.entries(daysData)) {
           if (dailyStats[dateStr]) {
-            dailyStats[dateStr].total_scans = count;
+            const dayCount = count as number;
+            dailyStats[dateStr].total_scans = dayCount;
+            // Approximate unique per day proportionally from the overall ratio
+            dailyStats[dateStr].unique_scans = Math.round(dayCount * (totalUnique / totalScans));
           }
         }
       }
@@ -1401,9 +1439,14 @@ async function startServer() {
           statsSnapshot.forEach(doc => {
             const data = doc.data();
             const daysData = data.days || {};
+            const totalScans = data.total_scans || 1;
+            const totalUnique = data.unique_scans || 0;
+            
             for (const [dateStr, count] of Object.entries(daysData)) {
               if (dailyStats[dateStr]) {
-                dailyStats[dateStr].total_scans += (count as number);
+                const dayCount = count as number;
+                dailyStats[dateStr].total_scans += dayCount;
+                dailyStats[dateStr].unique_scans += Math.round(dayCount * (totalUnique / totalScans));
               }
             }
           });

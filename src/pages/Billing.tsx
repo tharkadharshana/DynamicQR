@@ -31,8 +31,13 @@ export default function Billing() {
   }
 
   const { plan, plan_expires_at, monthly_scans_used, limits, is_trial, is_expired, plan_since, email } = planData;
-  const expiryDate = plan_expires_at ? new Date(plan_expires_at._seconds * 1000).toLocaleDateString() : 'N/A';
-  const planSince = plan_since ? new Date(plan_since).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '—';
+  // plan_expires_at arrives as a Firestore Timestamp serialised to {_seconds, _nanoseconds}
+  const expiryDate = plan_expires_at?._seconds
+    ? new Date(plan_expires_at._seconds * 1000).toLocaleDateString()
+    : 'N/A';
+  const planSince = plan_since
+    ? new Date(plan_since).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    : '—';
   const billingEmail = email || auth.currentUser?.email || '—';
   
   const showToast = (type: string, message: string) => {

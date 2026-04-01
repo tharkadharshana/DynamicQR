@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { collection, query, where, onSnapshot, orderBy, getDoc, doc } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+import { auth } from '../firebase';
 import QRCode from 'qrcode';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
@@ -224,6 +223,7 @@ export default function Dashboard() {
                     style={{ fontSize: '11px', padding: '2px 6px' }}
                   >
                     <option value={7}>7d</option>
+                    <option value={14}>14d</option>
                     <option value={30}>30d</option>
                     <option value={90}>90d</option>
                   </select>
