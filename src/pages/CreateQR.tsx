@@ -38,7 +38,9 @@ export default function CreateQR() {
       expiry_date_enabled: false,
       expiry_date: '',
       scan_limit_enabled: false,
-      scan_limit: 100
+      scan_limit: 100,
+      visitor_rate_limit: 5,
+      visitor_rate_period: 3600
     }
   });
 
@@ -88,7 +90,9 @@ export default function CreateQR() {
               expiry_date_enabled: !!data.expiry_date,
               expiry_date: data.expiry_date || '',
               scan_limit_enabled: data.rate_limit?.enabled || false,
-              scan_limit: data.rate_limit?.max_scans || 100
+              scan_limit: data.rate_limit?.max_scans || 100,
+              visitor_rate_limit: data.visitor_rate_limit !== undefined ? data.visitor_rate_limit : 5,
+              visitor_rate_period: data.visitor_rate_period !== undefined ? data.visitor_rate_period : 3600
             }
           });
         } catch (err: any) {
@@ -630,10 +634,65 @@ export default function CreateQR() {
                 ></button>
               </div>
               {formData.options.scan_limit_enabled && (
-                <div className="form-section" style={{ padding: '0 0 0 0' }}>
+                <div className="form-section" style={{ padding: '0 0 16px 0' }}>
                   <input type="number" className="form-input" placeholder="e.g. 100" value={formData.options.scan_limit} onChange={(e) => setFormData({...formData, options: {...formData.options, scan_limit: parseInt(e.target.value) || 0}})} />
                 </div>
               )}
+            </div>
+
+            {/* Visitor Guard */}
+            <div className="card mb16">
+              <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ background: '#E85D3A', color: 'white', width: '24px', height: '24px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'bold' }}>4</span>
+                <span style={{ textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text3)', fontSize: '13px' }}>VISITOR GUARD</span>
+              </div>
+              
+              <div style={{ padding: '8px 0 16px 0' }}>
+                <div style={{ fontSize: '13px', color: 'var(--text3)', marginBottom: '16px' }}>
+                  Limit how many times each unique visitor can scan this QR code within a specific timeframe. 
+                  This is highly effective against bot spam and automated crawlers.
+                </div>
+                
+                <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div className="form-section">
+                    <label className="form-label" style={{ fontSize: '11px', textTransform: 'uppercase' }}>Scans per visitor</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                       <input 
+                         type="number" 
+                         className="form-input" 
+                         min="0"
+                         style={{ flex: 1 }}
+                         value={formData.options.visitor_rate_limit} 
+                         onChange={(e) => setFormData({...formData, options: {...formData.options, visitor_rate_limit: parseInt(e.target.value) || 0}})} 
+                       />
+                       <span style={{ fontSize: '13px', color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+                         {formData.options.visitor_rate_limit === 0 ? 'Unlimited' : 'scans'}
+                       </span>
+                    </div>
+                  </div>
+                  
+                  <div className="form-section">
+                    <label className="form-label" style={{ fontSize: '11px', textTransform: 'uppercase' }}>Time window</label>
+                    <select 
+                      className="form-input" 
+                      value={formData.options.visitor_rate_period}
+                      onChange={(e) => setFormData({...formData, options: {...formData.options, visitor_rate_period: parseInt(e.target.value)}})}
+                    >
+                      <option value={60}>1 minute (Cooldown)</option>
+                      <option value={3600}>1 hour</option>
+                      <option value={86400}>24 hours</option>
+                      <option value={604800}>7 days</option>
+                    </select>
+                  </div>
+                </div>
+                
+                {planData?.plan === 'free' && formData.options.visitor_rate_limit === 0 && (
+                  <div style={{ marginTop: '8px', padding: '10px', background: 'var(--amber-ll)', borderRadius: '6px', fontSize: '12px', color: 'var(--amber)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>⚠️</span>
+                    <span>Note: Unlimited visitor scans is only available on Pro/Team plans. Free plan users default to 5 scans/hour.</span>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Submit */}

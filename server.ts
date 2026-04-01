@@ -733,6 +733,10 @@ async function startServer() {
       };
       const expiry_date = options?.expiry_date_enabled ? options.expiry_date : null;
       const password = options?.password_protect ? options.password : null;
+      
+      // Visitor Rate Limit (New)
+      const visitor_rate_limit = options?.visitor_rate_limit !== undefined ? Number(options.visitor_rate_limit) : 5;
+      const visitor_rate_period = options?.visitor_rate_period !== undefined ? Number(options.visitor_rate_period) : 3600;
 
       logger.info(`Starting QR creation for user ${uid}`, { type: qr_type, is_dynamic });
 
@@ -840,6 +844,8 @@ async function startServer() {
         rate_limit: rate_limit || { enabled: false, max_scans: 100, period: 'total' },
         expiry_date: expiry_date || null,
         password_hash: passwordHash,
+        visitor_rate_limit,
+        visitor_rate_period,
         created_at: serverTimestamp()
       };
 
@@ -959,6 +965,14 @@ async function startServer() {
           updateData['rate_limit.max_scans'] = options.scan_limit;
           updateData['rate_limit.period'] = 'total';
         }
+
+        if (options.visitor_rate_limit !== undefined) {
+          updateData.visitor_rate_limit = Number(options.visitor_rate_limit);
+        }
+        if (options.visitor_rate_period !== undefined) {
+          updateData.visitor_rate_period = Number(options.visitor_rate_period);
+        }
+
         if (options.password_protect !== undefined) {
           if (options.password_protect) {
             if (!license.limits.password_protect) {
@@ -1884,6 +1898,8 @@ async function startServer() {
       }
 
       const qr = qrDoc.data();
+      const userDoc = await getDoc(doc(db, 'users', qr.user_uid));
+      const userPlan = userDoc.exists() ? userDoc.data().plan : 'free';
       const stats = statsDoc.exists() ? statsDoc.data() : { total_scans: 0 };
 
       // Return compact gate config for Worker
@@ -1893,7 +1909,10 @@ async function startServer() {
         expiry_date: qr.expiry_date || null,
         password_hash: qr.password_hash || null,
         scan_limit: qr.rate_limit?.enabled ? qr.rate_limit.max_scans : null,
-        total_scans: stats.total_scans || 0
+        total_scans: stats.total_scans || 0,
+        visitor_rate_limit: qr.visitor_rate_limit !== undefined ? qr.visitor_rate_limit : 5,
+        visitor_rate_period: qr.visitor_rate_period !== undefined ? qr.visitor_rate_period : 3600,
+        owner_plan: userPlan 
       };
 
       logger.info(`Returning config for slug ${slug}:`, { 
