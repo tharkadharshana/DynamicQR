@@ -501,18 +501,23 @@ async function startServer() {
   app.get('/api/billing/invoices', authenticate, async (req, res) => {
     try {
       const uid = (req as any).user.uid;
+      // Use only a single-field where() to avoid requiring a composite index.
+      // Sort and slice in memory — invoice counts are always small.
       const subs = await getDocs(query(
-        collection(db, 'subscriptions'), 
-        where('uid', '==', uid), 
-        orderBy('timestamp', 'desc'), 
-        limit(12)
+        collection(db, 'subscriptions'),
+        where('uid', '==', uid)
       ));
       
-      const invoices = subs.docs.map((d: any) => ({
-        id: d.id,
-        ...d.data(),
-        date: d.data().timestamp?.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-      }));
+      const invoices = subs.docs
+        .map((d: any) => ({
+          id: d.id,
+          ...d.data(),
+          _ts: d.data().timestamp?.toMillis?.() || 0,
+          date: d.data().timestamp?.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        }))
+        .sort((a: any, b: any) => b._ts - a._ts)
+        .slice(0, 12)
+        .map(({ _ts, ...rest }: any) => rest);
       
       res.json(invoices);
     } catch (error) {
@@ -673,10 +678,16 @@ async function startServer() {
           plan: 'free', 
           plan_expires_at: null 
         });
-        // Find and update subscription record
-        const subs = await getDocs(query(collection(db, 'subscriptions'), where('uid', '==', uid), orderBy('timestamp', 'desc'), limit(1)));
+        // Find most recent subscription and mark as cancelled.
+        // Use single-field where() to avoid composite index requirement; sort in memory.
+        const subs = await getDocs(query(collection(db, 'subscriptions'), where('uid', '==', uid)));
         if (!subs.empty) {
-          await updateDoc(subs.docs[0].ref, { status: 'cancelled', updated_at: serverTimestamp() });
+          const mostRecent = subs.docs.sort((a: any, b: any) => {
+            const aTs = a.data().timestamp?.toMillis?.() || 0;
+            const bTs = b.data().timestamp?.toMillis?.() || 0;
+            return bTs - aTs;
+          })[0];
+          await updateDoc(mostRecent.ref, { status: 'cancelled', updated_at: serverTimestamp() });
         }
       }
 

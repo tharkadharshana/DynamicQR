@@ -48,7 +48,12 @@ export const PLANS: Record<PlanId, PlanLimits> = {
   },
 };
 
-export const TRIAL_LIMITS: PlanLimits = PLANS.pro;
+// Trial gets all Pro features but capped at Free's QR code limit.
+// This is the conversion hook: users see Pro features but must upgrade to create more QRs.
+export const TRIAL_LIMITS: PlanLimits = {
+  ...PLANS.pro,
+  qr_codes: PLANS.free.qr_codes, // 3 QRs max during trial
+};
 
 export type AddonId = 'extra_scans_50k' | 'extra_qr_5';
 

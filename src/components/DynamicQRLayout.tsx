@@ -202,9 +202,6 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
             <span className="page-sub hidden sm:inline" id="page-sub" style={{ marginLeft: '12px' }}>{sub}</span>
           </div>
           <div className="topbar-right">
-            {(location.pathname === '/' || location.pathname === '/analytics') && (
-              <button className="btn btn-ghost btn-sm hidden sm:flex" id="topbar-date">Last 30 days ▾</button>
-            )}
             <button className="btn btn-primary btn-sm" onClick={() => navigate('/create')}>
               <span className="hidden sm:inline">+ New QR</span>
               <span className="sm:hidden">+</span>
