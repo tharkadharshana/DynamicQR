@@ -38,7 +38,7 @@ Multi-Layered Quick Response Code
 
 ## What is MLQR?
 
-MLQR is a production-grade **dynamic QR code platform** where every scan passes through a configurable stack of layers — active status, expiry date, scan limit, password verification, device routing — before the user is redirected. Each layer is evaluated in under 50ms on a Cloudflare edge server nearest to the scanner, with no database roundtrip on the critical path.
+MLQR is a production-grade **Scnr QR code platform** where every scan passes through a configurable stack of layers — active status, expiry date, scan limit, password verification, device routing — before the user is redirected. Each layer is evaluated in under 50ms on a Cloudflare edge server nearest to the scanner, with no database roundtrip on the critical path.
 
 Businesses get a dashboard to create and manage QR codes, inspect real-time analytics, set gate rules, and manage their subscription. Developers on the Team plan get a REST API and webhook system to integrate MLQR into their own workflows.
 
@@ -338,7 +338,7 @@ The only location where KV eventual consistency matters is near a scan limit. Wi
 | Pro | $7 | Unlimited dynamic | 90 days | No |
 | Team | $29 | Unlimited dynamic | 365 days | Full REST + webhooks |
 
-Static QR codes on the Free plan never expire and never require an active subscription to redirect. Dynamic QR codes require an active Pro or Team plan — they return 410 if the subscription lapses.
+Static QR codes on the Free plan never expire and never require an active subscription to redirect. Scnr QR codes require an active Pro or Team plan — they return 410 if the subscription lapses.
 
 ---
 
