@@ -3,6 +3,7 @@ import { useNavigate, useOutletContext } from 'react-router-dom';
 import { auth, logout } from '../firebase';
 import { updateProfile } from 'firebase/auth';
 import { apiFetch, formatNumber } from '../lib/api';
+import { useUI } from '../shared/UIContext';
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -34,20 +35,16 @@ export default function Settings() {
     }
   }, [user, planData]);
 
-  const showToast = (type: string, message: string) => {
-    alert(`${type.toUpperCase()}: ${message}`);
-  };
+  const { showModal, showToast } = useUI();
 
   const handleSaveProfile = async () => {
     setSavingProfile(true);
     try {
       if (user) {
-        // 1. Update Firebase Auth Profile (DisplayName)
         await updateProfile(user, {
           displayName: `${firstName} ${lastName}`.trim()
         });
         
-        // 2. Update Extended Profile in Firestore
         await apiFetch('/api/user/profile', {
           method: 'PUT',
           body: JSON.stringify({ company, jobTitle, country, timezone })
@@ -62,81 +59,27 @@ export default function Settings() {
     }
   };
 
-  /* 
-  // --- MOCKED HANDLERS (Preserved for future implementation) ---
-  const [pwCurrent, setPwCurrent] = useState('');
-  const [pwNew, setPwNew] = useState('');
-  const [pwConfirm, setPwConfirm] = useState('');
-  const [showPwForm, setShowPwForm] = useState(false);
-  const [tfaEnabled, setTfaEnabled] = useState(false);
-  const [showTfaSetup, setShowTfaSetup] = useState(false);
-  const [savingSettings, setSavingSettings] = useState(false);
-  const [savingPrefs, setSavingPrefs] = useState(false);
-  const [savingWebhook, setSavingWebhook] = useState(false);
-
-  const handleSavePassword = () => {
-    if (!pwCurrent || !pwNew) { showToast('error', 'Please fill all password fields'); return; }
-    if (pwNew !== pwConfirm) { showToast('error', 'New passwords do not match'); return; }
-    if (pwNew.length < 8) { showToast('error', 'Password must be at least 8 characters'); return; }
-    showToast('success', 'Password updated successfully');
-    setShowPwForm(false);
-    setPwCurrent(''); setPwNew(''); setPwConfirm('');
-  };
-
-  const toggle2FA = () => {
-    if (tfaEnabled) {
-      setTfaEnabled(false);
-      setShowTfaSetup(false);
-      showToast('success', '2FA disabled');
-    } else {
-      setShowTfaSetup(true);
-    }
-  };
-
-  const confirm2FA = () => {
-    setTfaEnabled(true);
-    setShowTfaSetup(false);
-    showToast('success', 'Two-factor authentication enabled');
-  };
-
-  const handleSaveSettings = (type: 'notifications' | 'preferences') => {
-    if (type === 'notifications') {
-      setSavingSettings(true);
-      setTimeout(() => { setSavingSettings(false); showToast('success', 'Preferences saved'); }, 800);
-    } else {
-      setSavingPrefs(true);
-      setTimeout(() => { setSavingPrefs(false); showToast('success', 'Preferences saved'); }, 800);
-    }
-  };
-
-  const handleSaveWebhook = () => {
-    if (!webhookUrl) { showToast('error', 'Enter a webhook URL first'); return; }
-    setSavingWebhook(true);
-    setTimeout(() => { setSavingWebhook(false); showToast('success', 'Webhook endpoint saved'); }, 600);
-  };
-
-  const testWebhook = () => {
-    if (!webhookUrl) { showToast('error', 'Save a webhook URL first'); return; }
-    showToast('success', 'Test event sent to ' + webhookUrl.slice(0, 40));
-  };
-  // -------------------------------------------------------------
-  */
-
-  const revokeAllSessions = async () => {
-    if (window.confirm('Revoke all other sessions? This will invalidate all active tokens and log you out for security.')) {
-      try {
-        await apiFetch('/api/user/revoke-sessions', { method: 'POST' });
-        showToast('success', 'All sessions revoked. Please sign in again.');
-        setTimeout(async () => {
-          await logout();
-          navigate('/login');
-        }, 1500);
-      } catch (err) {
-        showToast('error', 'Failed to revoke sessions');
+  const revokeAllSessions = () => {
+    showModal({
+      type: 'confirm',
+      title: 'Revoke sessions',
+      message: 'Revoke all other sessions? This will invalidate all active tokens and log you out for security.',
+      confirmText: 'Revoke all',
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          await apiFetch('/api/user/revoke-sessions', { method: 'POST' });
+          showToast('success', 'All sessions revoked. Please sign in again.');
+          setTimeout(async () => {
+            await logout();
+            navigate('/login');
+          }, 1500);
+        } catch (err) {
+          showToast('error', 'Failed to revoke sessions');
+        }
       }
-    }
+    });
   };
-
 
   const exportData = async () => {
     try {
@@ -155,44 +98,45 @@ export default function Settings() {
     }
   };
 
-  /*
-  const checkPasswordStrength = (pw: string) => {
-    let score = 0;
-    if (pw.length >= 8) score++;
-    if (/[A-Z]/.test(pw)) score++;
-    if (/[0-9]/.test(pw)) score++;
-    if (/[^A-Za-z0-9]/.test(pw)) score++;
-    return score;
-  };
-  */
-
-  const deactivateAll = async () => {
-    if (window.confirm('Deactivate all QR codes? Scans will return 410 until you reactivate them.')) {
-      try {
-        await apiFetch('/api/user/deactivate-all', { method: 'PUT' });
-        showToast('success', 'All QR codes deactivated');
-      } catch (err) {
-        showToast('error', 'Failed to deactivate QR codes');
+  const deactivateAll = () => {
+    showModal({
+      type: 'confirm',
+      title: 'Deactivate all QRs',
+      message: 'Deactivate all QR codes? Scans will return 410 until you reactivate them.',
+      confirmText: 'Deactivate all',
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          await apiFetch('/api/user/deactivate-all', { method: 'PUT' });
+          showToast('success', 'All QR codes deactivated');
+        } catch (err) {
+          showToast('error', 'Failed to deactivate QR codes');
+        }
       }
-    }
+    });
   };
 
-  const deleteAccount = async () => {
-    const confirm1 = window.prompt('Type DELETE to confirm account deletion. This cannot be undone and will delete all your QR codes and analytics.');
-    if (confirm1 === 'DELETE') {
-      try {
-        await apiFetch('/api/user/account', { method: 'DELETE' });
-        showToast('success', 'Account deleted. Redirecting...');
-        setTimeout(async () => {
-          await logout();
-          navigate('/login');
-        }, 2000);
-      } catch (err) {
-        showToast('error', 'Failed to delete account');
+  const deleteAccount = () => {
+    showModal({
+      type: 'prompt',
+      title: 'Delete account',
+      message: 'Type DELETE to confirm account deletion. This cannot be undone and will delete all your QR codes and analytics.',
+      confirmText: 'Delete account',
+      isDestructive: true,
+      validationString: 'DELETE',
+      onConfirm: async () => {
+        try {
+          await apiFetch('/api/user/account', { method: 'DELETE' });
+          showToast('success', 'Account deleted. Redirecting...');
+          setTimeout(async () => {
+            await logout();
+            navigate('/login');
+          }, 2000);
+        } catch (err) {
+          showToast('error', 'Failed to delete account');
+        }
       }
-    } else if (confirm1 !== null) {
-      showToast('error', 'Confirmation text did not match — type DELETE exactly');
-    }
+    });
   };
 
 

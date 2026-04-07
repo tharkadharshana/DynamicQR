@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { auth } from '../firebase';
 import { apiFetch } from '../lib/api';
+import { useUI } from '../shared/UIContext';
 
 export default function Billing() {
   const { planData } = useOutletContext<{ planData: any }>();
@@ -9,6 +10,7 @@ export default function Billing() {
   const [loadingInvoices, setLoadingInvoices] = useState(true);
   const [isAnnual, setIsAnnual] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { showToast } = useUI();
 
   useEffect(() => {
     apiFetch('/api/billing/invoices')
@@ -40,10 +42,6 @@ export default function Billing() {
     ? new Date(plan_since).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : '—';
   const billingEmail = email || auth.currentUser?.email || '—';
-  
-  const showToast = (type: string, message: string) => {
-    alert(`${type.toUpperCase()}: ${message}`);
-  };
 
   const handleCheckout = async (targetPlan: string) => {
     try {
@@ -89,7 +87,7 @@ export default function Billing() {
               onClick={() => setIsAnnual(false)}
               style={{ 
                 padding: '8px 20px', borderRadius: '26px', border: 'none', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                background: !isAnnual ? 'white' : 'transparent', color: !isAnnual ? '#000' : 'var(--text3)',
+                background: !isAnnual ? 'white' : 'transparent', color: !isAnnual ? 'var(--text)' : 'var(--text3)',
                 boxShadow: !isAnnual ? '0 2px 8px rgba(0,0,0,0.05)' : 'none'
               }}
             >Monthly</button>
@@ -97,7 +95,7 @@ export default function Billing() {
               onClick={() => setIsAnnual(true)}
               style={{ 
                 padding: '8px 20px', borderRadius: '26px', border: 'none', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                background: isAnnual ? 'white' : 'transparent', color: isAnnual ? '#000' : 'var(--text3)',
+                background: isAnnual ? 'white' : 'transparent', color: isAnnual ? 'var(--text)' : 'var(--text3)',
                 boxShadow: isAnnual ? '0 2px 8px rgba(0,0,0,0.05)' : 'none',
                 display: 'flex', alignItems: 'center', gap: '6px'
               }}
