@@ -84,8 +84,9 @@ const orderBy = (field: string, dir?: any) => (q: any) => q.orderBy(field, dir |
 const limit = (n: number) => (q: any) => q.limit(n);
 const documentId = () => FieldPath.documentId();
 
+export const app = express();
+
 async function startServer() {
-  const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
   logger.info(`Starting server in ${process.env.NODE_ENV} mode`);
@@ -2009,13 +2010,13 @@ async function startServer() {
   });
 
   // Vite middleware for development
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
+  } else if (process.env.NODE_ENV === 'production' && !process.env.VERCEL) {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
@@ -2023,9 +2024,12 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    logger.info(`Server running on port ${PORT}`);
-  });
+  if (!process.env.VERCEL) {
+    app.listen(PORT, '0.0.0.0', () => {
+      logger.info(`Server running on port ${PORT}`);
+    });
+  }
+  return app;
 }
 
 // Analytics Capture Logic
@@ -2168,3 +2172,5 @@ function classifyReferer(referer: string) {
 }
 
 startServer();
+
+export default app;
