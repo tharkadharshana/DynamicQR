@@ -24,16 +24,27 @@ try {
 
 const projectId = process.env.FIREBASE_PROJECT_ID || firebaseConfig.projectId;
 const dbId = process.env.FIRESTORE_DATABASE_ID || firebaseConfig.firestoreDatabaseId;
-const apiKey = process.env.FIREBASE_API_KEY || firebaseConfig.apiKey;
-const authDomain = process.env.FIREBASE_AUTH_DOMAIN || firebaseConfig.authDomain;
-const storageBucket = process.env.FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket;
-const messagingSenderId = process.env.FIREBASE_MESSAGING_SENDER_ID || firebaseConfig.messagingSenderId;
-const appId = process.env.FIREBASE_APP_ID || firebaseConfig.appId;
 
 if (!admin.apps.length) {
-  admin.initializeApp({
-    projectId: projectId,
-  });
+  const serviceAccountVar = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (serviceAccountVar) {
+    try {
+      const serviceAccount = JSON.parse(serviceAccountVar);
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+        projectId: projectId,
+      });
+      logger.info('Firebase Admin initialized with Service Account');
+    } catch (err) {
+      logger.error('Failed to parse FIREBASE_SERVICE_ACCOUNT env var:', err);
+      admin.initializeApp({ projectId });
+    }
+  } else {
+    admin.initializeApp({
+      projectId: projectId,
+    });
+    logger.info('Firebase Admin initialized with Project ID (Ambient Credentials)');
+  }
 }
 const db = getFirestore(dbId);
 
