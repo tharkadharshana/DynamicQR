@@ -96,7 +96,6 @@ const limit = (n: number) => (q: any) => q.limit(n);
 const documentId = () => FieldPath.documentId();
 
 export const app = express();
-export default app;
 
 async function startServer() {
   const PORT = Number(process.env.PORT) || 3000;
@@ -2044,6 +2043,11 @@ async function startServer() {
   return app;
 }
 
+await startServer().catch((err) => {
+  logger.error('Server startup failed', err);
+  process.exit(1);
+});
+
 // Analytics Capture Logic
 async function captureAnalyticsFromPayload(payload: any, qrOwnerUid?: string) {
   const { slug, ip, ua, country, asn, colo, tls, lang, is_eu, is_unique: payloadIsUnique, status } = payload;
@@ -2183,6 +2187,9 @@ function classifyReferer(referer: string) {
   return 'browser';
 }
 
-startServer();
+await startServer().catch((err) => {
+  logger.error('Server startup failed', err);
+  process.exit(1);
+});
 
 export default app;
