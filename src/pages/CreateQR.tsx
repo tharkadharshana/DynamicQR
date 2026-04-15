@@ -570,7 +570,7 @@ export default function CreateQR() {
 
               <div className="toggle-wrap" style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 500, marginBottom: '4px' }}>Scnr</div>
+                  <div style={{ fontWeight: 500, marginBottom: '4px' }}>Dynamic QR</div>
                   <div style={{ fontSize: '13px', color: 'var(--text3)' }}>Editable destination + scan analytics</div>
                 </div>
                 <button 
@@ -745,7 +745,9 @@ export default function CreateQR() {
                       expiry_date_enabled: false,
                       expiry_date: '',
                       scan_limit_enabled: false,
-                      scan_limit: 100
+                      scan_limit: 100,
+                      visitor_rate_limit: 5,
+                      visitor_rate_period: 3600
                     }
                   });
                 }}

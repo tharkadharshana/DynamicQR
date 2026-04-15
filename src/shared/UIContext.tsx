@@ -1,4 +1,9 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+<<<<<<< HEAD
+=======
+import ConfirmationModal from '../components/ConfirmationModal';
+import ToastContainer from '../components/ToastContainer';
+>>>>>>> ab398943b2bb0b7cc73fb004455863abb1874e97
 
 type ModalType = 'alert' | 'confirm' | 'prompt';
 
@@ -66,6 +71,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
   return (
     <UIContext.Provider value={{ showModal, closeModal, showToast, removeToast }}>
       {children}
+<<<<<<< HEAD
       {/* Modals and Toasts will be rendered in a Container component included in Layout */}
       <div id="ui-portal-root">
         {/* We'll pass state to a specialized container or render directly if it's easier */}
@@ -74,15 +80,20 @@ export function UIProvider({ children }: { children: ReactNode }) {
           Wait, I'll pass the state down or expose it to a component that uses this context.
           Actually, I'll export a hook and the provider. 
       */}
+=======
+>>>>>>> ab398943b2bb0b7cc73fb004455863abb1874e97
       <InternalUIComponents modal={modal} toasts={toasts} onCloseModal={closeModal} removeToast={removeToast} />
     </UIContext.Provider>
   );
 }
 
+<<<<<<< HEAD
 // Internal component to render the actual UI elements to avoid re-rendering the whole context on every toast change
 import ConfirmationModal from '../components/ConfirmationModal';
 import ToastContainer from '../components/ToastContainer';
 
+=======
+>>>>>>> ab398943b2bb0b7cc73fb004455863abb1874e97
 function InternalUIComponents({ 
   modal, 
   toasts, 

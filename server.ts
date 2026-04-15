@@ -24,16 +24,27 @@ try {
 
 const projectId = process.env.FIREBASE_PROJECT_ID || firebaseConfig.projectId;
 const dbId = process.env.FIRESTORE_DATABASE_ID || firebaseConfig.firestoreDatabaseId;
-const apiKey = process.env.FIREBASE_API_KEY || firebaseConfig.apiKey;
-const authDomain = process.env.FIREBASE_AUTH_DOMAIN || firebaseConfig.authDomain;
-const storageBucket = process.env.FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket;
-const messagingSenderId = process.env.FIREBASE_MESSAGING_SENDER_ID || firebaseConfig.messagingSenderId;
-const appId = process.env.FIREBASE_APP_ID || firebaseConfig.appId;
 
 if (!admin.apps.length) {
-  admin.initializeApp({
-    projectId: projectId,
-  });
+  const serviceAccountVar = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (serviceAccountVar) {
+    try {
+      const serviceAccount = JSON.parse(serviceAccountVar);
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+        projectId: projectId,
+      });
+      logger.info('Firebase Admin initialized with Service Account');
+    } catch (err) {
+      logger.error('Failed to parse FIREBASE_SERVICE_ACCOUNT env var:', err);
+      admin.initializeApp({ projectId });
+    }
+  } else {
+    admin.initializeApp({
+      projectId: projectId,
+    });
+    logger.info('Firebase Admin initialized with Project ID (Ambient Credentials)');
+  }
 }
 const db = getFirestore(dbId);
 
@@ -84,8 +95,9 @@ const orderBy = (field: string, dir?: any) => (q: any) => q.orderBy(field, dir |
 const limit = (n: number) => (q: any) => q.limit(n);
 const documentId = () => FieldPath.documentId();
 
+export const app = express();
+
 async function startServer() {
-  const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
   logger.info(`Starting server in ${process.env.NODE_ENV} mode`);
@@ -98,6 +110,17 @@ async function startServer() {
   }
   
   logger.info(`CORS Origin: ${corsOrigin || '*'}`);
+  
+  // Security Headers for Firebase Auth in Iframe
+  app.use((req, res, next) => {
+    // Cross-Origin-Opener-Policy: unsafe-none is the default, but being explicit 
+    // helps when the environment or browser defaults to same-origin.
+    // This allows the Firebase Auth popup to communicate back to the opener window.
+    res.setHeader('Cross-Origin-Opener-Policy', 'unsafe-none');
+    // Ensure the iframe can load resources from the auth domain
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
+  });
   
   app.use(cors({ 
     origin: corsOrigin || '*',
@@ -1998,13 +2021,13 @@ async function startServer() {
   });
 
   // Vite middleware for development
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
+  } else if (process.env.NODE_ENV === 'production' && !process.env.VERCEL) {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
@@ -2012,9 +2035,12 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    logger.info(`Server running on port ${PORT}`);
-  });
+  if (!process.env.VERCEL) {
+    app.listen(PORT, '0.0.0.0', () => {
+      logger.info(`Server running on port ${PORT}`);
+    });
+  }
+  return app;
 }
 
 // Analytics Capture Logic
@@ -2157,3 +2183,5 @@ function classifyReferer(referer: string) {
 }
 
 startServer();
+
+export default app;
