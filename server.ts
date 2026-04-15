@@ -8,9 +8,9 @@ import { getFirestore, FieldValue, FieldPath } from 'firebase-admin/firestore';
 import crypto from 'crypto';
 import { customAlphabet } from 'nanoid';
 import QRCode from 'qrcode';
-import logger from "./logger.ts";
+import logger from "./logger.js";
 import fs from 'fs';
-import { PLANS, TRIAL_LIMITS, DEFAULT_ADDONS, PlanId, UserAddons, ADDONS, AddonId } from './src/lib/plans.ts';
+import { PLANS, TRIAL_LIMITS, DEFAULT_ADDONS, PlanId, UserAddons, ADDONS, AddonId } from './src/lib/plans.js';
 
 // Initialize Firebase Admin
 let firebaseConfig: any = {};
@@ -135,7 +135,10 @@ async function startServer() {
     try {
       const authHeader = req.headers.authorization;
       if (!authHeader?.startsWith('Bearer ')) {
-        logger.warn(`Missing or invalid auth header for ${req.path}`);
+        logger.warn(`Missing or invalid auth header for ${req.path}`, { 
+          hasAuthHeader: !!authHeader,
+          authHeaderStart: authHeader?.substring(0, 10)
+        });
         return res.status(401).send('Unauthorized');
       }
       const token = authHeader.split('Bearer ')[1];
@@ -146,7 +149,7 @@ async function startServer() {
       logger.error(`Auth error for ${req.path}:`, { 
         message: error.message,
         code: error.code,
-        stack: error.stack
+        stack: error.stack?.substring(0, 500)
       });
       res.status(401).send(`Unauthorized: ${error.message || 'Invalid token'}`);
     }
@@ -174,7 +177,27 @@ async function startServer() {
 
   // API routes
   app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok' });
+    const envStatus = {
+      NODE_ENV: process.env.NODE_ENV,
+      APP_URL: process.env.APP_URL ? 'set' : 'missing',
+      FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID ? 'set' : 'missing',
+      FIREBASE_SERVICE_ACCOUNT: process.env.FIREBASE_SERVICE_ACCOUNT ? 'set' : 'missing',
+      FIRESTORE_DATABASE_ID: process.env.FIRESTORE_DATABASE_ID ? 'set' : 'missing',
+      INTERNAL_SECRET: process.env.INTERNAL_SECRET ? 'set' : 'missing',
+      VERCEL: process.env.VERCEL ? 'true' : 'false'
+    };
+    
+    const criticalMissing = [];
+    if (!process.env.APP_URL) criticalMissing.push('APP_URL');
+    if (!process.env.FIREBASE_PROJECT_ID) criticalMissing.push('FIREBASE_PROJECT_ID');
+    if (!process.env.FIREBASE_SERVICE_ACCOUNT) criticalMissing.push('FIREBASE_SERVICE_ACCOUNT');
+    
+    res.json({ 
+      status: criticalMissing.length === 0 ? 'ok' : 'error',
+      timestamp: new Date().toISOString(),
+      environment: envStatus,
+      critical_missing: criticalMissing
+    });
   });
 
   async function getLicense(uid: string): Promise<{
@@ -224,12 +247,16 @@ async function startServer() {
 
   // User Plan API
   app.get('/api/user/plan', authenticate, async (req, res) => {
+    const uid = (req as any).user.uid;
+    logger.info(`Plan fetch started for user ${uid}`);
+    
     try {
-      const uid = (req as any).user.uid;
       const userRef = doc(db, 'users', uid);
       const userSnap = await getDoc(userRef);
+      logger.info(`User document fetch: exists=${userSnap.exists()}`);
 
       if (!userSnap.exists()) {
+        logger.info(`Creating new user document for ${uid}`);
         // First time - create with 14-day trial
         const trialEnd = new Date();
         trialEnd.setDate(trialEnd.getDate() + 14);
@@ -245,14 +272,16 @@ async function startServer() {
           created_at: serverTimestamp(),
           email: (req as any).user.email || '',
         });
+        logger.info(`New user document created for ${uid}`);
       }
 
       const license = await getLicense(uid);
+      logger.info(`License calculated for ${uid}: plan=${license.effectivePlan}, trial=${license.isTrial}`);
       
       // Fetch ALL QR codes (active + inactive) for accurate totals
       const allQrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
       const allSlugs: string[] = allQrSnapshot.docs.map((d: any) => d.data().slug);
-      logger.info(`Stats aggregation for user ${uid}: found ${allSlugs.length} slugs: ${allSlugs.join(', ')}`);
+      logger.info(`Stats aggregation for user ${uid}: found ${allSlugs.length} slugs`);
       const activeQrs = allQrSnapshot.docs.filter((d: any) => d.data().is_active !== false).length;
       const remaining_qr = license.limits.qr_codes === -1 ? -1 : Math.max(0, license.limits.qr_codes - activeQrs);
 
@@ -269,7 +298,7 @@ async function startServer() {
       for (const chunk of chunks) {
         try {
           const statsSnaps = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
-          logger.info(`Plan fetch: chunk stats count: ${statsSnaps.size}`);
+          logger.info(`Plan fetch: chunk stats count: ${statsSnaps.size} for chunk ${chunk.join(',')}`);
           statsSnaps.forEach((s: any) => {
             const d = s.data();
             totalScans += d.total_scans || 0;
@@ -280,7 +309,7 @@ async function startServer() {
             monthlyScansFromStats += d.monthly_scans?.[currentMonth] || 0;
           });
         } catch (e: any) {
-          logger.error('Plan fetch error in stats chunk query', { error: e.message, chunk });
+          logger.error('Plan fetch error in stats chunk query', { error: e.message, chunk, uid });
         }
       }
 
@@ -293,6 +322,8 @@ async function startServer() {
       const monthlyScansUsed = userLevelMonthly > 0 ? userLevelMonthly : monthlyScansFromStats;
 
       const userDoc = userSnap.data();
+      logger.info(`Plan fetch completed for ${uid}: totalScans=${totalScans}, monthlyScans=${monthlyScansUsed}`);
+      
       // Prevent browser/CDN caching of plan data — always needs to be fresh
       res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
       res.set('Pragma', 'no-cache');
@@ -320,9 +351,14 @@ async function startServer() {
         },
         is_sandbox: process.env.PAYHERE_SANDBOX === 'true'
       });
-    } catch (error) {
-      logger.error('Plan fetch error:', error);
-      res.status(500).json({ error: 'Failed to fetch plan' });
+    } catch (error: any) {
+      logger.error('Plan fetch error:', { 
+        message: error.message,
+        code: error.code,
+        stack: error.stack?.substring(0, 1000),
+        uid
+      });
+      res.status(500).json({ error: 'Failed to fetch plan', details: error.message });
     }
   });
 

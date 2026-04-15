@@ -328,7 +328,7 @@ export default function Analytics() {
                 </span>
               </div>
             </div>
-            <div style={{ height: '200px', position: 'relative', marginTop: '16px' }}>
+            <div style={{ height: '200px', position: 'relative', marginTop: '16px', minHeight: '200px', minWidth: 0 }}>
               {timeseries.length === 0 ? (
                 <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: '13px', background: 'var(--surface2)', borderRadius: '4px' }}>
                   No scan data found for this period
@@ -367,7 +367,7 @@ export default function Analytics() {
           </div>
           <div className="card">
             <div className="card-title">Top countries</div>
-            <div style={{ height: '200px', marginTop: '16px' }}>
+            <div style={{ height: '200px', marginTop: '16px', minHeight: '200px', minWidth: 0 }}>
               {countries.length === 0 ? (
                 <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: '13px', background: 'var(--surface2)', borderRadius: '4px' }}>
                   No geographic data yet
@@ -394,7 +394,7 @@ export default function Analytics() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div>
                 <div className="card-title">Device</div>
-                <div style={{ height: '160px', marginTop: '16px' }}>
+                <div style={{ height: '160px', marginTop: '16px', minHeight: '160px', minWidth: 0 }}>
                   {devices.length === 0 ? (
                     <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: '12px', background: 'var(--surface2)', borderRadius: '4px' }}>
                       No device data
