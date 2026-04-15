@@ -22,7 +22,7 @@
       "dest": "/api/index.ts"
     },
     {
-      "src": "/\.env",
+      "src": "/\\.env",
       "dest": "/api/index.ts"
     },
     {
