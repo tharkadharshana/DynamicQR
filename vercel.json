@@ -1,5 +1,10 @@
 {
   "version": 2,
+  "functions": {
+    "api/index.ts": {
+      "maxDuration": 30
+    }
+  },
   "builds": [
     {
       "src": "package.json",
@@ -14,6 +19,10 @@
   "routes": [
     {
       "src": "/api/(.*)",
+      "dest": "/api/index.ts"
+    },
+    {
+      "src": "/\.env",
       "dest": "/api/index.ts"
     },
     {
