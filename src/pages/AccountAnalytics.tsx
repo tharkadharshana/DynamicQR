@@ -165,7 +165,7 @@ export default function AccountAnalytics() {
                 </div>
               </div>
             </div>
-            <div style={{ height: '200px', position: 'relative', marginTop: '16px' }}>
+            <div style={{ height: '200px', position: 'relative', minHeight: '200px', minWidth: 0, marginTop: '16px' }}>
               {accountTimeseries.length === 0 ? (
                 <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: '13px', background: 'var(--surface2)', borderRadius: '4px' }}>
                   No scan data found for this period
@@ -204,7 +204,7 @@ export default function AccountAnalytics() {
           </div>
           <div className="card">
             <div className="card-title">Top countries</div>
-            <div style={{ height: '200px', marginTop: '16px' }}>
+            <div style={{ height: '200px', minHeight: '200px', minWidth: 0, marginTop: '16px' }}>
               {accountCountries.length === 0 ? (
                 <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: '13px', background: 'var(--surface2)', borderRadius: '4px' }}>
                   No geographic data yet
