@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { auth } from '../firebase';
 import { apiFetch } from '../lib/api';
+import { useUI } from '../shared/UIContext';
 
 export default function Billing() {
   const { planData } = useOutletContext<{ planData: any }>();
@@ -9,6 +10,7 @@ export default function Billing() {
   const [loadingInvoices, setLoadingInvoices] = useState(true);
   const [isAnnual, setIsAnnual] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { showToast } = useUI();
 
   useEffect(() => {
     apiFetch('/api/billing/invoices')
@@ -40,10 +42,6 @@ export default function Billing() {
     ? new Date(plan_since).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : '—';
   const billingEmail = email || auth.currentUser?.email || '—';
-  
-  const showToast = (type: string, message: string) => {
-    alert(`${type.toUpperCase()}: ${message}`);
-  };
 
   const handleCheckout = async (targetPlan: string) => {
     try {

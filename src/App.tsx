@@ -20,6 +20,8 @@ import RefundPolicy from './pages/RefundPolicy';
 
 import ErrorBoundary from './components/ErrorBoundary';
 
+import { UIProvider } from './shared/UIContext';
+
 export default function App() {
   const [user, setUser] = useState<any>(null);
   const [planData, setPlanData] = useState<any>(null);
@@ -49,34 +51,36 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <Router>
-        <Routes>
-          {/* Public Legal Routes */}
-          <Route path="/legal/privacy-policy" element={<PrivacyPolicy />} />
-          <Route path="/legal/terms-and-conditions" element={<TermsConditions />} />
-          <Route path="/legal/refund-policy" element={<RefundPolicy />} />
+      <UIProvider>
+        <Router>
+          <Routes>
+            {/* Public Legal Routes */}
+            <Route path="/legal/privacy-policy" element={<PrivacyPolicy />} />
+            <Route path="/legal/terms-and-conditions" element={<TermsConditions />} />
+            <Route path="/legal/refund-policy" element={<RefundPolicy />} />
 
-          {user ? (
-            <Route path="/" element={<DynamicQRLayout planData={planData} />}>
-              <Route index element={<Dashboard />} />
-              <Route path="create" element={<CreateQR />} />
-              <Route path="edit/:id" element={<CreateQR />} />
-              <Route path="analytics" element={<AccountAnalytics />} />
-              <Route path="analytics/:slug" element={<Analytics />} />
-              <Route path="api-docs" element={<ApiDocs />} />
-              <Route path="billing" element={<Billing />} />
-              <Route path="pricing" element={<Pricing />} />
-              <Route path="settings" element={<SettingsPage />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Route>
-          ) : (
-            <>
-              <Route path="/login" element={<Landing />} />
-              <Route path="*" element={<Navigate to="/login" replace />} />
-            </>
-          )}
-        </Routes>
-      </Router>
+            {user ? (
+              <Route path="/" element={<DynamicQRLayout planData={planData} />}>
+                <Route index element={<Dashboard />} />
+                <Route path="create" element={<CreateQR />} />
+                <Route path="edit/:id" element={<CreateQR />} />
+                <Route path="analytics" element={<AccountAnalytics />} />
+                <Route path="analytics/:slug" element={<Analytics />} />
+                <Route path="api-docs" element={<ApiDocs />} />
+                <Route path="billing" element={<Billing />} />
+                <Route path="pricing" element={<Pricing />} />
+                <Route path="settings" element={<SettingsPage />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Route>
+            ) : (
+              <>
+                <Route path="/login" element={<Landing />} />
+                <Route path="*" element={<Navigate to="/login" replace />} />
+              </>
+            )}
+          </Routes>
+        </Router>
+      </UIProvider>
     </ErrorBoundary>
   );
 }

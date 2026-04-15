@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { auth } from '../firebase';
 import QRCode from 'qrcode';
-import ConfirmationModal from '../components/ConfirmationModal';
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
 import { apiFetch } from '../lib/api';
+import { useUI } from '../shared/UIContext';
 
 export default function Dashboard() {
   const [qrCodes, setQrCodes] = useState<any[]>([]);
@@ -19,13 +19,9 @@ export default function Dashboard() {
   const [countries, setCountries] = useState<any[]>([]);
   const [recentScans, setRecentScans] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; qrId: string; slug: string }>({
-    isOpen: false,
-    qrId: '',
-    slug: ''
-  });
   const [planData, setPlanData] = useState<any>(null);
   const navigate = useNavigate();
+  const { showModal, showToast } = useUI();
 
   const fetchTimeseries = async () => {
     if (!auth.currentUser) return;
@@ -90,25 +86,32 @@ export default function Dashboard() {
     fetchData();
   }, [auth.currentUser]);
 
-  const handleDelete = async (qrId: string, slug: string) => {
-    setDeleteModal({ isOpen: true, qrId, slug });
-  };
-
-  const confirmDelete = async () => {
-    const { qrId, slug } = deleteModal;
-    try {
-      await apiFetch(`/api/qr/${slug}`, {
-        method: 'DELETE'
-      });
-      
-      setQrCodes(prev => prev.filter(qr => qr.id !== qrId));
-      const newStats = { ...stats };
-      delete newStats[qrId];
-      setStats(newStats);
-    } catch (err) {
-      console.error(err);
-      alert('Error deleting QR code.');
-    }
+  const handleDelete = (qrId: string, slug: string) => {
+    showModal({
+      type: 'confirm',
+      title: 'Delete QR Code',
+      message: 'Are you sure you want to delete this QR code? This action cannot be undone and all historical scan data, analytics, and stats related to this QR code will be permanently deleted.',
+      confirmText: 'Delete Permanently',
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          await apiFetch(`/api/qr/${slug}`, {
+            method: 'DELETE'
+          });
+          
+          setQrCodes(prev => prev.filter(qr => qr.id !== qrId));
+          setStats(prev => {
+            const next = { ...prev };
+            delete next[qrId];
+            return next;
+          });
+          showToast('success', 'QR code deleted successfully');
+        } catch (err) {
+          console.error(err);
+          showToast('error', 'Error deleting QR code.');
+        }
+      }
+    });
   };
 
   useEffect(() => {
@@ -439,15 +442,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <ConfirmationModal
-        isOpen={deleteModal.isOpen}
-        onClose={() => setDeleteModal({ ...deleteModal, isOpen: false })}
-        onConfirm={confirmDelete}
-        title="Delete QR Code"
-        message="Are you sure you want to delete this QR code? This action cannot be undone and all historical scan data, analytics, and stats related to this QR code will be permanently deleted."
-        confirmText="Delete Permanently"
-        isDestructive={true}
-      />
     </div>
   );
 }

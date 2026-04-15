@@ -3,14 +3,14 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import QRCodeStyling from 'qr-code-styling';
-import ConfirmationModal from '../components/ConfirmationModal';
 import { apiFetch } from '../lib/api';
+import { useUI } from '../shared/UIContext';
 
 export default function CreateQR() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const { showModal, showToast } = useUI();
   const [qrType, setQrType] = useState('url');
   const [isDynamic, setIsDynamic] = useState(true);
   const [urlError, setUrlError] = useState(false);
@@ -98,7 +98,7 @@ export default function CreateQR() {
         } catch (err: any) {
           console.error("Error fetching QR", err);
           if (err.status === 403 || err.status === 401) {
-            alert("You don't have permission to edit this QR code.");
+            showToast('error', "You don't have permission to edit this QR code.");
           }
           navigate('/');
         }
@@ -186,7 +186,7 @@ export default function CreateQR() {
     if (!file) return;
     
     if (file.size > 1024 * 1024) {
-      alert("Logo must be less than 1MB");
+      showToast('error', "Logo must be less than 1MB");
       return;
     }
 
@@ -240,32 +240,38 @@ export default function CreateQR() {
     } catch (error: any) {
       console.error('Error saving QR code:', error);
       if (error.status === 403) {
-        alert(error.message || 'Plan limit reached. Please upgrade.');
+        showToast('error', error.message || 'Plan limit reached. Please upgrade.');
         navigate('/billing');
       } else {
-        alert('Failed to save QR code');
+        showToast('error', 'Failed to save QR code');
       }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDelete = async () => {
-    setShowDeleteModal(true);
-  };
-
-  const confirmDelete = async () => {
-    try {
-      setLoading(true);
-      await apiFetch(`/api/qr/${formData.slug}`, {
-        method: 'DELETE'
-      });
-      navigate('/');
-    } catch (err) {
-      console.error(err);
-      alert('Error deleting QR code.');
-      setLoading(false);
-    }
+  const handleDelete = () => {
+    showModal({
+      type: 'confirm',
+      title: 'Delete QR Code',
+      message: 'Are you sure you want to delete this QR code? This action cannot be undone and all historical scan data, analytics, and stats related to this QR code will be permanently deleted.',
+      confirmText: 'Delete Permanently',
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          setLoading(true);
+          await apiFetch(`/api/qr/${formData.slug}`, {
+            method: 'DELETE'
+          });
+          showToast('success', 'QR code deleted successfully');
+          navigate('/');
+        } catch (err) {
+          console.error(err);
+          showToast('error', 'Error deleting QR code.');
+          setLoading(false);
+        }
+      }
+    });
   };
 
   const downloadPreview = (fmt: string) => {
@@ -805,16 +811,6 @@ export default function CreateQR() {
           </div>
         </div>
       </div>
-
-      <ConfirmationModal
-        isOpen={showDeleteModal}
-        onClose={() => setShowDeleteModal(false)}
-        onConfirm={confirmDelete}
-        title="Delete QR Code"
-        message="Are you sure you want to delete this QR code? This action cannot be undone and all historical scan data, analytics, and stats related to this QR code will be permanently deleted."
-        confirmText="Delete Permanently"
-        isDestructive={true}
-      />
     </div>
   );
 }
