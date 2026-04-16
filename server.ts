@@ -1,4 +1,10 @@
 import 'dotenv/config';
+
+// ── Debug Logging ─────────────────────────────────────────────────────────────
+// Set DEBUG_VERBOSE=true in Vercel env vars to enable.
+const DEBUG = process.env.DEBUG_VERBOSE === 'true';
+const dbg = (...args: any[]) => { if (DEBUG) console.log('[DBG]', ...args); };
+// ──────────────────────────────────────────────────────────────────────────────
 import express from 'express';
 import path from 'path';
 import cors from 'cors';
@@ -24,6 +30,7 @@ try {
 const projectId = process.env.FIREBASE_PROJECT_ID || firebaseConfig.projectId;
 const dbId = process.env.FIRESTORE_DATABASE_ID || firebaseConfig.firestoreDatabaseId;
 
+dbg('Firebase Admin init START', { projectId, dbId });
 if (!admin.apps.length) {
   const serviceAccountVar = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (serviceAccountVar) {
@@ -34,18 +41,23 @@ if (!admin.apps.length) {
         projectId: projectId,
       });
       logger.info('Firebase Admin initialized with Service Account');
+      dbg('Firebase Admin initialized with Service Account');
     } catch (err) {
       logger.error('Failed to parse FIREBASE_SERVICE_ACCOUNT env var:', err);
+      console.error('[DBG] Firebase Admin init FAILED to parse service account:', err);
       admin.initializeApp({ projectId });
+      dbg('Firebase Admin fallback initialized (Ambient)');
     }
   } else {
     admin.initializeApp({
       projectId: projectId,
     });
     logger.info('Firebase Admin initialized with Project ID (Ambient Credentials)');
+    dbg('Firebase Admin initialized with Project ID (Ambient)');
   }
 }
 const db = getFirestore(dbId);
+dbg('Firestore instance created', { dbId });
 
 // Shim to keep existing call patterns working
 const getDoc = (ref: any) => ref.get().then((snap: any) => {
@@ -66,11 +78,15 @@ const getDoc = (ref: any) => ref.get().then((snap: any) => {
 
 async function testConnection() {
   try {
+    dbg('Firestore connection test START');
     // Test connection to the specific database
     await db.collection('test_connection').doc('ping').get();
     logger.info("Firestore connection successful to database: " + firebaseConfig.firestoreDatabaseId);
+    dbg('Firestore connection test SUCCESS');
   } catch (error) {
     logger.error("Firestore connection test error:", error);
+    console.error('[DBG] Firestore connection test FAILED:', error);
+    dbg('Firestore connection test FAILURE', error);
   }
 }
 testConnection();
@@ -97,6 +113,7 @@ const documentId = () => FieldPath.documentId();
 export const app = express();
 
 async function startServer() {
+  dbg('startServer() entry');
   const PORT = Number(process.env.PORT) || 3000;
 
   logger.info(`Starting server in ${process.env.NODE_ENV} mode`);
@@ -120,6 +137,7 @@ async function startServer() {
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     next();
   });
+  dbg('Registered security headers middleware');
   
   app.use(cors({ 
     origin: corsOrigin || '*',
@@ -127,10 +145,14 @@ async function startServer() {
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-internal-secret']
   }));
+  dbg('Registered CORS middleware');
+
   app.use(express.json());
+  dbg('Registered express.json middleware');
 
   // Middlewares
   const authenticate = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    dbg('authenticate middleware START', { path: req.path, hasToken: !!req.headers.authorization });
     try {
       const authHeader = req.headers.authorization;
       if (!authHeader?.startsWith('Bearer ')) {
@@ -143,6 +165,7 @@ async function startServer() {
       const token = authHeader.split('Bearer ')[1];
       const decoded = await admin.auth().verifyIdToken(token);
       (req as any).user = decoded;
+      dbg('authenticate middleware END (success)', { uid: decoded.uid });
       next();
     } catch (error: any) {
       logger.error(`Auth error for ${req.path}:`, { 
@@ -150,32 +173,41 @@ async function startServer() {
         code: error.code,
         stack: error.stack?.substring(0, 500)
       });
+      dbg('authenticate middleware END (failure)', { error: error.message });
+      console.error('[500] Auth failure:', error);
       res.status(401).send(`Unauthorized: ${error.message || 'Invalid token'}`);
     }
   };
 
   const requireOwnership = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const { slug } = req.params;
+    dbg('requireOwnership middleware START', { slug, uid: (req as any).user?.uid });
     try {
-      const { slug } = req.params;
       const user = (req as any).user;
       if (!user) return res.status(401).send('Unauthorized');
 
+      dbg('Firestore getDoc START', { collection: 'qr_codes', docId: slug });
       const qrDoc = await getDoc(doc(db, 'qr_codes', slug));
+      dbg('Firestore getDoc END', { collection: 'qr_codes', docId: slug, exists: qrDoc.exists() });
       if (!qrDoc.exists()) return res.status(404).send('Not found');
       
       if (qrDoc.data().user_uid !== user.uid) {
         return res.status(403).send('Forbidden');
       }
       
+      dbg('requireOwnership middleware END (success)', { slug });
       next();
     } catch (error) {
       logger.error('Ownership check error:', error);
+      dbg('requireOwnership middleware END (error)');
+      console.error('[500] Ownership check error:', error);
       res.status(500).send('Internal Server Error');
     }
   };
 
   // API routes
   app.get('/api/health', (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/health' });
     const envStatus = {
       NODE_ENV: process.env.NODE_ENV,
       APP_URL: process.env.APP_URL ? 'set' : 'missing',
@@ -206,7 +238,10 @@ async function startServer() {
     isExpired: boolean;
     addons: UserAddons;
   }> {
+    dbg('getLicense() START', { uid });
+    dbg('Firestore getDoc START', { collection: 'users', docId: uid });
     const userSnap = await getDoc(doc(db, 'users', uid));
+    dbg('Firestore getDoc END', { collection: 'users', docId: uid, exists: userSnap.exists() });
     
     if (!userSnap.exists()) {
       return { effectivePlan: 'free', limits: PLANS.free, isTrial: false, isExpired: false, addons: DEFAULT_ADDONS };
@@ -247,11 +282,14 @@ async function startServer() {
   // User Plan API
   app.get('/api/user/plan', authenticate, async (req, res) => {
     const uid = (req as any).user.uid;
+    dbg('ROUTE START', { method: 'GET', path: '/api/user/plan', uid });
     logger.info(`Plan fetch started for user ${uid}`);
     
     try {
       const userRef = doc(db, 'users', uid);
+      dbg('Firestore getDoc START', { collection: 'users', docId: uid });
       const userSnap = await getDoc(userRef);
+      dbg('Firestore getDoc END', { collection: 'users', docId: uid, exists: userSnap.exists() });
       logger.info(`User document fetch: exists=${userSnap.exists()}`);
 
       if (!userSnap.exists()) {
@@ -260,6 +298,7 @@ async function startServer() {
         const trialEnd = new Date();
         trialEnd.setDate(trialEnd.getDate() + 14);
         
+        dbg('Firestore setDoc START', { collection: 'users', docId: uid });
         await setDoc(userRef, {
           plan: 'free',
           plan_expires_at: null,
@@ -271,6 +310,7 @@ async function startServer() {
           created_at: serverTimestamp(),
           email: (req as any).user.email || '',
         });
+        dbg('Firestore setDoc END', { collection: 'users', docId: uid });
         logger.info(`New user document created for ${uid}`);
       }
 
@@ -278,7 +318,9 @@ async function startServer() {
       logger.info(`License calculated for ${uid}: plan=${license.effectivePlan}, trial=${license.isTrial}`);
       
       // Fetch ALL QR codes (active + inactive) for accurate totals
+      dbg('Firestore getDocs START', { collection: 'qr_codes', uid });
       const allQrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      dbg('Firestore getDocs END', { collection: 'qr_codes', size: allQrSnapshot.size });
       const allSlugs: string[] = allQrSnapshot.docs.map((d: any) => d.data().slug);
       logger.info(`Stats aggregation for user ${uid}: found ${allSlugs.length} slugs`);
       const activeQrs = allQrSnapshot.docs.filter((d: any) => d.data().is_active !== false).length;
@@ -296,7 +338,9 @@ async function startServer() {
 
       for (const chunk of chunks) {
         try {
+          dbg('Firestore getDocs START (chunk)', { collection: 'qr_stats', count: chunk.length });
           const statsSnaps = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          dbg('Firestore getDocs END (chunk)', { collection: 'qr_stats', size: statsSnaps.size });
           logger.info(`Plan fetch: chunk stats count: ${statsSnaps.size} for chunk ${chunk.join(',')}`);
           statsSnaps.forEach((s: any) => {
             const d = s.data();
@@ -309,6 +353,7 @@ async function startServer() {
           });
         } catch (e: any) {
           logger.error('Plan fetch error in stats chunk query', { error: e.message, chunk, uid });
+          console.error('[500] Plan fetch stats chunk error:', e);
         }
       }
 
@@ -358,16 +403,20 @@ async function startServer() {
         uid
       });
       res.status(500).json({ error: 'Failed to fetch plan', details: error.message });
+      dbg('500 Error in GET /api/user/plan', { error: error.message });
+      console.error('[500] GET /api/user/plan error:', error);
     }
   });
 
   // User Profile Update API
   app.put('/api/user/profile', authenticate, async (req, res) => {
+    dbg('ROUTE START', { method: 'PUT', path: '/api/user/profile', uid: (req as any).user?.uid });
     try {
       const uid = (req as any).user.uid;
       const { company, jobTitle, country, timezone } = req.body;
       const userRef = doc(db, 'users', uid);
       
+      dbg('Firestore updateDoc START', { collection: 'users', docId: uid });
       await updateDoc(userRef, {
         company: company || '',
         jobTitle: jobTitle || '',
@@ -375,34 +424,45 @@ async function startServer() {
         timezone: timezone || 'Asia/Colombo',
         updated_at: serverTimestamp()
       });
+      dbg('Firestore updateDoc END', { collection: 'users', docId: uid });
       
       res.json({ success: true });
     } catch (error) {
       logger.error('Profile update error:', error);
+      dbg('500 Error in PUT /api/user/profile');
+      console.error('[500] PUT /api/user/profile error:', error);
       res.status(500).json({ error: 'Failed to update profile' });
     }
   });
 
   // Revoke All Sessions API
   app.post('/api/user/revoke-sessions', authenticate, async (req, res) => {
+    dbg('ROUTE START', { method: 'POST', path: '/api/user/revoke-sessions', uid: (req as any).user?.uid });
     try {
       const uid = (req as any).user.uid;
       await admin.auth().revokeRefreshTokens(uid);
       res.json({ success: true });
     } catch (error) {
       logger.error('Session revocation error:', error);
+      dbg('500 Error in POST /api/user/revoke-sessions');
+      console.error('[500] POST /api/user/revoke-sessions error:', error);
       res.status(500).json({ error: 'Failed to revoke sessions' });
     }
   });
 
   // Export User Data API
   app.get('/api/user/export', authenticate, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/user/export', uid: (req as any).user?.uid });
     try {
       const uid = (req as any).user.uid;
+      dbg('Firestore getDocs START', { collection: 'qr_codes', uid });
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      dbg('Firestore getDocs END', { collection: 'qr_codes', size: qrSnapshot.size });
       const qrs = qrSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       
+      dbg('Firestore getDoc START', { collection: 'users', docId: uid });
       const userSnap = await getDoc(doc(db, 'users', uid));
+      dbg('Firestore getDoc END', { collection: 'users', docId: uid, exists: userSnap.exists() });
       const profile = userSnap.exists() ? userSnap.data() : {};
       
       const exportData = {
@@ -423,36 +483,48 @@ async function startServer() {
       res.json(exportData);
     } catch (error) {
       logger.error('Export error:', error);
+      dbg('500 Error in GET /api/user/export');
+      console.error('[500] GET /api/user/export error:', error);
       res.status(500).json({ error: 'Failed to export data' });
     }
   });
 
   // Deactivate All QR Codes API
   app.put('/api/user/deactivate-all', authenticate, async (req, res) => {
+    dbg('ROUTE START', { method: 'PUT', path: '/api/user/deactivate-all', uid: (req as any).user?.uid });
     try {
       const uid = (req as any).user.uid;
+      dbg('Firestore getDocs START', { collection: 'qr_codes', uid });
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      dbg('Firestore getDocs END', { collection: 'qr_codes', size: qrSnapshot.size });
       
       const batch = db.batch();
       qrSnapshot.docs.forEach(d => {
         batch.update(d.ref, { is_active: false, updated_at: serverTimestamp() });
       });
+      dbg('Firestore batch commit START (deactivate all)');
       await batch.commit();
+      dbg('Firestore batch commit END (deactivate all)');
       
       res.json({ success: true, count: qrSnapshot.size });
     } catch (error) {
       logger.error('Deactivate all error:', error);
+      dbg('500 Error in PUT /api/user/deactivate-all');
+      console.error('[500] PUT /api/user/deactivate-all error:', error);
       res.status(500).json({ error: 'Failed to deactivate QR codes' });
     }
   });
 
   // Delete Account API
   app.delete('/api/user/account', authenticate, async (req, res) => {
+    dbg('ROUTE START', { method: 'DELETE', path: '/api/user/account', uid: (req as any).user?.uid });
     try {
       const uid = (req as any).user.uid;
       
       // 1. Delete all QR codes and stats
+      dbg('Firestore getDocs START', { collection: 'qr_codes', uid });
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      dbg('Firestore getDocs END', { collection: 'qr_codes', size: qrSnapshot.size });
       const batch = db.batch();
       
       for (const d of qrSnapshot.docs) {
@@ -468,13 +540,19 @@ async function startServer() {
       batch.delete(doc(db, 'users', uid));
       
       // 3. Delete subscriptions log
+      dbg('Firestore getDocs START', { collection: 'subscriptions', uid });
       const subsSnapshot = await getDocs(query(collection(db, 'subscriptions'), where('uid', '==', uid)));
+      dbg('Firestore getDocs END', { collection: 'subscriptions', size: subsSnapshot.size });
       subsSnapshot.forEach(d => batch.delete(d.ref));
       
+      dbg('Firestore batch commit START (delete account)');
       await batch.commit();
+      dbg('Firestore batch commit END (delete account)');
       
       // 4. Delete Firebase Auth User
+      dbg('Firebase Auth deleteUser START', { uid });
       await admin.auth().deleteUser(uid);
+      dbg('Firebase Auth deleteUser END', { uid });
       
       res.json({ success: true });
       
@@ -492,16 +570,22 @@ async function startServer() {
             if (eventsSnap.size < 500) hasMore = false;
           }
         }
-      })().catch(err => logger.error('Cleanup background error:', err));
+      })().catch(err => {
+        logger.error('Cleanup background error:', err);
+        console.error('[DBG] Account cleanup background error:', err);
+      });
       
     } catch (error) {
       logger.error('Account deletion error:', error);
+      dbg('500 Error in DELETE /api/user/account');
+      console.error('[500] DELETE /api/user/account error:', error);
       res.status(500).json({ error: 'Failed to delete account' });
     }
   });
 
   // Billing Checkout API
   app.post('/api/billing/checkout', authenticate, async (req, res) => {
+    dbg('ROUTE START', { method: 'POST', path: '/api/billing/checkout', uid: (req as any).user?.uid });
     try {
       const user = (req as any).user;
       const { plan, interval } = req.body;
@@ -563,22 +647,27 @@ async function startServer() {
       };
 
       res.json(checkoutData);
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Checkout error:', error);
+      dbg('500 Error in POST /api/billing/checkout', { error: error.message });
+      console.error('[500] POST /api/billing/checkout error:', error);
       res.status(500).json({ error: 'Failed to generate checkout' });
     }
   });
 
   // Invoice History API
   app.get('/api/billing/invoices', authenticate, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/billing/invoices', uid: (req as any).user?.uid });
     try {
       const uid = (req as any).user.uid;
       // Use only a single-field where() to avoid requiring a composite index.
       // Sort and slice in memory — invoice counts are always small.
+      dbg('Firestore getDocs START', { collection: 'subscriptions', uid });
       const subs = await getDocs(query(
         collection(db, 'subscriptions'),
         where('uid', '==', uid)
       ));
+      dbg('Firestore getDocs END', { collection: 'subscriptions', size: subs.size });
       
       const invoices = subs.docs
         .map((d: any) => ({
@@ -592,14 +681,17 @@ async function startServer() {
         .map(({ _ts, ...rest }: any) => rest);
       
       res.json(invoices);
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Invoice fetch error:', error);
+      dbg('500 Error in GET /api/billing/invoices', { error: error.message });
+      console.error('[500] GET /api/billing/invoices error:', error);
       res.status(500).json({ error: 'Failed to fetch invoices' });
     }
   });
 
   // Addon Checkout API
   app.post('/api/billing/addon/checkout', authenticate, async (req, res) => {
+    dbg('ROUTE START', { method: 'POST', path: '/api/billing/addon/checkout', uid: (req as any).user?.uid });
     try {
       const user = (req as any).user;
       const { addonId } = req.body;
@@ -650,8 +742,10 @@ async function startServer() {
       };
 
       res.json(checkoutData);
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Addon checkout error:', error);
+      dbg('500 Error in POST /api/billing/addon/checkout', { error: error.message });
+      console.error('[500] POST /api/billing/addon/checkout error:', error);
       res.status(500).json({ error: 'Failed' });
     }
   });
@@ -661,6 +755,7 @@ async function startServer() {
 
   // PayHere Webhook
   app.post('/api/billing/notify', async (req, res) => {
+    dbg('ROUTE START', { method: 'POST', path: '/api/billing/notify' });
     try {
       const { 
         merchant_id, order_id, payhere_amount, payhere_currency, 
@@ -701,21 +796,26 @@ async function startServer() {
             if (grants.custom_domain) {
               updates['addons.custom_domain'] = true;
             }
-            if (grants.api_access) {
               updates['addons.api_access'] = true;
             }
-
+            
+            dbg('Firestore updateDoc START', { collection: 'users', docId: uid });
             await updateDoc(userRef, updates);
+            dbg('Firestore updateDoc END', { collection: 'users', docId: uid });
             
             // Log purchase
+            dbg('Firestore addDoc START', { collection: 'addon_purchases' });
             await addDoc(collection(db, 'addon_purchases'), {
               uid, addonId, order_id, amount: payhere_amount, timestamp: serverTimestamp()
             });
+            dbg('Firestore addDoc END', { collection: 'addon_purchases' });
           }
         } else {
           // Regular Plan Subscription
           const plan = metadata;
+          dbg('Firestore getDoc START', { collection: 'users', docId: uid });
           const userSnap = await getDoc(userRef);
+          dbg('Firestore getDoc END', { collection: 'users', docId: uid, exists: userSnap.exists() });
           const currentExpiry = userSnap.exists() ? userSnap.data()?.plan_expires_at?.toDate() : null;
           
           const base = currentExpiry && currentExpiry > new Date() ? currentExpiry : new Date();
@@ -724,6 +824,7 @@ async function startServer() {
 
           const planSince = userSnap.exists() && userSnap.data()?.plan_since ? userSnap.data()?.plan_since : new Date().toISOString();
 
+          dbg('Firestore setDoc START', { collection: 'users', docId: uid });
           await setDoc(userRef, {
             plan,
             plan_expires_at: admin.firestore.Timestamp.fromDate(expiry),
@@ -732,8 +833,10 @@ async function startServer() {
             updated_at: serverTimestamp(),
             payhere_order_id: order_id
           }, { merge: true });
+          dbg('Firestore setDoc END', { collection: 'users', docId: uid });
 
           // Log subscription
+          dbg('Firestore addDoc START', { collection: 'subscriptions' });
           await addDoc(collection(db, 'subscriptions'), {
             uid, plan, order_id, 
             amount: payhere_amount, 
@@ -741,47 +844,64 @@ async function startServer() {
             timestamp: serverTimestamp(),
             status: 'active'
           });
+          dbg('Firestore addDoc END', { collection: 'subscriptions' });
         }
       } else if (status_code === '-3') {
         // Subscription Cancelled
         const uid = custom_1;
         logger.info(`Subscription cancelled for user ${uid}`);
+        dbg('Firestore updateDoc START', { collection: 'users', docId: uid });
         await updateDoc(doc(db, 'users', uid), { 
           plan: 'free', 
           plan_expires_at: null 
         });
+        dbg('Firestore updateDoc END', { collection: 'users', docId: uid });
         // Find most recent subscription and mark as cancelled.
         // Use single-field where() to avoid composite index requirement; sort in memory.
+        dbg('Firestore getDocs START', { collection: 'subscriptions', uid });
         const subs = await getDocs(query(collection(db, 'subscriptions'), where('uid', '==', uid)));
+        dbg('Firestore getDocs END', { collection: 'subscriptions', size: subs.size });
         if (!subs.empty) {
           const mostRecent = subs.docs.sort((a: any, b: any) => {
             const aTs = a.data().timestamp?.toMillis?.() || 0;
             const bTs = b.data().timestamp?.toMillis?.() || 0;
             return bTs - aTs;
           })[0];
+          dbg('Firestore updateDoc START', { collection: 'subscriptions', docId: mostRecent.id });
           await updateDoc(mostRecent.ref, { status: 'cancelled', updated_at: serverTimestamp() });
+          dbg('Firestore updateDoc END', { collection: 'subscriptions', docId: mostRecent.id });
         }
       }
 
       res.send('OK');
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Billing notify error:', error);
+      dbg('500 Error in POST /api/billing/notify', { error: error.message });
+      console.error('[500] POST /api/billing/notify error:', error);
       res.status(500).send('Error');
     }
   });
   async function createUniqueSlug(): Promise<string> {
+    dbg('createUniqueSlug() START');
     let slug: string, exists: boolean, attempts = 0;
     do {
       slug = generateSlug();
+      dbg('Firestore getDoc START', { collection: 'qr_codes', docId: slug });
       const docSnap = await getDoc(doc(db, "qr_codes", slug));
+      dbg('Firestore getDoc END', { collection: 'qr_codes', docId: slug, exists: docSnap.exists() });
       exists = docSnap.exists();
-      if (++attempts > 10) throw new Error("Slug gen failed");
+      if (++attempts > 10) {
+        dbg('createUniqueSlug() FAILED after 10 attempts');
+        throw new Error("Slug gen failed");
+      }
     } while (exists);
+    dbg('createUniqueSlug() END (success)', { slug });
     return slug;
   }
 
   // ── EXACT SCHEMA CREATION for qr_codes AND qr_stats ─────────
   app.post('/api/qr', authenticate, async (req, res) => {
+    dbg('ROUTE START', { method: 'POST', path: '/api/qr', uid: (req as any).user?.uid });
     try {
       const user = (req as any).user;
       const { destination_url, title, style, is_dynamic, qr_type, content_data, options } = req.body;
@@ -817,7 +937,9 @@ async function startServer() {
 
       let qrSnapshot;
       try {
+        dbg('Firestore getDocs START', { collection: 'qr_codes', uid });
         qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+        dbg('Firestore getDocs END', { collection: 'qr_codes', size: qrSnapshot.size });
       } catch (err: any) {
         logger.error('Failed to fetch user QRs for limit check', { error: err.message });
         throw new Error(`QR lookup failed: ${err.message}`);
@@ -935,9 +1057,14 @@ async function startServer() {
       // 4. Firestore Commit
       try {
         const batch = writeBatch(db);
+        dbg('Firestore batch set START', { collection: 'qr_codes', docId: slug });
         batch.set(doc(db, 'qr_codes', slug), qrDoc);
+        dbg('Firestore batch set START', { collection: 'qr_stats', docId: slug });
         batch.set(doc(db, 'qr_stats', slug), statsDoc);
+        
+        dbg('Firestore batch commit START');
         await batch.commit();
+        dbg('Firestore batch commit END');
         logger.info(`Successfully saved QR and stats for ${slug}`);
       } catch (err: any) {
         logger.error('Firestore batch commit failed', { error: err.message });
@@ -951,22 +1078,29 @@ async function startServer() {
         stack: error.stack,
         error
       });
+      dbg('500 Error in POST /api/qr', { error: error.message });
+      console.error('[500] POST /api/qr error:', error);
       res.status(500).json({ error: error.message || 'Failed to create QR' });
     }
   });
 
   // List user's QR codes
   app.get('/api/qr', authenticate, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/qr', uid: (req as any).user?.uid });
     try {
       const uid = (req as any).user.uid;
       // Single field query to avoid index issues
+      dbg('Firestore getDocs START', { collection: 'qr_codes', uid });
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      dbg('Firestore getDocs END', { collection: 'qr_codes', size: qrSnapshot.size });
       
       const qrs = await Promise.all(qrSnapshot.docs
         .map(async (docSnap: any) => {
           const data = docSnap.data();
           // Fetch stats for each QR to satisfy dashboard requirements
+          dbg('Firestore getDoc START', { collection: 'qr_stats', docId: data.slug });
           const statsSnap = await getDoc(doc(db, 'qr_stats', data.slug));
+          dbg('Firestore getDoc END', { collection: 'qr_stats', docId: data.slug, exists: statsSnap.exists() });
           return {
             id: docSnap.id,
             ...data,
@@ -975,26 +1109,34 @@ async function startServer() {
         }));
 
       res.json(qrs);
-    } catch (error) {
+    } catch (error: any) {
       logger.error('QR list error:', error);
+      dbg('500 Error in GET /api/qr', { error: error.message });
+      console.error('[500] GET /api/qr error:', error);
       res.status(500).json({ error: 'Failed to list QR codes' });
     }
   });
 
   // Get single QR code
   app.get('/api/qr/:slug', authenticate, requireOwnership, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/qr/:slug', uid: (req as any).user?.uid });
     try {
       const { slug } = req.params;
+      dbg('Firestore getDoc START', { collection: 'qr_codes', docId: slug });
       const qrDoc = await getDoc(doc(db, 'qr_codes', slug));
+      dbg('Firestore getDoc END', { collection: 'qr_codes', docId: slug, exists: qrDoc.exists() });
       res.json(qrDoc.data());
-    } catch (error) {
+    } catch (error: any) {
       logger.error('QR fetch error:', error);
+      dbg('500 Error in GET /api/qr/:slug', { error: error.message });
+      console.error('[500] GET /api/qr/:slug error:', error);
       res.status(500).json({ error: 'Failed to fetch QR code' });
     }
   });
 
   // Update QR code
   app.put('/api/qr/:slug', async (req, res, next) => {
+    dbg('ROUTE START (Pre)', { method: 'PUT', path: `/api/qr/${req.params.slug}` });
     const internalSecret = req.headers['x-internal-secret'];
     if (internalSecret && internalSecret === process.env.INTERNAL_SECRET) {
       return next();
@@ -1007,6 +1149,7 @@ async function startServer() {
     }
     requireOwnership(req, res, next);
   }, async (req, res) => {
+    dbg('ROUTE START (Final)', { method: 'PUT', path: `/api/qr/${req.params.slug}` });
     try {
       const { slug } = req.params;
       const { destination_url, title, style, is_active, options } = req.body;
@@ -1018,6 +1161,7 @@ async function startServer() {
       if (is_active !== undefined) updateData.is_active = is_active;
       
       if (options && (req as any).user) {
+        dbg('getLicense() START (in PUT /api/qr/:slug)', { uid: (req as any).user.uid });
         const license = await getLicense((req as any).user.uid);
 
         if (options.expiry_date_enabled !== undefined) {
@@ -1056,25 +1200,35 @@ async function startServer() {
         }
       }
       
+      dbg('Firestore updateDoc START', { collection: 'qr_codes', docId: slug });
       await updateDoc(doc(db, 'qr_codes', slug), updateData);
+      dbg('Firestore updateDoc END', { collection: 'qr_codes', docId: slug });
       res.json({ success: true, slug });
-    } catch (error) {
+    } catch (error: any) {
       logger.error('QR update error:', error);
+      dbg('500 Error in PUT /api/qr/:slug', { error: error.message });
+      console.error('[500] PUT /api/qr/:slug error:', error);
       res.status(500).json({ error: 'Failed to update QR code' });
     }
   });
 
   // Delete QR code
   app.delete('/api/qr/:slug', authenticate, requireOwnership, async (req, res) => {
+    dbg('ROUTE START', { method: 'DELETE', path: '/api/qr/:slug', uid: (req as any).user?.uid });
     try {
       const { slug } = req.params;
       
       // Batch delete code, stats, and (optionally) some events
       // For now, keep it simple with codes and stats
       const batch = db.batch();
+      dbg('Firestore batch delete START', { collection: 'qr_codes', docId: slug });
       batch.delete(doc(db, 'qr_codes', slug));
+      dbg('Firestore batch delete START', { collection: 'qr_stats', docId: slug });
       batch.delete(doc(db, 'qr_stats', slug));
+      
+      dbg('Firestore batch commit START (delete QR)');
       await batch.commit();
+      dbg('Firestore batch commit END (delete QR)');
 
       res.json({ message: 'QR code deleted successfully' });
 
@@ -1082,7 +1236,10 @@ async function startServer() {
       const appUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
       fetch(`${appUrl}/internal/purge/${slug}`, {
         headers: { 'x-internal-secret': process.env.INTERNAL_SECRET || '' }
-      }).catch(err => logger.error(`Cache purge failed for ${slug}`, err));
+      }).catch(err => {
+        logger.error(`Cache purge failed for ${slug}`, err);
+        console.error(`[DBG] Cache purge failed for ${slug}:`, err);
+      });
 
       // Phase 12: Background orphan scan_events cleanup
       (async () => {
@@ -1101,19 +1258,27 @@ async function startServer() {
           if (eventsSnap.size < 500) hasMore = false;
         }
         logger.info(`Cleaned up ${deletedTotal} scan events for deleted QR ${slug}`);
-      })().catch(err => logger.error('scan_events cleanup failed', err));
+      })().catch(err => {
+        logger.error('scan_events cleanup failed', err);
+        console.error('[DBG] scan_events cleanup background error:', err);
+      });
 
-    } catch (error) {
+    } catch (error: any) {
       logger.error('QR delete error:', error);
+      dbg('500 Error in DELETE /api/qr/:slug', { error: error.message });
+      console.error('[500] DELETE /api/qr/:slug error:', error);
       res.status(500).json({ error: 'Failed to delete QR code' });
     }
   });
 
   // Analytics API
   app.get('/api/analytics/:slug/summary', authenticate, requireOwnership, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/analytics/:slug/summary', uid: (req as any).user?.uid });
     try {
       const { slug } = req.params;
+      dbg('Firestore getDoc START', { collection: 'qr_stats', docId: slug });
       const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
+      dbg('Firestore getDoc END', { collection: 'qr_stats', docId: slug, exists: statsDoc.exists() });
       
       if (!statsDoc.exists()) {
         return res.json({
@@ -1145,16 +1310,20 @@ async function startServer() {
         first_scan,
         last_scan
       });
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Analytics error:', error);
+      dbg('500 Error in GET /api/analytics/:slug/summary', { error: error.message });
+      console.error('[500] GET /api/analytics/:slug/summary error:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
 
   app.get('/api/analytics/:slug/timeseries', authenticate, requireOwnership, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/analytics/:slug/timeseries', uid: (req as any).user?.uid });
     try {
       const { slug } = req.params;
       const userUid = (req as any).user.uid;
+      dbg('getLicense() START (in analytics timeseries)', { uid: userUid });
       const license = await getLicense(userUid);
       
       const startParam = req.query.start as string;
@@ -1192,7 +1361,9 @@ async function startServer() {
         }
       }
       
+      dbg('Firestore getDoc START', { collection: 'qr_stats', docId: slug });
       const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
+      dbg('Firestore getDoc END', { collection: 'qr_stats', docId: slug, exists: statsDoc.exists() });
 
       if (statsDoc.exists()) {
         const data = statsDoc.data()!;
@@ -1211,16 +1382,21 @@ async function startServer() {
       }
 
       res.json(Object.values(dailyStats));
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Analytics error:', error);
+      dbg('500 Error in GET /api/analytics/:slug/timeseries', { error: error.message });
+      console.error('[500] GET /api/analytics/:slug/timeseries error:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
 
   app.get('/api/analytics/:slug/devices', authenticate, requireOwnership, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/analytics/:slug/devices', uid: (req as any).user?.uid });
     try {
       const { slug } = req.params;
+      dbg('Firestore getDoc START', { collection: 'qr_stats', docId: slug });
       const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
+      dbg('Firestore getDoc END', { collection: 'qr_stats', docId: slug, exists: statsDoc.exists() });
       
       if (!statsDoc.exists()) return res.json([]);
       
@@ -1242,16 +1418,21 @@ async function startServer() {
         })).sort((a, b) => b.count - a.count);
 
       res.json(result);
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Analytics error:', error);
+      dbg('500 Error in GET /api/analytics/:slug/devices', { error: error.message });
+      console.error('[500] GET /api/analytics/:slug/devices error:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
 
   app.get('/api/analytics/:slug/countries', authenticate, requireOwnership, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/analytics/:slug/countries', uid: (req as any).user?.uid });
     try {
       const { slug } = req.params;
+      dbg('Firestore getDoc START', { collection: 'qr_stats', docId: slug });
       const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
+      dbg('Firestore getDoc END', { collection: 'qr_stats', docId: slug, exists: statsDoc.exists() });
       
       if (!statsDoc.exists()) return res.json([]);
       
@@ -1265,16 +1446,21 @@ async function startServer() {
       })).sort((a, b) => b.scans - a.scans).slice(0, 10);
 
       res.json(result);
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Analytics error:', error);
+      dbg('500 Error in GET /api/analytics/:slug/countries', { error: error.message });
+      console.error('[500] GET /api/analytics/:slug/countries error:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
 
   app.get('/api/analytics/:slug/os', authenticate, requireOwnership, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/analytics/:slug/os', uid: (req as any).user?.uid });
     try {
       const { slug } = req.params;
+      dbg('Firestore getDoc START', { collection: 'qr_stats', docId: slug });
       const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
+      dbg('Firestore getDoc END', { collection: 'qr_stats', docId: slug, exists: statsDoc.exists() });
       
       if (!statsDoc.exists()) return res.json([]);
       
@@ -1290,16 +1476,21 @@ async function startServer() {
       })).sort((a, b) => b.count - a.count);
 
       res.json(result);
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Analytics error:', error);
+      dbg('500 Error in GET /api/analytics/:slug/os', { error: error.message });
+      console.error('[500] GET /api/analytics/:slug/os error:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
 
   app.get('/api/analytics/:slug/browsers', authenticate, requireOwnership, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/analytics/:slug/browsers', uid: (req as any).user?.uid });
     try {
       const { slug } = req.params;
+      dbg('Firestore getDoc START', { collection: 'qr_stats', docId: slug });
       const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
+      dbg('Firestore getDoc END', { collection: 'qr_stats', docId: slug, exists: statsDoc.exists() });
       
       if (!statsDoc.exists()) return res.json([]);
       
@@ -1315,16 +1506,21 @@ async function startServer() {
       })).sort((a, b) => b.count - a.count);
 
       res.json(result);
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Analytics error:', error);
+      dbg('500 Error in GET /api/analytics/:slug/browsers', { error: error.message });
+      console.error('[500] GET /api/analytics/:slug/browsers error:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
 
   app.get('/api/analytics/:slug/referrers', authenticate, requireOwnership, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/analytics/:slug/referrers', uid: (req as any).user?.uid });
     try {
       const { slug } = req.params;
+      dbg('Firestore getDoc START', { collection: 'qr_stats', docId: slug });
       const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
+      dbg('Firestore getDoc END', { collection: 'qr_stats', docId: slug, exists: statsDoc.exists() });
       
       if (!statsDoc.exists()) return res.json([]);
       
@@ -1340,17 +1536,22 @@ async function startServer() {
       })).sort((a, b) => b.count - a.count).slice(0, 10);
 
       res.json(result);
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Analytics error:', error);
+      dbg('500 Error in GET /api/analytics/:slug/referrers', { error: error.message });
+      console.error('[500] GET /api/analytics/:slug/referrers error:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
 
   app.get('/api/analytics/:slug/recent', authenticate, requireOwnership, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/analytics/:slug/recent', uid: (req as any).user?.uid });
     try {
       const { slug } = req.params;
       // For recent, we still query scan_events but limit it to 10
+      dbg('Firestore getDocs START', { collection: 'scan_events', slug });
       const snapshot = await getDocs(query(collection(db, 'scan_events'), where('slug', '==', slug), orderBy('scanned_at', 'desc'), limit(10)));
+      dbg('Firestore getDocs END', { collection: 'scan_events', size: snapshot.size });
       
       const recent = snapshot.docs.map(doc => {
         const data = doc.data();
@@ -1368,16 +1569,21 @@ async function startServer() {
       });
 
       res.json(recent);
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Analytics error:', error);
+      dbg('500 Error in GET /api/analytics/:slug/recent', { error: error.message });
+      console.error('[500] GET /api/analytics/:slug/recent error:', error);
       res.status(500).json({ error: 'Failed to fetch recent scans' });
     }
   });
 
   app.get('/api/analytics/:slug/advanced', authenticate, requireOwnership, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/analytics/:slug/advanced', uid: (req as any).user?.uid });
     try {
       const { slug } = req.params;
+      dbg('Firestore getDoc START', { collection: 'qr_stats', docId: slug });
       const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
+      dbg('Firestore getDoc END', { collection: 'qr_stats', docId: slug, exists: statsDoc.exists() });
       
       if (!statsDoc.exists()) {
         return res.json({
@@ -1412,13 +1618,16 @@ async function startServer() {
         tls_protocols: formatData(data.tls_protocols),
         eu_scans: data.eu_scans || 0
       });
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Analytics error:', error);
+      dbg('500 Error in GET /api/analytics/:slug/advanced', { error: error.message });
+      console.error('[500] GET /api/analytics/:slug/advanced error:', error);
       res.status(500).json({ error: 'Failed to fetch advanced analytics' });
     }
   });
 
   app.get('/api/analytics/account/:uid', authenticate, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/analytics/account/:uid', uid: (req as any).user?.uid });
     try {
       const { uid } = req.params;
       const decodedUser = (req as any).user;
@@ -1428,7 +1637,9 @@ async function startServer() {
       }
       
       const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
+      dbg('Firestore getDocs START', { collection: 'qr_codes', uid });
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      dbg('Firestore getDocs END', { collection: 'qr_codes', size: qrSnapshot.size });
       let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
       if (requestedSlugs) {
@@ -1451,13 +1662,14 @@ async function startServer() {
       let earliest_day: string | null = null;
 
       for (const chunk of chunks) {
+        dbg('Firestore getDocs START (chunk)', { collection: 'qr_stats', count: chunk.length });
         const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+        dbg('Firestore getDocs END (chunk)', { collection: 'qr_stats', size: statsSnapshot.size });
         statsSnapshot.forEach(doc => {
           const data = doc.data();
           total_scans += (data.total_scans || 0);
           unique_visitors += (data.unique_scans || 0);
           
-          // ADD THIS:
           const days = Object.keys(data.days || {}).sort();
           if (days.length > 0) {
             if (!earliest_day || days[0] < earliest_day) {
@@ -1476,13 +1688,16 @@ async function startServer() {
         active_qrs,
         first_scan: earliest_day
       });
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Account analytics error:', error);
+      dbg('500 Error in GET /api/analytics/account/:uid', { error: error.message });
+      console.error('[500] GET /api/analytics/account/:uid error:', error);
       res.status(500).json({ error: 'Failed to fetch account analytics' });
     }
   });
 
   app.get('/api/analytics/account/:uid/timeseries', authenticate, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/analytics/account/:uid/timeseries', uid: (req as any).user?.uid });
     try {
       const { uid } = req.params;
       const decodedUser = (req as any).user;
@@ -1491,6 +1706,7 @@ async function startServer() {
         return res.status(403).send('Forbidden');
       }
 
+      dbg('getLicense() START (in account analytics timeseries)', { uid });
       const license = await getLicense(uid);
       const startParam = req.query.start as string;
       const endParam = req.query.end as string;
@@ -1498,7 +1714,6 @@ async function startServer() {
       
       const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
 
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
       let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
       if (requestedSlugs) {
@@ -1561,13 +1776,16 @@ async function startServer() {
       }
 
       res.json(Object.values(dailyStats));
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Account timeseries error:', error);
+      dbg('500 Error in GET /api/analytics/account/:uid/timeseries', { error: error.message });
+      console.error('[500] GET /api/analytics/account/:uid/timeseries error:', error);
       res.status(500).json({ error: 'Failed to fetch account timeseries' });
     }
   });
 
   app.get('/api/analytics/account/:uid/devices', authenticate, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/analytics/account/:uid/devices', uid: (req as any).user?.uid });
     try {
       const { uid } = req.params;
       const decodedUser = (req as any).user;
@@ -1577,7 +1795,9 @@ async function startServer() {
       }
       
       const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
+      dbg('Firestore getDocs START', { collection: 'qr_codes', uid });
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      dbg('Firestore getDocs END', { collection: 'qr_codes', size: qrSnapshot.size });
       let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
       if (requestedSlugs) {
@@ -1593,7 +1813,9 @@ async function startServer() {
         }
 
         for (const chunk of chunks) {
+          dbg('Firestore getDocs START (chunk)', { collection: 'qr_stats', count: chunk.length });
           const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          dbg('Firestore getDocs END (chunk)', { collection: 'qr_stats', size: statsSnapshot.size });
           statsSnapshot.forEach(doc => {
             const data = doc.data();
             mobile += (data.mobile_scans || 0);
@@ -1612,13 +1834,16 @@ async function startServer() {
       ].filter(d => d.count > 0).sort((a, b) => b.count - a.count);
 
       res.json(result);
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Account devices error:', error);
+      dbg('500 Error in GET /api/analytics/account/:uid/devices', { error: error.message });
+      console.error('[500] GET /api/analytics/account/:uid/devices error:', error);
       res.status(500).json({ error: 'Failed to fetch account devices' });
     }
   });
 
   app.get('/api/analytics/account/:uid/countries', authenticate, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/analytics/account/:uid/countries', uid: (req as any).user?.uid });
     try {
       const { uid } = req.params;
       const decodedUser = (req as any).user;
@@ -1628,7 +1853,9 @@ async function startServer() {
       }
       
       const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
+      dbg('Firestore getDocs START', { collection: 'qr_codes', uid });
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      dbg('Firestore getDocs END', { collection: 'qr_codes', size: qrSnapshot.size });
       let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
       if (requestedSlugs) {
@@ -1644,7 +1871,9 @@ async function startServer() {
         }
 
         for (const chunk of chunks) {
+          dbg('Firestore getDocs START (chunk)', { collection: 'qr_stats', count: chunk.length });
           const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          dbg('Firestore getDocs END (chunk)', { collection: 'qr_stats', size: statsSnapshot.size });
           statsSnapshot.forEach(doc => {
             const data = doc.data();
             const c = data.countries || {};
@@ -1662,20 +1891,25 @@ async function startServer() {
       })).sort((a, b) => b.scans - a.scans).slice(0, 10);
 
       res.json(result);
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Account countries error:', error);
+      dbg('500 Error in GET /api/analytics/account/:uid/countries', { error: error.message });
+      console.error('[500] GET /api/analytics/account/:uid/countries error:', error);
       res.status(500).json({ error: 'Failed to fetch account countries' });
     }
   });
 
   app.get('/api/analytics/account/:uid/browsers', authenticate, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/analytics/account/:uid/browsers', uid: (req as any).user?.uid });
     try {
       const { uid } = req.params;
       const decodedUser = (req as any).user;
       if (decodedUser.uid !== uid) return res.status(403).send('Forbidden');
       
       const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
+      dbg('Firestore getDocs START', { collection: 'qr_codes', uid });
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      dbg('Firestore getDocs END', { collection: 'qr_codes', size: qrSnapshot.size });
       let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
       if (requestedSlugs) {
@@ -1687,7 +1921,9 @@ async function startServer() {
         const chunks = [];
         for (let i = 0; i < slugs.length; i += 30) chunks.push(slugs.slice(i, i + 30));
         for (const chunk of chunks) {
+          dbg('Firestore getDocs START (chunk)', { collection: 'qr_stats', count: chunk.length });
           const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          dbg('Firestore getDocs END (chunk)', { collection: 'qr_stats', size: statsSnapshot.size });
           statsSnapshot.forEach(doc => {
             const data = doc.data();
             const b = data.browsers || {};
@@ -1699,20 +1935,25 @@ async function startServer() {
       }
       const result = Object.entries(browsers).map(([browser, count]) => ({ browser, count })).sort((a, b) => b.count - a.count);
       res.json(result);
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Account browsers error:', error);
+      dbg('500 Error in GET /api/analytics/account/:uid/browsers', { error: error.message });
+      console.error('[500] GET /api/analytics/account/:uid/browsers error:', error);
       res.status(500).json({ error: 'Failed to fetch account browsers' });
     }
   });
 
   app.get('/api/analytics/account/:uid/os', authenticate, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/analytics/account/:uid/os', uid: (req as any).user?.uid });
     try {
       const { uid } = req.params;
       const decodedUser = (req as any).user;
       if (decodedUser.uid !== uid) return res.status(403).send('Forbidden');
       
       const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
+      dbg('Firestore getDocs START', { collection: 'qr_codes', uid });
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      dbg('Firestore getDocs END', { collection: 'qr_codes', size: qrSnapshot.size });
       let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
       if (requestedSlugs) {
@@ -1724,7 +1965,9 @@ async function startServer() {
         const chunks = [];
         for (let i = 0; i < slugs.length; i += 30) chunks.push(slugs.slice(i, i + 30));
         for (const chunk of chunks) {
+          dbg('Firestore getDocs START (chunk)', { collection: 'qr_stats', count: chunk.length });
           const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          dbg('Firestore getDocs END (chunk)', { collection: 'qr_stats', size: statsSnapshot.size });
           statsSnapshot.forEach(doc => {
             const data = doc.data();
             const o = data.os || {};
@@ -1736,20 +1979,25 @@ async function startServer() {
       }
       const result = Object.entries(os).map(([os, count]) => ({ os, count })).sort((a, b) => b.count - a.count);
       res.json(result);
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Account OS error:', error);
+      dbg('500 Error in GET /api/analytics/account/:uid/os', { error: error.message });
+      console.error('[500] GET /api/analytics/account/:uid/os error:', error);
       res.status(500).json({ error: 'Failed to fetch account OS' });
     }
   });
 
   app.get('/api/analytics/account/:uid/referrers', authenticate, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/analytics/account/:uid/referrers', uid: (req as any).user?.uid });
     try {
       const { uid } = req.params;
       const decodedUser = (req as any).user;
       if (decodedUser.uid !== uid) return res.status(403).send('Forbidden');
       
       const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
+      dbg('Firestore getDocs START', { collection: 'qr_codes', uid });
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      dbg('Firestore getDocs END', { collection: 'qr_codes', size: qrSnapshot.size });
       let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
       if (requestedSlugs) {
@@ -1761,7 +2009,9 @@ async function startServer() {
         const chunks = [];
         for (let i = 0; i < slugs.length; i += 30) chunks.push(slugs.slice(i, i + 30));
         for (const chunk of chunks) {
+          dbg('Firestore getDocs START (chunk)', { collection: 'qr_stats', count: chunk.length });
           const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          dbg('Firestore getDocs END (chunk)', { collection: 'qr_stats', size: statsSnapshot.size });
           statsSnapshot.forEach(doc => {
             const data = doc.data();
             const r = data.referrers || {};
@@ -1773,20 +2023,25 @@ async function startServer() {
       }
       const result = Object.entries(referrers).map(([referrer, count]) => ({ referrer, count })).sort((a, b) => b.count - a.count);
       res.json(result);
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Account referrers error:', error);
+      dbg('500 Error in GET /api/analytics/account/:uid/referrers', { error: error.message });
+      console.error('[500] GET /api/analytics/account/:uid/referrers error:', error);
       res.status(500).json({ error: 'Failed to fetch account referrers' });
     }
   });
 
   app.get('/api/analytics/account/:uid/summary', authenticate, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/analytics/account/:uid/summary', uid: (req as any).user?.uid });
     try {
       const { uid } = req.params;
       const decodedUser = (req as any).user;
       if (decodedUser.uid !== uid) return res.status(403).send('Forbidden');
       
       const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
+      dbg('Firestore getDocs START', { collection: 'qr_codes', uid });
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      dbg('Firestore getDocs END', { collection: 'qr_codes', size: qrSnapshot.size });
       let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
       if (requestedSlugs) {
@@ -1798,7 +2053,9 @@ async function startServer() {
         const chunks = [];
         for (let i = 0; i < slugs.length; i += 30) chunks.push(slugs.slice(i, i + 30));
         for (const chunk of chunks) {
+          dbg('Firestore getDocs START (chunk)', { collection: 'qr_stats', count: chunk.length });
           const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          dbg('Firestore getDocs END (chunk)', { collection: 'qr_stats', size: statsSnapshot.size });
           statsSnapshot.forEach(doc => {
             const data = doc.data();
             total_scans += (data.total_scans || 0);
@@ -1807,13 +2064,16 @@ async function startServer() {
         }
       }
       res.json({ total_scans, unique_visitors, total_qrs: slugs.length });
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Account summary error:', error);
+      dbg('500 Error in GET /api/analytics/account/:uid/summary', { error: error.message });
+      console.error('[500] GET /api/analytics/account/:uid/summary error:', error);
       res.status(500).json({ error: 'Failed to fetch account summary' });
     }
   });
 
   app.get('/api/analytics/account/:uid/recent', authenticate, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/analytics/account/:uid/recent', uid: (req as any).user?.uid });
     try {
       const { uid } = req.params;
       const decodedUser = (req as any).user;
@@ -1823,7 +2083,9 @@ async function startServer() {
       }
       
       const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
+      dbg('Firestore getDocs START', { collection: 'qr_codes', uid });
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      dbg('Firestore getDocs END', { collection: 'qr_codes', size: qrSnapshot.size });
       let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
       if (requestedSlugs) {
@@ -1840,7 +2102,9 @@ async function startServer() {
       }
 
       for (const chunk of chunks) {
+        dbg('Firestore getDocs START (chunk)', { collection: 'scan_events', count: chunk.length });
         const scansSnapshot = await getDocs(query(collection(db, 'scan_events'), where('slug', 'in', chunk), orderBy('scanned_at', 'desc'), limit(20)));
+        dbg('Firestore getDocs END (chunk)', { collection: 'scan_events', size: scansSnapshot.size });
         scansSnapshot.forEach(doc => {
           const data = doc.data();
           recentScans.push({
@@ -1865,13 +2129,16 @@ async function startServer() {
         const { _timestamp, ...rest } = s;
         return rest;
       }));
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Account recent scans error:', error);
+      dbg('500 Error in GET /api/analytics/account/:uid/recent', { error: error.message });
+      console.error('[500] GET /api/analytics/account/:uid/recent error:', error);
       res.status(500).json({ error: 'Failed to fetch account recent scans' });
     }
   });
 
   app.get('/api/analytics/account/:uid/performance', authenticate, async (req, res) => {
+    dbg('ROUTE START', { method: 'GET', path: '/api/analytics/account/:uid/performance', uid: (req as any).user?.uid });
     try {
       const { uid } = req.params;
       const decodedUser = (req as any).user;
@@ -1879,13 +2146,17 @@ async function startServer() {
       if (decodedUser.uid !== uid) {
         return res.status(403).send('Forbidden');
       }
+      dbg('Firestore getDocs START', { collection: 'qr_codes', uid });
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      dbg('Firestore getDocs END', { collection: 'qr_codes', size: qrSnapshot.size });
       
       const performanceData = [];
       
       for (const docSnap of qrSnapshot.docs) {
         const qrData = docSnap.data();
+        dbg('Firestore getDoc START', { collection: 'qr_stats', docId: qrData.slug });
         const statsDoc = await getDoc(doc(db, 'qr_stats', qrData.slug));
+        dbg('Firestore getDoc END', { collection: 'qr_stats', docId: qrData.slug, exists: statsDoc.exists() });
         const statsData = statsDoc.exists() ? statsDoc.data() : { total_scans: 0, unique_scans: 0 };
         
         performanceData.push({
@@ -1900,8 +2171,10 @@ async function startServer() {
       performanceData.sort((a, b) => b.total_scans - a.total_scans);
       
       res.json(performanceData);
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Account performance error:', error);
+      dbg('500 Error in GET /api/analytics/account/:uid/performance', { error: error.message });
+      console.error('[500] GET /api/analytics/account/:uid/performance error:', error);
       res.status(500).json({ error: 'Failed to fetch account performance' });
     }
   });
@@ -1919,16 +2192,23 @@ async function startServer() {
       const { slug } = req.body;
       const currentMonth = new Date().toISOString().slice(0, 7); // "2026-03"
 
+      dbg('Firestore getDoc START (internal scan)', { slug });
       const [qrSnap, statsSnap] = await Promise.all([
         getDoc(doc(db, 'qr_codes', slug)),
         getDoc(doc(db, 'qr_stats', slug))
       ]);
+      dbg('Firestore getDoc END (internal scan)', { 
+        slug, 
+        qrExists: qrSnap.exists(), 
+        statsExists: statsSnap.exists() 
+      });
 
       if (!qrSnap.exists()) {
         return res.status(404).json({ error: 'QR not found' });
       }
 
       const qrOwnerUid = qrSnap.data().user_uid;
+      dbg('getLicense() START (in internal scan)', { uid: qrOwnerUid });
       const license = await getLicense(qrOwnerUid);
       const monthlyScans = statsSnap.data()?.monthly_scans?.[currentMonth] || 0;
 
@@ -1945,6 +2225,8 @@ async function startServer() {
         slug: req.body?.slug,
         stack: error.stack 
       });
+      dbg('500 Error in POST /internal/scan', { error: error.message });
+      console.error('[500] POST /internal/scan error:', error);
       res.status(500).json({ error: 'Failed' });
     }
   });
@@ -1957,17 +2239,21 @@ async function startServer() {
       }
 
       const { slug } = req.params;
+      dbg('Firestore getDoc START (internal slug)', { slug });
       const [qrDoc, statsDoc] = await Promise.all([
         getDoc(doc(db, 'qr_codes', slug)),
         getDoc(doc(db, 'qr_stats', slug))
       ]);
+      dbg('Firestore getDoc END (internal slug)', { slug, qrExists: qrDoc.exists() });
 
       if (!qrDoc.exists()) {
         return res.status(404).send('Not Found');
       }
 
       const qr = qrDoc.data();
+      dbg('Firestore getDoc START (internal user)', { uid: qr.user_uid });
       const userDoc = await getDoc(doc(db, 'users', qr.user_uid));
+      dbg('Firestore getDoc END (internal user)', { uid: qr.user_uid, exists: userDoc.exists() });
       const userPlan = userDoc.exists() ? userDoc.data().plan : 'free';
       const stats = statsDoc.exists() ? statsDoc.data() : { total_scans: 0 };
 
@@ -1990,8 +2276,10 @@ async function startServer() {
       });
 
       res.json(responseBody);
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Internal fetch error:', error);
+      dbg('500 Error in GET /internal/slug/:slug', { error: error.message });
+      console.error('[500] GET /internal/slug/:slug error:', error);
       res.status(500).json({ error: 'Failed' });
     }
   });
@@ -1999,28 +2287,38 @@ async function startServer() {
   // Redirect Engine (Local Dev fallback)
   app.get('/:slug', async (req, res, next) => {
     const { slug } = req.params;
+    dbg('REDIRECT START', { slug, path: req.path });
     
     // Ignore static assets and API routes
     if (slug.startsWith('api') || slug.startsWith('assets') || slug.includes('.')) {
+      dbg('REDIRECT IGNORED (asset/api)', { slug });
       return next();
     }
 
     try {
       // 1. Look up destination
+      dbg('Firestore getDoc START (redirect)', { collection: 'qr_codes', docId: slug });
       const qrDoc = await getDoc(doc(db, 'qr_codes', slug));
+      dbg('Firestore getDoc END (redirect)', { collection: 'qr_codes', docId: slug, exists: qrDoc.exists() });
       
       if (!qrDoc.exists()) {
+        dbg('REDIRECT FAILED (qr not found)', { slug });
         return next(); // Let Vite handle it (might be a frontend route)
       }
 
       const qrData = qrDoc.data()!;
 
       if (!qrData.is_active) {
+        dbg('REDIRECT BLOCKED (inactive)', { slug });
         return res.status(410).send('QR code inactive');
       }
 
       // 2. Fire analytics async (don't block redirect)
-      captureAnalytics(req, slug).catch(err => logger.error('Analytics capture failed', { error: err }));
+      dbg('captureAnalytics START (async)', { slug });
+      captureAnalytics(req, slug).catch(err => {
+        logger.error('Analytics capture failed', { error: err });
+        console.error('[DBG] captureAnalytics background error:', err);
+      });
 
       // 3. Handle different QR types
       if (qrData.qr_type === 'vcard') {
@@ -2028,29 +2326,37 @@ async function startServer() {
         const vcard = `BEGIN:VCARD\nVERSION:3.0\nN:${content?.last_name || ''};${content?.first_name || ''}\nFN:${content?.first_name || ''} ${content?.last_name || ''}\nTEL:${content?.phone || ''}\nEMAIL:${content?.email || ''}\nORG:${content?.company || ''}\nURL:${content?.website || ''}\nEND:VCARD`;
         res.setHeader('Content-Type', 'text/vcard');
         res.setHeader('Content-Disposition', `attachment; filename="${content?.first_name || 'contact'}.vcf"`);
+        dbg('REDIRECT TYPE: vcard', { slug });
         return res.send(vcard);
       } else if (qrData.qr_type === 'text') {
         const text = qrData.content_data?.text || '';
+        dbg('REDIRECT TYPE: text', { slug });
         return res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="font-family: sans-serif; padding: 20px; white-space: pre-wrap; word-break: break-word;">${escapeHtml(text)}</body></html>`);
       } else if (qrData.qr_type === 'email') {
         const content = qrData.content_data;
         const mailto = `mailto:${content?.email || ''}?subject=${encodeURIComponent(content?.subject || '')}&body=${encodeURIComponent(content?.body || '')}`;
+        dbg('REDIRECT TYPE: email', { slug, mailto });
         return res.redirect(302, mailto);
       } else if (qrData.qr_type === 'wifi') {
         // WiFi should ideally be static, but if dynamic, just show the details
         const content = qrData.content_data;
+        dbg('REDIRECT TYPE: wifi', { slug });
         return res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="font-family: sans-serif; padding: 20px;"><h2>WiFi Network</h2><p><strong>SSID:</strong> ${escapeHtml(content?.ssid || '')}</p><p><strong>Password:</strong> ${escapeHtml(content?.password || '')}</p><p><strong>Security:</strong> ${escapeHtml(content?.encryption || '')}</p></body></html>`);
       }
 
       const destination = qrData.destination_url;
       if (!destination) {
+        dbg('REDIRECT FAILED (no destination)', { slug });
         return res.status(404).send('Destination not found');
       }
 
       // Redirect immediately
+      dbg('REDIRECT SUCCESS', { slug, destination });
       return res.redirect(302, destination);
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Redirect error', { error });
+      dbg('REDIRECT ERROR (500)', { slug, error: error.message });
+      console.error('[500] Redirect engine error:', error);
       next();
     }
   });
@@ -2081,6 +2387,7 @@ async function startServer() {
 
 await startServer().catch((err) => {
   logger.error('Server startup failed', err);
+  console.error('[FATAL] Server startup failed:', err);
   process.exit(1);
 });
 
@@ -2107,6 +2414,7 @@ async function captureAnalyticsFromPayload(payload: any, qrOwnerUid?: string) {
   const isFailed = status === 'failed_password';
 
   // 1. EXACT SCHEMA for scan_events
+  dbg('Firestore addDoc START (scan_events)', { slug });
   await addDoc(collection(db, 'scan_events'), {
     slug,
     date: dateStr,
@@ -2124,6 +2432,7 @@ async function captureAnalyticsFromPayload(payload: any, qrOwnerUid?: string) {
     is_eu: is_eu || false,
     status: status || 'success'
   });
+  dbg('Firestore addDoc END (scan_events)', { slug });
 
   // 2. EXACT SCHEMA for qr_stats
   const statsRef = doc(db, 'qr_stats', slug);
@@ -2157,13 +2466,19 @@ async function captureAnalyticsFromPayload(payload: any, qrOwnerUid?: string) {
 
     // OPTIMIZATION: Maintain per-user monthly counter to avoid O(N) reads on billing page
     if (qrOwnerUid) {
+      dbg('Firestore updateDoc START (user monthly scans)', { uid: qrOwnerUid });
       await updateDoc(doc(db, 'users', qrOwnerUid), {
         [`monthly_scans.${currentMonth}`]: inc
-      }).catch(err => logger.error('User monthly_scans update failed', err));
+      }).catch(err => {
+        logger.error('User monthly_scans update failed', err);
+        console.error('[DBG] User monthly_scans update background error:', err);
+      });
     }
   }
 
+  dbg('Firestore setDoc START (qr_stats merge)', { slug });
   await setDoc(statsRef, updateData, { merge: true });
+  dbg('Firestore setDoc END (qr_stats merge)', { slug });
 }
 
 async function captureAnalytics(req: express.Request, slug: string) {
@@ -2179,7 +2494,9 @@ async function captureAnalytics(req: express.Request, slug: string) {
   };
 
   // For internal dev redirects, find the owner too
+  dbg('Firestore getDoc START (captureAnalytics)', { slug });
   const qrSnap = await getDoc(doc(db, 'qr_codes', slug));
+  dbg('Firestore getDoc END (captureAnalytics)', { slug, exists: qrSnap.exists() });
   const ownerUid = qrSnap.exists() ? qrSnap.data()?.user_uid : undefined;
 
   await captureAnalyticsFromPayload(payload, ownerUid);
@@ -2233,3 +2550,4 @@ function classifyReferer(referer: string) {
 }
 
 export default app;
+
