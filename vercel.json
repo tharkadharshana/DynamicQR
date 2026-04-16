@@ -17,6 +17,10 @@
       "dest": "/api/index.ts"
     },
     {
+      "src": "/\\.env",
+      "dest": "/api/index.ts"
+    },
+    {
       "src": "/qr/(.*)",
       "dest": "/api/index.ts"
     },

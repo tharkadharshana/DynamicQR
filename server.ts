@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import cors from 'cors';
 import admin from 'firebase-admin';
@@ -2032,7 +2031,7 @@ async function startServer() {
         return res.send(vcard);
       } else if (qrData.qr_type === 'text') {
         const text = qrData.content_data?.text || '';
-        return res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="font-family: sans-serif; padding: 20px; white-space: pre-wrap; word-break: break-word;">${text}</body></html>`);
+        return res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="font-family: sans-serif; padding: 20px; white-space: pre-wrap; word-break: break-word;">${escapeHtml(text)}</body></html>`);
       } else if (qrData.qr_type === 'email') {
         const content = qrData.content_data;
         const mailto = `mailto:${content?.email || ''}?subject=${encodeURIComponent(content?.subject || '')}&body=${encodeURIComponent(content?.body || '')}`;
@@ -2040,7 +2039,7 @@ async function startServer() {
       } else if (qrData.qr_type === 'wifi') {
         // WiFi should ideally be static, but if dynamic, just show the details
         const content = qrData.content_data;
-        return res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="font-family: sans-serif; padding: 20px;"><h2>WiFi Network</h2><p><strong>SSID:</strong> ${content?.ssid}</p><p><strong>Password:</strong> ${content?.password}</p><p><strong>Security:</strong> ${content?.encryption}</p></body></html>`);
+        return res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="font-family: sans-serif; padding: 20px;"><h2>WiFi Network</h2><p><strong>SSID:</strong> ${escapeHtml(content?.ssid || '')}</p><p><strong>Password:</strong> ${escapeHtml(content?.password || '')}</p><p><strong>Security:</strong> ${escapeHtml(content?.encryption || '')}</p></body></html>`);
       }
 
       const destination = qrData.destination_url;
@@ -2058,6 +2057,7 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -2213,6 +2213,15 @@ function parseUA(ua: string) {
   return { device, os, osVersion, browser };
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function isBot(ua: string) {
   return /bot|crawler|spider|preview|facebookexternalhit|googlebot|twitterbot|slackbot|whatsapp|telegram/i.test(ua);
 }
@@ -2222,10 +2231,5 @@ function classifyReferer(referer: string) {
   if (/android-app:|ios-app:/.test(referer)) return 'app';
   return 'browser';
 }
-
-await startServer().catch((err) => {
-  logger.error('Server startup failed', err);
-  process.exit(1);
-});
 
 export default app;
