@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from './firebase';
+import { supabase } from './supabase';
 import { apiFetch } from './lib/api';
 
 import DynamicQRLayout from './components/DynamicQRLayout';
@@ -28,21 +27,38 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
+    // Get the initial session
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
         try {
           const data = await apiFetch('/api/user/plan');
           setPlanData(data);
         } catch (err) {
-          console.error("Failed to fetch plan:", err);
+          console.error('Failed to fetch plan:', err);
+        }
+      }
+      setLoading(false);
+    });
+
+    // Listen for auth state changes (login, logout, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        try {
+          const data = await apiFetch('/api/user/plan');
+          setPlanData(data);
+        } catch (err) {
+          console.error('Failed to fetch plan:', err);
+          setPlanData(null);
         }
       } else {
         setPlanData(null);
       }
       setLoading(false);
     });
-    return () => unsubscribe();
+
+    return () => subscription.unsubscribe();
   }, []);
 
   if (loading) {

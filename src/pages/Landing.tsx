@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { loginWithGoogle } from '../firebase';
+import { loginWithGoogle } from '../supabase';
 import QRCode from 'qrcode';
 import './Landing.css';
 

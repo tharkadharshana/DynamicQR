@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { auth } from '../firebase';
+import { supabase } from '../supabase';
 import QRCode from 'qrcode';
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
 import { apiFetch } from '../lib/api';
@@ -20,33 +20,40 @@ export default function Dashboard() {
   const [recentScans, setRecentScans] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [planData, setPlanData] = useState<any>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const navigate = useNavigate();
   const { showModal, showToast } = useUI();
 
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUserId(session?.user?.id ?? null);
+    });
+  }, []);
+
   const fetchTimeseries = async () => {
-    if (!auth.currentUser) return;
+    if (!userId) return;
     try {
-      let url = `/api/analytics/account/${auth.currentUser.uid}/timeseries`;
+      let url = `/api/analytics/account/${userId}/timeseries`;
       if (rangeMode === 'days') {
         url += `?days=${days}`;
       } else if (startDate && endDate) {
         url += `?start=${startDate}&end=${endDate}`;
       } else {
-        return; // Don't fetch if range is incomplete
+        return;
       }
       const data = await apiFetch(url);
       setTimeseries(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error("Failed to fetch timeseries", err);
+      console.error('Failed to fetch timeseries', err);
     }
   };
 
   useEffect(() => {
     fetchTimeseries();
-  }, [auth.currentUser, days, rangeMode, startDate, endDate]);
+  }, [userId, days, rangeMode, startDate, endDate]);
 
   useEffect(() => {
-    if (!auth.currentUser) return;
+    if (!userId) return;
 
     const fetchData = async () => {
       try {
@@ -64,9 +71,9 @@ export default function Dashboard() {
 
         // Fetch account level data
         const [devData, countryData, recentData] = await Promise.all([
-          apiFetch(`/api/analytics/account/${auth.currentUser?.uid}/devices`).catch(() => []),
-          apiFetch(`/api/analytics/account/${auth.currentUser?.uid}/countries`).catch(() => []),
-          apiFetch(`/api/analytics/account/${auth.currentUser?.uid}/recent`).catch(() => [])
+          apiFetch(`/api/analytics/account/${userId}/devices`).catch(() => []),
+          apiFetch(`/api/analytics/account/${userId}/countries`).catch(() => []),
+          apiFetch(`/api/analytics/account/${userId}/recent`).catch(() => [])
         ]);
         
         setDevices(Array.isArray(devData) ? devData : []);
@@ -84,7 +91,7 @@ export default function Dashboard() {
     };
 
     fetchData();
-  }, [auth.currentUser]);
+  }, [userId]);
 
   const handleDelete = (qrId: string, slug: string) => {
     showModal({

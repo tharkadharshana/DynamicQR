@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { auth, logout } from '../firebase';
+import { supabase, logout } from '../supabase';
 
 export default function DynamicQRLayout({ planData }: { planData?: any }) {
   const location = useLocation();
@@ -14,13 +14,15 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
   const isTrial = planData?.is_trial;
 
   useEffect(() => {
-    if (auth.currentUser) {
-      const email = auth.currentUser.email || '';
-      const name = auth.currentUser.displayName || email.split('@')[0] || 'User';
-      setUserEmail(email);
-      setUserName(name);
-      setUserInitials(name.substring(0, 2).toUpperCase());
-    }
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        const email = session.user.email || '';
+        const name = session.user.user_metadata?.full_name || session.user.user_metadata?.name || email.split('@')[0] || 'User';
+        setUserEmail(email);
+        setUserName(name);
+        setUserInitials(name.substring(0, 2).toUpperCase());
+      }
+    });
   }, []);
 
   type NavItem = { name: string; path: string; icon: React.ReactNode; badge?: React.ReactNode; };

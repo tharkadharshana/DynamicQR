@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { auth } from '../firebase';
+import { supabase } from '../supabase';
 import { apiFetch } from '../lib/api';
 import { useUI } from '../shared/UIContext';
 
@@ -10,9 +10,14 @@ export default function Billing() {
   const [loadingInvoices, setLoadingInvoices] = useState(true);
   const [isAnnual, setIsAnnual] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const { showToast } = useUI();
 
   useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUserEmail(session?.user?.email ?? null);
+    });
+
     apiFetch('/api/billing/invoices')
       .then(data => {
         setInvoices(data);
@@ -41,7 +46,7 @@ export default function Billing() {
   const planSince = plan_since
     ? new Date(plan_since).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : '—';
-  const billingEmail = email || auth.currentUser?.email || '—';
+  const billingEmail = email || userEmail || '—';
 
   const handleCheckout = async (targetPlan: string) => {
     try {

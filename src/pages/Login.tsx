@@ -1,5 +1,5 @@
 import React from 'react';
-import { loginWithGoogle } from '../firebase';
+import { loginWithGoogle } from '../supabase';
 import { QrCode } from 'lucide-react';
 
 export default function Login() {

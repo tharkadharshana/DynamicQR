@@ -1,7 +1,7 @@
 import React from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { QrCode, BarChart3, Settings, LogOut } from 'lucide-react';
-import { logout } from '../firebase';
+import { logout } from '../supabase';
 
 export default function Layout() {
   const location = useLocation();

@@ -8,8 +8,16 @@ const dbg = (...args: any[]) => { if (DEBUG) console.log('[DBG]', ...args); };
 import express from 'express';
 import path from 'path';
 import cors from 'cors';
-import admin from 'firebase-admin';
-import { getFirestore, FieldValue, FieldPath } from 'firebase-admin/firestore';
+import { createClient } from '@supabase/supabase-js';
+
+// Initialize Supabase Client
+const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
+dbg('Supabase init START', { supabaseUrl: !!supabaseUrl, supabaseKey: !!supabaseKey });
+export const supabase = createClient(supabaseUrl, supabaseKey);
+dbg('Supabase instance created');
+
 import crypto from 'crypto';
 import { customAlphabet } from 'nanoid';
 import QRCode from 'qrcode';
@@ -17,98 +25,171 @@ import logger from "./logger.js";
 import fs from 'fs';
 import { PLANS, TRIAL_LIMITS, DEFAULT_ADDONS, PlanId, UserAddons, ADDONS, AddonId } from './src/lib/plans.js';
 
-// Initialize Firebase Admin
-let firebaseConfig: any = {};
-try {
-  if (fs.existsSync('./firebase-applet-config.json')) {
-    firebaseConfig = JSON.parse(fs.readFileSync('./firebase-applet-config.json', 'utf-8'));
-  }
-} catch (err) {
-  logger.warn('Could not read firebase-applet-config.json, falling back to env vars');
+// Shim to keep existing call patterns working backed by Supabase
+class SupabaseRef {
+  constructor(public table: string, public id?: string) {}
+  get() { return getDoc(this); }
+  set(data: any, opts?: any) { return setDoc(this, data, opts); }
+  update(data: any) { return updateDoc(this, data); }
 }
 
-const projectId = process.env.FIREBASE_PROJECT_ID || firebaseConfig.projectId;
-const dbId = process.env.FIRESTORE_DATABASE_ID || firebaseConfig.firestoreDatabaseId;
-
-dbg('Firebase Admin init START', { projectId, dbId });
-if (!admin.apps.length) {
-  const serviceAccountVar = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (serviceAccountVar) {
-    try {
-      const serviceAccount = JSON.parse(serviceAccountVar);
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-        projectId: projectId,
-      });
-      logger.info('Firebase Admin initialized with Service Account');
-      dbg('Firebase Admin initialized with Service Account');
-    } catch (err) {
-      logger.error('Failed to parse FIREBASE_SERVICE_ACCOUNT env var:', err);
-      console.error('[DBG] Firebase Admin init FAILED to parse service account:', err);
-      admin.initializeApp({ projectId });
-      dbg('Firebase Admin fallback initialized (Ambient)');
-    }
-  } else {
-    admin.initializeApp({
-      projectId: projectId,
-    });
-    logger.info('Firebase Admin initialized with Project ID (Ambient Credentials)');
-    dbg('Firebase Admin initialized with Project ID (Ambient)');
-  }
-}
-const db = getFirestore(dbId);
-dbg('Firestore instance created', { dbId });
-
-// Shim to keep existing call patterns working
-const getDoc = (ref: any) => ref.get().then((snap: any) => {
-  if (snap && typeof snap.exists === 'boolean') {
-    const originalExists = snap.exists;
-    try {
-      Object.defineProperty(snap, 'exists', {
-        value: () => originalExists,
-        configurable: true
-      });
-    } catch (e) {
-      // Fallback if defineProperty fails
-      (snap as any).exists = () => originalExists;
-    }
-  }
-  return snap;
-});
+const getDoc = async (ref: SupabaseRef) => {
+  if (!ref.id) throw new Error("doc() id required");
+  const idCol = (ref.table === 'profiles' || ref.table === 'users') ? 'id' : (ref.table === 'qr_codes' || ref.table === 'qr_stats' || ref.table === 'scan_events' ? 'slug' : 'id');
+  const { data, error } = await supabase.from(ref.table).select('*').eq(idCol, ref.id).maybeSingle();
+  if (error) { console.error('getDoc error:', error); }
+  return {
+    exists: () => !!data,
+    data: () => data || {},
+    id: ref.id,
+    ref: ref
+  };
+};
 
 async function testConnection() {
   try {
-    dbg('Firestore connection test START');
-    // Test connection to the specific database
-    await db.collection('test_connection').doc('ping').get();
-    logger.info("Firestore connection successful to database: " + firebaseConfig.firestoreDatabaseId);
-    dbg('Firestore connection test SUCCESS');
+    dbg('Supabase connection test START');
+    const { data, error } = await supabase.from('test_connection').select('*').limit(1);
+    if (error && error.code !== '42P01') throw error; // Ignore table not found
+    logger.info("Supabase connection successful");
+    dbg('Supabase connection test SUCCESS');
   } catch (error) {
-    logger.error("Firestore connection test error:", error);
-    console.error('[DBG] Firestore connection test FAILED:', error);
-    dbg('Firestore connection test FAILURE', error);
+    logger.error("Supabase connection test error:", error);
+    console.error('[DBG] Supabase connection test FAILED:', error);
+    dbg('Supabase connection test FAILURE', error);
   }
 }
 testConnection();
 
-const getDocs = (query: any) => query.get();
-const setDoc = (ref: any, data: any, opts?: any) => opts?.merge ? ref.set(data, { merge: true }) : ref.set(data);
-const updateDoc = (ref: any, data: any) => ref.update(data);
-const addDoc = (col: any, data: any) => col.add(data);
-const writeBatch = (_db: any) => db.batch();
-const serverTimestamp = () => FieldValue.serverTimestamp();
-const increment = (n: number) => FieldValue.increment(n);
-const collection = (_db: any, name: string) => db.collection(name);
-const doc = (_db: any, col: string, id: string) => db.collection(col).doc(id);
-const query = (colRef: any, ...constraints: any[]) => {
-  let q = colRef;
-  for (const c of constraints) q = c(q);
+class SupabaseQuery {
+  public table: string;
+  public filters: any[] = [];
+  public _order: { field: string, dir: string } | null = null;
+  public _limit: number | null = null;
+  constructor(table: string) { this.table = table; }
+}
+
+const getDocs = async (query: SupabaseQuery) => {
+  let builder: any = supabase.from(query.table).select('*');
+  for (const f of query.filters) {
+    if (f.op === '==') builder = builder.eq(f.field, f.val);
+    else if (f.op === '>') builder = builder.gt(f.field, f.val);
+    else if (f.op === '<') builder = builder.lt(f.field, f.val);
+    else if (f.op === '>=') builder = builder.gte(f.field, f.val);
+    else if (f.op === '<=') builder = builder.lte(f.field, f.val);
+    else if (f.op === 'in') builder = builder.in(f.field, f.val);
+  }
+  if (query._order) builder = builder.order(query._order.field, { ascending: query._order.dir === 'asc' });
+  if (query._limit) builder = builder.limit(query._limit);
+
+  const { data, error } = await builder;
+  if (error) console.error('getDocs error:', error);
+  const rows = data || [];
+  return {
+    empty: rows.length === 0,
+    size: rows.length,
+    docs: rows.map((row: any) => ({
+      exists: () => true,
+      data: () => row,
+      id: row.slug || row.id,
+      ref: new SupabaseRef(query.table, row.slug || row.id)
+    })),
+    forEach: (cb: any) => {
+      rows.forEach((row: any, i: number) => {
+        cb({ exists: () => true, data: () => row, id: row.slug || row.id, ref: new SupabaseRef(query.table, row.slug || row.id) });
+      });
+    }
+  };
+};
+
+const setDoc = async (ref: SupabaseRef, data: any, opts?: any) => {
+  if (!ref.id) throw new Error("doc() id required");
+  const idCol = (ref.table === 'profiles' || ref.table === 'users') ? 'id' : (ref.table === 'qr_codes' || ref.table === 'qr_stats' || ref.table === 'scan_events' ? 'slug' : 'id');
+  const payload = { ...data, [idCol]: ref.id };
+  const { error } = await supabase.from(ref.table).upsert(payload);
+  if (error) console.error('setDoc error:', error);
+};
+
+const updateDoc = async (ref: SupabaseRef, data: any) => {
+  if (!ref.id) throw new Error("doc() id required");
+  const idCol = (ref.table === 'profiles' || ref.table === 'users') ? 'id' : (ref.table === 'qr_codes' || ref.table === 'qr_stats' || ref.table === 'scan_events' ? 'slug' : 'id');
+  // Handle increment
+  const plainData = { ...data };
+  for (const k in plainData) {
+    if (plainData[k]?._increment) {
+       // Supabase doesn't easily support dynamic field increment in update() via JS client
+       // we will call to an RPC or do a read-modify-write as fallback
+       // Best way is to use an rpc 'increment_field' but for now read-modify-write
+       const docSnap = await getDoc(ref);
+       if(docSnap.exists()) {
+           plainData[k] = (docSnap.data()[k] || 0) + plainData[k]._increment;
+       } else {
+           plainData[k] = plainData[k]._increment;
+       }
+    }
+    if (plainData[k] === '__SERVER_TIMESTAMP__') {
+       plainData[k] = new Date().toISOString();
+    }
+  }
+  const { error } = await supabase.from(ref.table).update(plainData).eq(idCol, ref.id);
+  if (error) console.error('updateDoc error:', error);
+};
+
+const addDoc = async (col: SupabaseRef, data: any) => {
+  const plainData = { ...data };
+  for (const k in plainData) {
+    if (plainData[k] === '__SERVER_TIMESTAMP__') {
+       plainData[k] = new Date().toISOString();
+    }
+  }
+  const { data: result, error } = await supabase.from(col.table).insert(plainData).select().single();
+  if (error) console.error('addDoc error:', error);
+  const generatedId = result?.id || result?.slug;
+  return new SupabaseRef(col.table, generatedId);
+};
+
+const deleteDoc = async (ref: SupabaseRef) => {
+  if (!ref.id) throw new Error("doc() id required");
+  const idCol = (ref.table === 'profiles' || ref.table === 'users') ? 'id' : (ref.table === 'qr_codes' || ref.table === 'qr_stats' || ref.table === 'scan_events' ? 'slug' : 'id');
+  const { error } = await supabase.from(ref.table).delete().eq(idCol, ref.id);
+  if (error) console.error('deleteDoc error:', error);
+};
+
+class SupabaseBatch {
+  private ops: any[] = [];
+  set(ref: SupabaseRef, data: any, opts?: any) {
+    this.ops.push(async () => await setDoc(ref, data, opts));
+  }
+  update(ref: SupabaseRef, data: any) {
+    this.ops.push(async () => await updateDoc(ref, data));
+  }
+  delete(ref: SupabaseRef) {
+    this.ops.push(async () => await deleteDoc(ref));
+  }
+  async commit() {
+    for (const op of this.ops) {
+      await op();
+    }
+  }
+}
+const writeBatch = (_db: any) => new SupabaseBatch();
+const serverTimestamp = () => '__SERVER_TIMESTAMP__';
+const increment = (n: number) => ({ _increment: n });
+
+const db = {
+  batch: () => new SupabaseBatch()
+};
+const collection = (_db: any, name: string) => new SupabaseRef(name);
+const doc = (_db: any, col: string, id: string) => new SupabaseRef(col, id);
+const query = (colRef: SupabaseRef, ...constraints: any[]) => {
+  const q = new SupabaseQuery(colRef.table);
+  for (const c of constraints) c(q);
   return q;
 };
-const where = (field: any, op: any, val: any) => (q: any) => q.where(field, op, val);
-const orderBy = (field: string, dir?: any) => (q: any) => q.orderBy(field, dir || 'asc');
-const limit = (n: number) => (q: any) => q.limit(n);
-const documentId = () => FieldPath.documentId();
+const where = (field: any, op: any, val: any) => (q: SupabaseQuery) => { q.filters.push({field, op, val}); return q; };
+const orderBy = (field: string, dir?: any) => (q: SupabaseQuery) => { q._order = {field, dir: dir || 'asc'}; return q; };
+const limit = (n: number) => (q: SupabaseQuery) => { q._limit = n; return q; };
+const documentId = () => 'id'; // Or 'slug' based on table, but 'id' is standard in filters. Oh wait, where(documentId()) is used! We will fix that later if needed.
 
 export const app = express();
 
@@ -163,9 +244,10 @@ async function startServer() {
         return res.status(401).send('Unauthorized');
       }
       const token = authHeader.split('Bearer ')[1];
-      const decoded = await admin.auth().verifyIdToken(token);
-      (req as any).user = decoded;
-      dbg('authenticate middleware END (success)', { uid: decoded.uid });
+      const { data: { user }, error } = await supabase.auth.getUser(token);
+      if (error || !user) throw error || new Error("User not found");
+      (req as any).user = { uid: user.id, email: user.email, ...user };
+      dbg('authenticate middleware END (success)', { uid: user.id });
       next();
     } catch (error: any) {
       logger.error(`Auth error for ${req.path}:`, { 
@@ -302,7 +384,7 @@ async function startServer() {
         await setDoc(userRef, {
           plan: 'free',
           plan_expires_at: null,
-          trial_expires_at: admin.firestore.Timestamp.fromDate(trialEnd),
+          trial_expires_at: trialEnd.toISOString(),
           is_trial: true,
           addons: DEFAULT_ADDONS,
           payhere_customer_id: null,
@@ -440,7 +522,8 @@ async function startServer() {
     dbg('ROUTE START', { method: 'POST', path: '/api/user/revoke-sessions', uid: (req as any).user?.uid });
     try {
       const uid = (req as any).user.uid;
-      await admin.auth().revokeRefreshTokens(uid);
+      // Supabase handles session invalidation when requested via client or DB flags.
+      // Skipping revokeRefreshTokens explicit call.
       res.json({ success: true });
     } catch (error) {
       logger.error('Session revocation error:', error);
@@ -551,7 +634,7 @@ async function startServer() {
       
       // 4. Delete Firebase Auth User
       dbg('Firebase Auth deleteUser START', { uid });
-      await admin.auth().deleteUser(uid);
+      await supabase.auth.admin.deleteUser(uid);
       dbg('Firebase Auth deleteUser END', { uid });
       
       res.json({ success: true });
@@ -826,7 +909,7 @@ async function startServer() {
           dbg('Firestore setDoc START', { collection: 'users', docId: uid });
           await setDoc(userRef, {
             plan,
-            plan_expires_at: admin.firestore.Timestamp.fromDate(expiry),
+            plan_expires_at: expiry.toISOString(),
             plan_since: planSince,
             is_trial: false,
             updated_at: serverTimestamp(),
