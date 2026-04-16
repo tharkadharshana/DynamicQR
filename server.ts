@@ -796,8 +796,7 @@ async function startServer() {
             if (grants.custom_domain) {
               updates['addons.custom_domain'] = true;
             }
-              updates['addons.api_access'] = true;
-            }
+            updates['addons.api_access'] = true;
             
             dbg('Firestore updateDoc START', { collection: 'users', docId: uid });
             await updateDoc(userRef, updates);
@@ -1714,6 +1713,9 @@ async function startServer() {
       
       const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
 
+      dbg('Firestore getDocs START', { collection: 'qr_codes', uid });
+      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
+      dbg('Firestore getDocs END', { collection: 'qr_codes', size: qrSnapshot.size });
       let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
       
       if (requestedSlugs) {
