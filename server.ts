@@ -293,17 +293,16 @@ async function startServer() {
     const envStatus = {
       NODE_ENV: process.env.NODE_ENV,
       APP_URL: process.env.APP_URL ? 'set' : 'missing',
-      FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID ? 'set' : 'missing',
-      FIREBASE_SERVICE_ACCOUNT: process.env.FIREBASE_SERVICE_ACCOUNT ? 'set' : 'missing',
-      FIRESTORE_DATABASE_ID: process.env.FIRESTORE_DATABASE_ID ? 'set' : 'missing',
+      SUPABASE_URL: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL ? 'set' : 'missing',
+      SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY ? 'set' : 'missing',
       INTERNAL_SECRET: process.env.INTERNAL_SECRET ? 'set' : 'missing',
       VERCEL: process.env.VERCEL ? 'true' : 'false'
     };
     
     const criticalMissing = [];
     if (!process.env.APP_URL) criticalMissing.push('APP_URL');
-    if (!process.env.FIREBASE_PROJECT_ID) criticalMissing.push('FIREBASE_PROJECT_ID');
-    if (!process.env.FIREBASE_SERVICE_ACCOUNT) criticalMissing.push('FIREBASE_SERVICE_ACCOUNT');
+    if (!process.env.SUPABASE_URL && !process.env.VITE_SUPABASE_URL) criticalMissing.push('SUPABASE_URL');
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.VITE_SUPABASE_SERVICE_ROLE_KEY) criticalMissing.push('SUPABASE_SERVICE_ROLE_KEY');
     
     res.json({ 
       status: criticalMissing.length === 0 ? 'ok' : 'error',
