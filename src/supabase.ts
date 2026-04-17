@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || import.meta.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 if (!supabaseUrl || supabaseUrl === '') {
   console.error(
@@ -10,8 +10,11 @@ if (!supabaseUrl || supabaseUrl === '') {
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
+export const supabase = createClient(
+  supabaseUrl || 'https://missing-supabase-url.supabase.co', 
+  supabaseAnonKey || 'missing-anon-key', 
+  {
+    auth: {
     persistSession: true,
     autoRefreshToken: true,
   }
