@@ -50,7 +50,7 @@ export default class ErrorBoundary extends React.Component<Props, State> {
           >
             Refresh Page
           </button>
-          {process.env.NODE_ENV === 'development' && (
+          {import.meta.env.MODE === 'development' && (
             <pre style={{ 
               marginTop: '24px', 
               padding: '16px', 
