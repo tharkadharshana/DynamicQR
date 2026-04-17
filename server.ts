@@ -35,7 +35,7 @@ class SupabaseRef {
 
 const getDoc = async (ref: SupabaseRef) => {
   if (!ref.id) throw new Error("doc() id required");
-  const idCol = (ref.table === 'profiles' || ref.table === 'users') ? 'id' : (ref.table === 'qr_codes' || ref.table === 'qr_stats' || ref.table === 'scan_events' ? 'slug' : 'id');
+  const idCol = (ref.table === 'profiles' || ref.table === 'profiles') ? 'id' : (ref.table === 'qr_codes' || ref.table === 'qr_stats' || ref.table === 'scan_events' ? 'slug' : 'id');
   const { data, error } = await supabase.from(ref.table).select('*').eq(idCol, ref.id).maybeSingle();
   if (error) { console.error('getDoc error:', error); }
   return {
@@ -104,7 +104,7 @@ const getDocs = async (query: SupabaseQuery) => {
 
 const setDoc = async (ref: SupabaseRef, data: any, opts?: any) => {
   if (!ref.id) throw new Error("doc() id required");
-  const idCol = (ref.table === 'profiles' || ref.table === 'users') ? 'id' : (ref.table === 'qr_codes' || ref.table === 'qr_stats' || ref.table === 'scan_events' ? 'slug' : 'id');
+  const idCol = (ref.table === 'profiles' || ref.table === 'profiles') ? 'id' : (ref.table === 'qr_codes' || ref.table === 'qr_stats' || ref.table === 'scan_events' ? 'slug' : 'id');
   const payload = { ...data, [idCol]: ref.id };
   const { error } = await supabase.from(ref.table).upsert(payload);
   if (error) console.error('setDoc error:', error);
@@ -112,7 +112,7 @@ const setDoc = async (ref: SupabaseRef, data: any, opts?: any) => {
 
 const updateDoc = async (ref: SupabaseRef, data: any) => {
   if (!ref.id) throw new Error("doc() id required");
-  const idCol = (ref.table === 'profiles' || ref.table === 'users') ? 'id' : (ref.table === 'qr_codes' || ref.table === 'qr_stats' || ref.table === 'scan_events' ? 'slug' : 'id');
+  const idCol = (ref.table === 'profiles' || ref.table === 'profiles') ? 'id' : (ref.table === 'qr_codes' || ref.table === 'qr_stats' || ref.table === 'scan_events' ? 'slug' : 'id');
   // Handle increment
   const plainData = { ...data };
   for (const k in plainData) {
@@ -150,7 +150,7 @@ const addDoc = async (col: SupabaseRef, data: any) => {
 
 const deleteDoc = async (ref: SupabaseRef) => {
   if (!ref.id) throw new Error("doc() id required");
-  const idCol = (ref.table === 'profiles' || ref.table === 'users') ? 'id' : (ref.table === 'qr_codes' || ref.table === 'qr_stats' || ref.table === 'scan_events' ? 'slug' : 'id');
+  const idCol = (ref.table === 'profiles' || ref.table === 'profiles') ? 'id' : (ref.table === 'qr_codes' || ref.table === 'qr_stats' || ref.table === 'scan_events' ? 'slug' : 'id');
   const { error } = await supabase.from(ref.table).delete().eq(idCol, ref.id);
   if (error) console.error('deleteDoc error:', error);
 };
@@ -321,9 +321,9 @@ async function startServer() {
     addons: UserAddons;
   }> {
     dbg('getLicense() START', { uid });
-    dbg('Firestore getDoc START', { collection: 'users', docId: uid });
-    const userSnap = await getDoc(doc(db, 'users', uid));
-    dbg('Firestore getDoc END', { collection: 'users', docId: uid, exists: userSnap.exists() });
+    dbg('Firestore getDoc START', { collection: 'profiles', docId: uid });
+    const userSnap = await getDoc(doc(db, 'profiles', uid));
+    dbg('Firestore getDoc END', { collection: 'profiles', docId: uid, exists: userSnap.exists() });
     
     if (!userSnap.exists()) {
       return { effectivePlan: 'free', limits: PLANS.free, isTrial: false, isExpired: false, addons: DEFAULT_ADDONS };
@@ -368,10 +368,10 @@ async function startServer() {
     logger.info(`Plan fetch started for user ${uid}`);
     
     try {
-      const userRef = doc(db, 'users', uid);
-      dbg('Firestore getDoc START', { collection: 'users', docId: uid });
+      const userRef = doc(db, 'profiles', uid);
+      dbg('Firestore getDoc START', { collection: 'profiles', docId: uid });
       const userSnap = await getDoc(userRef);
-      dbg('Firestore getDoc END', { collection: 'users', docId: uid, exists: userSnap.exists() });
+      dbg('Firestore getDoc END', { collection: 'profiles', docId: uid, exists: userSnap.exists() });
       logger.info(`User document fetch: exists=${userSnap.exists()}`);
 
       if (!userSnap.exists()) {
@@ -380,7 +380,7 @@ async function startServer() {
         const trialEnd = new Date();
         trialEnd.setDate(trialEnd.getDate() + 14);
         
-        dbg('Firestore setDoc START', { collection: 'users', docId: uid });
+        dbg('Firestore setDoc START', { collection: 'profiles', docId: uid });
         await setDoc(userRef, {
           plan: 'free',
           plan_expires_at: null,
@@ -392,7 +392,7 @@ async function startServer() {
           created_at: serverTimestamp(),
           email: (req as any).user.email || '',
         });
-        dbg('Firestore setDoc END', { collection: 'users', docId: uid });
+        dbg('Firestore setDoc END', { collection: 'profiles', docId: uid });
         logger.info(`New user document created for ${uid}`);
       }
 
@@ -496,9 +496,9 @@ async function startServer() {
     try {
       const uid = (req as any).user.uid;
       const { company, jobTitle, country, timezone } = req.body;
-      const userRef = doc(db, 'users', uid);
+      const userRef = doc(db, 'profiles', uid);
       
-      dbg('Firestore updateDoc START', { collection: 'users', docId: uid });
+      dbg('Firestore updateDoc START', { collection: 'profiles', docId: uid });
       await updateDoc(userRef, {
         company: company || '',
         jobTitle: jobTitle || '',
@@ -506,7 +506,7 @@ async function startServer() {
         timezone: timezone || 'Asia/Colombo',
         updated_at: serverTimestamp()
       });
-      dbg('Firestore updateDoc END', { collection: 'users', docId: uid });
+      dbg('Firestore updateDoc END', { collection: 'profiles', docId: uid });
       
       res.json({ success: true });
     } catch (error) {
@@ -543,9 +543,9 @@ async function startServer() {
       dbg('Firestore getDocs END', { collection: 'qr_codes', size: qrSnapshot.size });
       const qrs = qrSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       
-      dbg('Firestore getDoc START', { collection: 'users', docId: uid });
-      const userSnap = await getDoc(doc(db, 'users', uid));
-      dbg('Firestore getDoc END', { collection: 'users', docId: uid, exists: userSnap.exists() });
+      dbg('Firestore getDoc START', { collection: 'profiles', docId: uid });
+      const userSnap = await getDoc(doc(db, 'profiles', uid));
+      dbg('Firestore getDoc END', { collection: 'profiles', docId: uid, exists: userSnap.exists() });
       const profile = userSnap.exists() ? userSnap.data() : {};
       
       const exportData = {
@@ -620,7 +620,7 @@ async function startServer() {
       }
       
       // 2. Delete user document
-      batch.delete(doc(db, 'users', uid));
+      batch.delete(doc(db, 'profiles', uid));
       
       // 3. Delete subscriptions log
       dbg('Firestore getDocs START', { collection: 'subscriptions', uid });
@@ -862,7 +862,7 @@ async function startServer() {
       if (status_code === '2') {
         logger.info(`Payment successful for user ${uid}: ${metadata}`);
         
-        const userRef = doc(db, 'users', uid);
+        const userRef = doc(db, 'profiles', uid);
 
         if (metadata.startsWith('addon:')) {
           const addonId = metadata.split(':')[1] as AddonId;
@@ -881,9 +881,9 @@ async function startServer() {
             }
             updates['addons.api_access'] = true;
             
-            dbg('Firestore updateDoc START', { collection: 'users', docId: uid });
+            dbg('Firestore updateDoc START', { collection: 'profiles', docId: uid });
             await updateDoc(userRef, updates);
-            dbg('Firestore updateDoc END', { collection: 'users', docId: uid });
+            dbg('Firestore updateDoc END', { collection: 'profiles', docId: uid });
             
             // Log purchase
             dbg('Firestore addDoc START', { collection: 'addon_purchases' });
@@ -895,9 +895,9 @@ async function startServer() {
         } else {
           // Regular Plan Subscription
           const plan = metadata;
-          dbg('Firestore getDoc START', { collection: 'users', docId: uid });
+          dbg('Firestore getDoc START', { collection: 'profiles', docId: uid });
           const userSnap = await getDoc(userRef);
-          dbg('Firestore getDoc END', { collection: 'users', docId: uid, exists: userSnap.exists() });
+          dbg('Firestore getDoc END', { collection: 'profiles', docId: uid, exists: userSnap.exists() });
           const currentExpiry = userSnap.exists() ? userSnap.data()?.plan_expires_at?.toDate() : null;
           
           const base = currentExpiry && currentExpiry > new Date() ? currentExpiry : new Date();
@@ -906,7 +906,7 @@ async function startServer() {
 
           const planSince = userSnap.exists() && userSnap.data()?.plan_since ? userSnap.data()?.plan_since : new Date().toISOString();
 
-          dbg('Firestore setDoc START', { collection: 'users', docId: uid });
+          dbg('Firestore setDoc START', { collection: 'profiles', docId: uid });
           await setDoc(userRef, {
             plan,
             plan_expires_at: expiry.toISOString(),
@@ -915,7 +915,7 @@ async function startServer() {
             updated_at: serverTimestamp(),
             payhere_order_id: order_id
           }, { merge: true });
-          dbg('Firestore setDoc END', { collection: 'users', docId: uid });
+          dbg('Firestore setDoc END', { collection: 'profiles', docId: uid });
 
           // Log subscription
           dbg('Firestore addDoc START', { collection: 'subscriptions' });
@@ -932,12 +932,12 @@ async function startServer() {
         // Subscription Cancelled
         const uid = custom_1;
         logger.info(`Subscription cancelled for user ${uid}`);
-        dbg('Firestore updateDoc START', { collection: 'users', docId: uid });
-        await updateDoc(doc(db, 'users', uid), { 
+        dbg('Firestore updateDoc START', { collection: 'profiles', docId: uid });
+        await updateDoc(doc(db, 'profiles', uid), { 
           plan: 'free', 
           plan_expires_at: null 
         });
-        dbg('Firestore updateDoc END', { collection: 'users', docId: uid });
+        dbg('Firestore updateDoc END', { collection: 'profiles', docId: uid });
         // Find most recent subscription and mark as cancelled.
         // Use single-field where() to avoid composite index requirement; sort in memory.
         dbg('Firestore getDocs START', { collection: 'subscriptions', uid });
@@ -2337,7 +2337,7 @@ async function startServer() {
 
       const qr = qrDoc.data();
       dbg('Firestore getDoc START (internal user)', { uid: qr.user_uid });
-      const userDoc = await getDoc(doc(db, 'users', qr.user_uid));
+      const userDoc = await getDoc(doc(db, 'profiles', qr.user_uid));
       dbg('Firestore getDoc END (internal user)', { uid: qr.user_uid, exists: userDoc.exists() });
       const userPlan = userDoc.exists() ? userDoc.data().plan : 'free';
       const stats = statsDoc.exists() ? statsDoc.data() : { total_scans: 0 };
@@ -2552,7 +2552,7 @@ async function captureAnalyticsFromPayload(payload: any, qrOwnerUid?: string) {
     // OPTIMIZATION: Maintain per-user monthly counter to avoid O(N) reads on billing page
     if (qrOwnerUid) {
       dbg('Firestore updateDoc START (user monthly scans)', { uid: qrOwnerUid });
-      await updateDoc(doc(db, 'users', qrOwnerUid), {
+      await updateDoc(doc(db, 'profiles', qrOwnerUid), {
         [`monthly_scans.${currentMonth}`]: inc
       }).catch(err => {
         logger.error('User monthly_scans update failed', err);

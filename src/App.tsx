@@ -55,7 +55,6 @@ export default function App() {
       } else {
         setPlanData(null);
       }
-      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
