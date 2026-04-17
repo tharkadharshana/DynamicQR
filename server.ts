@@ -12,7 +12,7 @@ import { createClient } from '@supabase/supabase-js';
 
 // Initialize Supabase Client
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || 'https://missing-supabase-url.supabase.co';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'missing-service-role-key';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SECRET_KEY || 'missing-service-role-key';
 
 dbg('Supabase init START', { supabaseUrl: !!supabaseUrl, supabaseKey: !!supabaseKey });
 export const supabase = createClient(supabaseUrl, supabaseKey);
