@@ -23,6 +23,14 @@ export default function Dashboard() {
   const [userId, setUserId] = useState<string | null>(null);
   const navigate = useNavigate();
   const { showModal, showToast } = useUI();
+  
+  // Safety timeout to prevent infinite loading if userId never arrives
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {

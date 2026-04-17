@@ -47,14 +47,18 @@ export default function CreateQR() {
   const qrCodeRef = useRef<QRCodeStyling | null>(null);
 
   useEffect(() => {
-    qrCodeRef.current = new QRCodeStyling({
-      width: 180,
-      height: 180,
-      margin: 0,
-      type: "canvas",
-    });
-    if (canvasRef.current) {
-      qrCodeRef.current.append(canvasRef.current);
+    try {
+      qrCodeRef.current = new QRCodeStyling({
+        width: 180,
+        height: 180,
+        margin: 0,
+        type: "canvas",
+      });
+      if (canvasRef.current && qrCodeRef.current) {
+        qrCodeRef.current.append(canvasRef.current);
+      }
+    } catch (err) {
+      console.error("Failed to initialize QR Code library:", err);
     }
   }, []);
 

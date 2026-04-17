@@ -22,6 +22,14 @@ export default function AccountAnalytics() {
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const navigate = useNavigate();
+  
+  // Safety timeout to prevent infinite loading if userId never arrives
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -99,10 +107,10 @@ export default function AccountAnalytics() {
             <div className="stat-val">{(() => {
               const total = accountStats?.total_scans || 0;
               if (!total) return 0;
-              const days = accountStats?.first_scan
+              const daysCount = (accountStats && accountStats.first_scan)
                 ? Math.max(1, Math.ceil((Date.now() - new Date(accountStats.first_scan + 'T00:00').getTime()) / 86400000))
                 : 1;
-              return Math.round(total / days).toLocaleString();
+              return Math.round(total / daysCount).toLocaleString();
             })()}</div>
             <span className="stat-change neutral">--</span>
           </div>

@@ -37,7 +37,10 @@ const getDoc = async (ref: SupabaseRef) => {
   if (!ref.id) throw new Error("doc() id required");
   const idCol = (ref.table === 'profiles' || ref.table === 'profiles') ? 'id' : (ref.table === 'qr_codes' || ref.table === 'qr_stats' || ref.table === 'scan_events' ? 'slug' : 'id');
   const { data, error } = await supabase.from(ref.table).select('*').eq(idCol, ref.id).maybeSingle();
-  if (error) { console.error('getDoc error:', error); }
+  if (error) { 
+    console.error('getDoc error:', error);
+    throw new Error(`Database error: ${error.message}`);
+  }
   return {
     exists: () => !!data,
     data: () => data || {},
@@ -83,7 +86,10 @@ const getDocs = async (query: SupabaseQuery) => {
   if (query._limit) builder = builder.limit(query._limit);
 
   const { data, error } = await builder;
-  if (error) console.error('getDocs error:', error);
+  if (error) {
+    console.error('getDocs error:', error);
+    throw new Error(`Database query error: ${error.message}`);
+  }
   const rows = data || [];
   return {
     empty: rows.length === 0,
@@ -107,7 +113,10 @@ const setDoc = async (ref: SupabaseRef, data: any, opts?: any) => {
   const idCol = (ref.table === 'profiles' || ref.table === 'profiles') ? 'id' : (ref.table === 'qr_codes' || ref.table === 'qr_stats' || ref.table === 'scan_events' ? 'slug' : 'id');
   const payload = { ...data, [idCol]: ref.id };
   const { error } = await supabase.from(ref.table).upsert(payload);
-  if (error) console.error('setDoc error:', error);
+  if (error) {
+    console.error('setDoc error:', error);
+    throw new Error(`Database insert error: ${error.message}`);
+  }
 };
 
 const updateDoc = async (ref: SupabaseRef, data: any) => {
@@ -132,7 +141,10 @@ const updateDoc = async (ref: SupabaseRef, data: any) => {
     }
   }
   const { error } = await supabase.from(ref.table).update(plainData).eq(idCol, ref.id);
-  if (error) console.error('updateDoc error:', error);
+  if (error) {
+    console.error('updateDoc error:', error);
+    throw new Error(`Database update error: ${error.message}`);
+  }
 };
 
 const addDoc = async (col: SupabaseRef, data: any) => {
@@ -143,7 +155,10 @@ const addDoc = async (col: SupabaseRef, data: any) => {
     }
   }
   const { data: result, error } = await supabase.from(col.table).insert(plainData).select().single();
-  if (error) console.error('addDoc error:', error);
+  if (error) {
+    console.error('addDoc error:', error);
+    throw new Error(`Database create error: ${error.message}`);
+  }
   const generatedId = result?.id || result?.slug;
   return new SupabaseRef(col.table, generatedId);
 };
@@ -152,7 +167,10 @@ const deleteDoc = async (ref: SupabaseRef) => {
   if (!ref.id) throw new Error("doc() id required");
   const idCol = (ref.table === 'profiles' || ref.table === 'profiles') ? 'id' : (ref.table === 'qr_codes' || ref.table === 'qr_stats' || ref.table === 'scan_events' ? 'slug' : 'id');
   const { error } = await supabase.from(ref.table).delete().eq(idCol, ref.id);
-  if (error) console.error('deleteDoc error:', error);
+  if (error) {
+    console.error('deleteDoc error:', error);
+    throw new Error(`Database delete error: ${error.message}`);
+  }
 };
 
 class SupabaseBatch {

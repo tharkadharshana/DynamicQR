@@ -26,6 +26,14 @@ export default function App() {
   const [planData, setPlanData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  // Safety timeout to prevent infinite loading screen
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (loading) setLoading(false);
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [loading]);
+
   useEffect(() => {
     // Get the initial session
     supabase.auth.getSession().then(async ({ data: { session } }) => {
