@@ -59,7 +59,7 @@ async function testConnection() {
     dbg('Supabase connection test FAILURE', error);
   }
 }
-testConnection();
+// testConnection(); removed to prevent startup overhead on cold starts
 
 class SupabaseQuery {
   public table: string;
@@ -331,10 +331,10 @@ async function startServer() {
     const user = userSnap.data()!;
     const now = new Date();
 
-    const trialExpiry = user.trial_expires_at?.toDate();
+    const trialExpiry = user.trial_expires_at ? new Date(user.trial_expires_at) : null;
     const isTrial = user.is_trial && trialExpiry && trialExpiry > now;
 
-    const planExpiry = user.plan_expires_at?.toDate();
+    const planExpiry = user.plan_expires_at ? new Date(user.plan_expires_at) : null;
     const isExpired = planExpiry ? planExpiry < now : false;
 
     let effectivePlan: PlanId = user.plan || 'free';
@@ -386,8 +386,6 @@ async function startServer() {
           trial_expires_at: trialEnd.toISOString(),
           is_trial: true,
           addons: DEFAULT_ADDONS,
-          payhere_customer_id: null,
-          payhere_subscription_id: null,
           created_at: serverTimestamp(),
           email: (req as any).user.email || '',
         });
@@ -897,7 +895,7 @@ async function startServer() {
           dbg('Firestore getDoc START', { collection: 'profiles', docId: uid });
           const userSnap = await getDoc(userRef);
           dbg('Firestore getDoc END', { collection: 'profiles', docId: uid, exists: userSnap.exists() });
-          const currentExpiry = userSnap.exists() ? userSnap.data()?.plan_expires_at?.toDate() : null;
+          const currentExpiry = userSnap.exists() ? (userSnap.data()?.plan_expires_at ? new Date(userSnap.data().plan_expires_at) : null) : null;
           
           const base = currentExpiry && currentExpiry > new Date() ? currentExpiry : new Date();
           const expiry = new Date(base);
@@ -1175,19 +1173,29 @@ async function startServer() {
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
       dbg('Firestore getDocs END', { collection: 'qr_codes', size: qrSnapshot.size });
       
-      const qrs = await Promise.all(qrSnapshot.docs
-        .map(async (docSnap: any) => {
-          const data = docSnap.data();
-          // Fetch stats for each QR to satisfy dashboard requirements
-          dbg('Firestore getDoc START', { collection: 'qr_stats', docId: data.slug });
-          const statsSnap = await getDoc(doc(db, 'qr_stats', data.slug));
-          dbg('Firestore getDoc END', { collection: 'qr_stats', docId: data.slug, exists: statsSnap.exists() });
-          return {
-            id: docSnap.id,
-            ...data,
-            stats: statsSnap.exists() ? statsSnap.data() : null
-          };
-        }));
+      const slugs = qrSnapshot.docs.map((d: any) => d.data().slug);
+      
+      // BATCH fetch stats instead of N individual getDoc calls
+      const statsMap: Record<string, any> = {};
+      const chunks: string[][] = [];
+      for (let i = 0; i < slugs.length; i += 30) chunks.push(slugs.slice(i, i + 30));
+      
+      for (const chunk of chunks) {
+        if (chunk.length === 0) continue;
+        const statsSnaps = await getDocs(
+          query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk))
+        );
+        statsSnaps.forEach((s: any) => { statsMap[s.id] = s.data(); });
+      }
+
+      const qrs = qrSnapshot.docs.map((docSnap: any) => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          ...data,
+          stats: statsMap[data.slug] || null
+        };
+      });
 
       res.json(qrs);
     } catch (error: any) {

@@ -11,29 +11,26 @@
       "use": "@vercel/node"
     }
   ],
-  "routes": [
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "/api/index.ts"
+      "source": "/api/(.*)",
+      "destination": "/api/index.ts"
     },
     {
-      "src": "/qr/(.*)",
-      "dest": "/api/index.ts"
+      "source": "/qr/(.*)",
+      "destination": "/api/index.ts"
     },
     {
-      "src": "/sitemap.xml",
-      "dest": "/api/index.ts"
+      "source": "/sitemap.xml",
+      "destination": "/api/index.ts"
     },
     {
-      "src": "/robots.txt",
-      "dest": "/api/index.ts"
+      "source": "/robots.txt",
+      "destination": "/api/index.ts"
     },
     {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "source": "/((?!api|internal|assets).*)",
+      "destination": "/index.html"
     }
   ]
 }
