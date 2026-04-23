@@ -1132,14 +1132,12 @@ async function startServer() {
       const statsDoc = {
         total_scans: 0,
         unique_scans: 0,
-        mobile_scans: 0,
-        desktop_scans: 0,
-        tablet_scans: 0,
-        countries: {},
         days: {},
-        hours: {},
+        countries: {},
         browsers: {},
         os: {},
+        devices: { mobile: 0, desktop: 0, tablet: 0 },
+        monthly_scans: {},
         last_scan_at: null
       };
 
@@ -1392,7 +1390,7 @@ async function startServer() {
       const data = statsDoc.data()!;
       const total_scans = data.total_scans || 0;
       const unique_visitors = data.unique_scans || 0;
-      const mobile_scans = data.mobile_scans || 0;
+      const mobile_scans = data.devices?.mobile || 0;
       const mobile_pct = total_scans > 0 ? ((mobile_scans / total_scans) * 100).toFixed(1) : 0;
       
       const last_scan = toDate(data.last_scan_at) || null;
@@ -1443,7 +1441,7 @@ async function startServer() {
           const d = new Date(start);
           d.setDate(d.getDate() + i);
           const dateStr = d.toISOString().split('T')[0];
-          dailyStats[dateStr] = { date: dateStr, total_scans: 0, unique_scans: 0, mobile_scans: 0 };
+          dailyStats[dateStr] = { date: dateStr, total_scans: 0, unique_scans: 0 };
         }
       } else {
         // Backend enforcement: cap days by plan limit
@@ -1456,7 +1454,7 @@ async function startServer() {
           const d = new Date();
           d.setDate(d.getDate() - i);
           const dateStr = d.toISOString().split('T')[0];
-          dailyStats[dateStr] = { date: dateStr, total_scans: 0, unique_scans: 0, mobile_scans: 0 };
+          dailyStats[dateStr] = { date: dateStr, total_scans: 0, unique_scans: 0 };
         }
       }
       
@@ -1500,11 +1498,7 @@ async function startServer() {
       if (!statsDoc.exists()) return res.json([]);
       
       const data = statsDoc.data()!;
-      const devices = {
-        mobile: data.mobile_scans || 0,
-        desktop: data.desktop_scans || 0,
-        tablet: data.tablet_scans || 0
-      };
+      const devices = data.devices || { mobile: 0, desktop: 0, tablet: 0 };
       
       const total = devices.mobile + devices.desktop + devices.tablet;
 
@@ -1920,9 +1914,10 @@ async function startServer() {
           dbg('Firestore getDocs END (chunk)', { collection: 'qr_stats', size: statsSnapshot.size });
           statsSnapshot.forEach(doc => {
             const data = doc.data();
-            mobile += (data.mobile_scans || 0);
-            desktop += (data.desktop_scans || 0);
-            tablet += (data.tablet_scans || 0);
+            const d = data.devices || {};
+            mobile += (d.mobile || 0);
+            desktop += (d.desktop || 0);
+            tablet += (d.tablet || 0);
           });
         }
       }
@@ -2549,17 +2544,31 @@ async function captureAnalyticsFromPayload(payload: any, qrOwnerUid?: string) {
     updateData.failed_scans = inc;
   } else {
     updateData.total_scans = inc;
-    updateData[`${parsed.device}_scans`] = inc;
-    updateData[`days.${dateStr}`] = inc;
-    updateData[`hours.${hourStr}`] = inc;
-    updateData[`browsers.${parsed.browser}`] = inc;
-    updateData[`os.${parsed.os}`] = inc;
-    if (asn) updateData[`isps.AS${asn}`] = inc;
-    if (colo) updateData[`regions.${colo}`] = inc;
-    if (lang) updateData[`languages.${lang.substring(0, 2)}`] = inc;
-    if (parsed.osVersion) updateData[`os_versions.${parsed.os} ${parsed.osVersion}`] = inc;
-    if (tls) updateData[`tls_protocols.${tls}`] = inc;
-    if (is_eu) updateData[`eu_scans`] = inc;
+    
+    // Use manual increment for JSONB nested objects because Supabase JS client update() 
+    // doesn't support dot notation for JSONB deep paths easily without rpc
+    const { data: currentStats } = await supabase.from('qr_stats').select('*').eq('slug', slug).maybeSingle();
+    
+    if (currentStats) {
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      
+      updateData.devices = { ...(currentStats.devices || {}), [parsed.device]: ((currentStats.devices?.[parsed.device]) || 0) + 1 };
+      updateData.countries = { ...(currentStats.countries || {}), [country || 'Unknown']: ((currentStats.countries?.[country || 'Unknown']) || 0) + 1 };
+      updateData.browsers = { ...(currentStats.browsers || {}), [parsed.browser]: ((currentStats.browsers?.[parsed.browser]) || 0) + 1 };
+      updateData.os = { ...(currentStats.os || {}), [parsed.os]: ((currentStats.os?.[parsed.os]) || 0) + 1 };
+      updateData.days = { ...(currentStats.days || {}), [dateStr]: ((currentStats.days?.[dateStr]) || 0) + 1 };
+      updateData.hours = { ...(currentStats.hours || {}), [hourStr]: ((currentStats.hours?.[hourStr]) || 0) + 1 };
+      updateData.monthly_scans = { ...(currentStats.monthly_scans || {}), [currentMonth]: ((currentStats.monthly_scans?.[currentMonth]) || 0) + 1 };
+
+      if (asn) updateData.isps = { ...(currentStats.isps || {}), [`AS${asn}`]: ((currentStats.isps?.[`AS${asn}`]) || 0) + 1 };
+      if (colo) updateData.regions = { ...(currentStats.regions || {}), [colo]: ((currentStats.regions?.[colo]) || 0) + 1 };
+      if (lang) updateData.languages = { ...(currentStats.languages || {}), [lang.substring(0, 2)]: ((currentStats.languages?.[lang.substring(0, 2)]) || 0) + 1 };
+      if (parsed.osVersion) updateData.os_versions = { ...(currentStats.os_versions || {}), [`${parsed.os} ${parsed.osVersion}`]: ((currentStats.os_versions?.[`${parsed.os} ${parsed.osVersion}`]) || 0) + 1 };
+      if (tls) updateData.tls_protocols = { ...(currentStats.tls_protocols || {}), [tls]: ((currentStats.tls_protocols?.[tls]) || 0) + 1 };
+      
+      if (is_eu) updateData.eu_scans = (currentStats.eu_scans || 0) + 1;
+    }
+
     if (isUnique) updateData.unique_scans = inc;
 
     // Track monthly scans for quota enforcement
