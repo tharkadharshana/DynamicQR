@@ -266,8 +266,8 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
-            <div style={{ height: '100px', width: '100%', minHeight: '100px', minWidth: 0, marginTop: '10px' }}>
-              <ResponsiveContainer width="100%" height="100%">
+            <div style={{ height: '100px', width: '100%', marginTop: '10px' }}>
+              <ResponsiveContainer width="100%" height={100}>
                 <LineChart data={timeseries}>
                   <Tooltip 
                     contentStyle={{ borderRadius: '8px', border: '1px solid var(--border)', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}

@@ -1106,20 +1106,6 @@ async function startServer() {
         }
       }
 
-      // 3. SVG Generation
-      let qrSvg;
-      try {
-        qrSvg = await QRCode.toString(qrContent, {
-          type: 'svg',
-          color: { dark: activeStyle.dot_color, light: activeStyle.bg_color },
-          margin: 1
-        });
-        logger.info('Successfully generated QR SVG');
-      } catch (err: any) {
-        logger.error('QR SVG generation failed', { error: err.message });
-        throw new Error(`QR Image generation failed: ${err.message}`);
-      }
-
       let passwordHash = null;
       if (password) {
         passwordHash = crypto.createHash('sha256').update(password + slug).digest('hex');
@@ -1134,7 +1120,6 @@ async function startServer() {
         is_dynamic: is_dynamic !== false,
         title: title || 'My QR',
         is_active: true,
-        qr_svg: qrSvg,
         style: activeStyle,
         rate_limit: rate_limit || { enabled: false, max_scans: 100, period: 'total' },
         expiry_date: expiry_date || null,

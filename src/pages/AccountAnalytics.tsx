@@ -186,7 +186,7 @@ export default function AccountAnalytics() {
                   No scan data found for this period
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height={200}>
                   <LineChart data={accountTimeseries}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                     <XAxis 
@@ -225,7 +225,7 @@ export default function AccountAnalytics() {
                   No geographic data yet
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={accountCountries} layout="vertical" margin={{ top: 0, right: 0, left: 40, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="var(--border)" />
                     <XAxis type="number" stroke="var(--text3)" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
