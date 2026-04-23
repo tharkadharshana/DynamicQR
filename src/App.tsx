@@ -38,28 +38,24 @@ export default function App() {
     // Get the initial session
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setUser(session?.user ?? null);
-      if (session?.user) {
-        try {
-          const data = await apiFetch('/api/user/plan');
-          setPlanData(data);
-        } catch (err) {
-          console.error('Failed to fetch plan:', err);
-        }
-      }
       setLoading(false);
+      if (session?.user) {
+        apiFetch('/api/user/plan')
+          .then(setPlanData)
+          .catch(err => console.error('Failed to fetch plan:', err));
+      }
     });
 
     // Listen for auth state changes (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setUser(session?.user ?? null);
       if (session?.user) {
-        try {
-          const data = await apiFetch('/api/user/plan');
-          setPlanData(data);
-        } catch (err) {
-          console.error('Failed to fetch plan:', err);
-          setPlanData(null);
-        }
+        apiFetch('/api/user/plan')
+          .then(setPlanData)
+          .catch(err => {
+            console.error('Failed to fetch plan:', err);
+            setPlanData(null);
+          });
       } else {
         setPlanData(null);
       }
@@ -67,10 +63,6 @@ export default function App() {
 
     return () => subscription.unsubscribe();
   }, []);
-
-  if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-zinc-50">Loading...</div>;
-  }
 
   return (
     <ErrorBoundary>

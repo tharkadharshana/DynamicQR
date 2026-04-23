@@ -13,6 +13,14 @@ export default function Settings() {
     supabase.auth.getUser().then(({ data: { user } }) => setUser(user));
   }, []);
   
+  const [planTimeout, setPlanTimeout] = useState(false);
+  useEffect(() => {
+    if (!planData) {
+      const t = setTimeout(() => setPlanTimeout(true), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [planData]);
+  
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [company, setCompany] = useState('');
@@ -144,7 +152,20 @@ export default function Settings() {
   };
 
 
-  if (!planData) return <div className="content" style={{ padding: '28px' }}>Loading...</div>;
+  if (!planData) {
+    return (
+      <div className="content" style={{ padding: '28px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', height: '100%' }}>
+        {planTimeout ? (
+          <>
+            <p style={{ color: 'var(--text3)' }}>Failed to load plan data.</p>
+            <button className="btn btn-primary btn-sm" onClick={() => window.location.reload()}>Reload</button>
+          </>
+        ) : (
+          <p style={{ color: 'var(--text3)' }}>Loading...</p>
+        )}
+      </div>
+    );
+  }
 
   const currentPlan = planData.plan || 'free';
   const planLabel = currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1);

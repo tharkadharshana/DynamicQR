@@ -191,7 +191,14 @@ class SupabaseBatch {
   }
 }
 const writeBatch = (_db: any) => new SupabaseBatch();
-const serverTimestamp = () => '__SERVER_TIMESTAMP__';
+const toDate = (val: any): Date | null => {
+  if (!val) return null;
+  if (typeof val === 'string') return new Date(val);
+  if (typeof val?.toDate === 'function') return val.toDate(); // Firestore compat
+  if (val instanceof Date) return val;
+  return null;
+};
+const serverTimestamp = () => new Date().toISOString();
 const increment = (n: number) => ({ _increment: n });
 
 const db = {
@@ -349,10 +356,10 @@ async function startServer() {
     const user = userSnap.data()!;
     const now = new Date();
 
-    const trialExpiry = user.trial_expires_at ? new Date(user.trial_expires_at) : null;
+    const trialExpiry = toDate(user.trial_expires_at);
     const isTrial = user.is_trial && trialExpiry && trialExpiry > now;
 
-    const planExpiry = user.plan_expires_at ? new Date(user.plan_expires_at) : null;
+    const planExpiry = toDate(user.plan_expires_at);
     const isExpired = planExpiry ? planExpiry < now : false;
 
     let effectivePlan: PlanId = user.plan || 'free';
@@ -771,8 +778,8 @@ async function startServer() {
         .map((d: any) => ({
           id: d.id,
           ...d.data(),
-          _ts: d.data().timestamp?.toMillis?.() || 0,
-          date: d.data().timestamp?.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          _ts: toDate(d.data().timestamp || d.data().created_at)?.getTime() || 0,
+          date: toDate(d.data().timestamp || d.data().created_at)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
         }))
         .sort((a: any, b: any) => b._ts - a._ts)
         .slice(0, 12)
@@ -960,8 +967,8 @@ async function startServer() {
         dbg('Firestore getDocs END', { collection: 'subscriptions', size: subs.size });
         if (!subs.empty) {
           const mostRecent = subs.docs.sort((a: any, b: any) => {
-            const aTs = a.data().timestamp?.toMillis?.() || 0;
-            const bTs = b.data().timestamp?.toMillis?.() || 0;
+            const aTs = toDate(a.data().timestamp || a.data().created_at)?.getTime() || 0;
+            const bTs = toDate(b.data().timestamp || b.data().created_at)?.getTime() || 0;
             return bTs - aTs;
           })[0];
           dbg('Firestore updateDoc START', { collection: 'subscriptions', docId: mostRecent.id });
@@ -1403,7 +1410,7 @@ async function startServer() {
       const mobile_scans = data.mobile_scans || 0;
       const mobile_pct = total_scans > 0 ? ((mobile_scans / total_scans) * 100).toFixed(1) : 0;
       
-      const last_scan = data.last_scan_at?.toDate() || null;
+      const last_scan = toDate(data.last_scan_at) || null;
 
       // Derive first scan date from the days map (earliest key)
       const daysMap = data.days || {};
@@ -1664,7 +1671,7 @@ async function startServer() {
         const data = doc.data();
         return {
           id: doc.id,
-          scanned_at: data.scanned_at?.toDate()?.toISOString(),
+          scanned_at: toDate(data.scanned_at)?.toISOString(),
           country: data.country || 'Unknown',
           city: data.city || 'Unknown',
           device_type: data.device || 'Unknown',
@@ -2220,7 +2227,7 @@ async function startServer() {
           recentScans.push({
             id: doc.id,
             slug: data.slug,
-            scanned_at: data.scanned_at?.toDate()?.toISOString(),
+            scanned_at: toDate(data.scanned_at)?.toISOString(),
             country: data.country || 'Unknown',
             city: data.city || 'Unknown',
             device_type: data.device || 'Unknown',
@@ -2228,7 +2235,7 @@ async function startServer() {
             browser: data.browser || 'Unknown',
             referrer: data.referer || 'Direct',
             is_unique: data.is_unique,
-            _timestamp: data.scanned_at?.toMillis ? data.scanned_at.toMillis() : 0
+            _timestamp: toDate(data.scanned_at)?.getTime() || 0
           });
         });
       }
