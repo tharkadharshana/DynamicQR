@@ -233,13 +233,9 @@ async function startServer() {
   
   logger.info(`CORS Origin: ${corsOrigin || '*'}`);
   
-  // Security Headers for Firebase Auth in Iframe
+  // Required for Supabase OAuth popup flow
   app.use((req, res, next) => {
-    // Cross-Origin-Opener-Policy: unsafe-none is the default, but being explicit 
-    // helps when the environment or browser defaults to same-origin.
-    // This allows the Firebase Auth popup to communicate back to the opener window.
     res.setHeader('Cross-Origin-Opener-Policy', 'unsafe-none');
-    // Ensure the iframe can load resources from the auth domain
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     next();
   });
@@ -654,10 +650,10 @@ async function startServer() {
       await batch.commit();
       dbg('Firestore batch commit END (delete account)');
       
-      // 4. Delete Firebase Auth User
-      dbg('Firebase Auth deleteUser START', { uid });
+      // 4. Delete Supabase Auth user
+      dbg('Supabase Auth deleteUser START', { uid });
       await supabase.auth.admin.deleteUser(uid);
-      dbg('Firebase Auth deleteUser END', { uid });
+      dbg('Supabase Auth deleteUser END', { uid });
       
       res.json({ success: true });
       

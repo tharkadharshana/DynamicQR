@@ -9,7 +9,21 @@ export default function Landing() {
   const [cardUrl, setCardUrl] = useState('https://yoursite.com');
   const [qrSlug, setQrSlug] = useState('x9Km4p');
   const [scanCount, setScanCount] = useState(1284);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginLoading, setLoginLoading] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const handleLogin = async () => {
+    setLoginError(null);
+    setLoginLoading(true);
+    try {
+      await loginWithGoogle();
+    } catch (err: any) {
+      setLoginError(err?.message || 'Sign-in failed. Please try again.');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
 
   const slugs = ['x9Km4p','bR3nVq','mZ7wYt','kP2sLf','dN8jXc','hQ5eWr'];
 
@@ -62,7 +76,7 @@ export default function Landing() {
 
   const handleHeroGenerate = () => {
     setCardUrl(heroUrl);
-    loginWithGoogle();
+    handleLogin();
   };
 
   const downloadQR = () => {
@@ -86,6 +100,11 @@ export default function Landing() {
 
   return (
     <div className="landing-page">
+      {loginError && (
+        <div style={{ position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 9999, background: '#fee2e2', border: '1px solid #fca5a5', color: '#991b1b', padding: '12px 24px', borderRadius: 8, fontSize: 14, maxWidth: 480, textAlign: 'center' }}>
+          {loginError}
+        </div>
+      )}
       {/* NAV */}
       <nav>
         <div className="nav-inner">
@@ -110,8 +129,8 @@ export default function Landing() {
             <li><a href="#pricing">Pricing</a></li>
           </ul>
           <div className="nav-right">
-            <button className="btn-text" onClick={loginWithGoogle}>Sign in</button>
-            <button className="btn-cta" onClick={loginWithGoogle}>Start free trial</button>
+            <button className="btn-text" onClick={handleLogin} disabled={loginLoading}>Sign in</button>
+            <button className="btn-cta" onClick={handleLogin} disabled={loginLoading}>{loginLoading ? 'Signing in…' : 'Start free trial'}</button>
           </div>
         </div>
       </nav>
@@ -182,7 +201,7 @@ export default function Landing() {
           <div className="card-downloads">
             <button className="btn-dl" onClick={downloadQR}>↓ PNG</button>
             <button className="btn-dl">↓ SVG</button>
-            <button className="btn-dl-primary" onClick={loginWithGoogle}>Edit style →</button>
+            <button className="btn-dl-primary" onClick={handleLogin}>Edit style →</button>
           </div>
 
           <div className="card-stats">
@@ -494,7 +513,7 @@ export default function Landing() {
                 <li><span className="pf-x">–</span> Scan analytics</li>
                 <li><span className="pf-x">–</span> Logo embedding</li>
               </ul>
-              <button className="btn-plan outline" onClick={loginWithGoogle}>Create free QR</button>
+              <button className="btn-plan outline" onClick={handleLogin}>Create free QR</button>
             </div>
             <div className="plan featured">
               <div className="plan-badge">Most popular</div>
@@ -510,7 +529,7 @@ export default function Landing() {
                 <li><span className="pf-check">✓</span> 90-day history</li>
                 <li><span className="pf-x">–</span> White-label</li>
               </ul>
-              <button className="btn-plan filled" onClick={loginWithGoogle}>Start free trial</button>
+              <button className="btn-plan filled" onClick={handleLogin}>Start free trial</button>
             </div>
             <div className="plan">
               <div className="plan-tier">Team</div>
@@ -525,7 +544,7 @@ export default function Landing() {
                 <li><span className="pf-check">✓</span> 365-day history</li>
                 <li><span className="pf-check">✓</span> Priority support</li>
               </ul>
-              <button className="btn-plan outline" onClick={loginWithGoogle}>Contact sales</button>
+              <button className="btn-plan outline" onClick={handleLogin}>Contact sales</button>
             </div>
           </div>
         </div>
@@ -580,8 +599,8 @@ export default function Landing() {
           <h2 className="cta-h">Your first QR is<br/><em>free right now.</em></h2>
           <p className="cta-sub">No credit card. No setup. Paste a link and have a working,<br/>trackable QR code in under 30 seconds.</p>
           <div className="cta-btns">
-            <button className="btn-cta-white" onClick={loginWithGoogle}>Start free trial →</button>
-            <button className="btn-cta-ghost" onClick={loginWithGoogle}>See all features</button>
+            <button className="btn-cta-white" onClick={handleLogin}>Start free trial →</button>
+            <button className="btn-cta-ghost" onClick={handleLogin}>See all features</button>
           </div>
           <p className="cta-note">Free forever · 14-day trial on Pro · Cancel anytime</p>
         </div>
