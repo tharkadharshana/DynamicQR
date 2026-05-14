@@ -26,43 +26,57 @@ export default function App() {
   const [planData, setPlanData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // Safety timeout to prevent infinite loading screen
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (loading) setLoading(false);
-    }, 8000);
-    return () => clearTimeout(timer);
-  }, [loading]);
-
-  useEffect(() => {
-    // Get the initial session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    // Listen for auth state changes FIRST — this catches the OAuth callback
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       setUser(session?.user ?? null);
       setLoading(false);
+
       if (session?.user) {
         apiFetch('/api/user/plan')
           .then(setPlanData)
           .catch(err => console.error('Failed to fetch plan:', err));
-      }
-    });
-
-    // Listen for auth state changes (login, logout, token refresh)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        apiFetch('/api/user/plan')
-          .then(setPlanData)
-          .catch(err => {
-            console.error('Failed to fetch plan:', err);
-            setPlanData(null);
-          });
       } else {
         setPlanData(null);
       }
     });
 
-    return () => subscription.unsubscribe();
+    // Also check existing session on mount (for page refreshes)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      // onAuthStateChange will also fire, but this ensures we don't hang
+      // if the event doesn't fire quickly
+      if (!session) {
+        setLoading(false);
+      }
+    });
+
+    // Safety timeout
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 8000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(timer);
+    };
   }, []);
+
+  if (loading) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        background: '#0C0D10',
+        color: '#9B9A93',
+        fontSize: '14px',
+        fontFamily: 'sans-serif'
+      }}>
+        Loading...
+      </div>
+    );
+  }
 
   return (
     <ErrorBoundary>
