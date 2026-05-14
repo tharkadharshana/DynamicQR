@@ -214,7 +214,7 @@ const query = (colRef: SupabaseRef, ...constraints: any[]) => {
 const where = (field: any, op: any, val: any) => (q: SupabaseQuery) => { q.filters.push({field, op, val}); return q; };
 const orderBy = (field: string, dir?: any) => (q: SupabaseQuery) => { q._order = {field, dir: dir || 'asc'}; return q; };
 const limit = (n: number) => (q: SupabaseQuery) => { q._limit = n; return q; };
-const documentId = () => 'id'; // Or 'slug' based on table, but 'id' is standard in filters. Oh wait, where(documentId()) is used! We will fix that later if needed.
+const documentId = () => 'slug'; // Or 'slug' based on table, but 'id' is standard in filters. Oh wait, where(documentId()) is used! We will fix that later if needed.
 
 export const app = express();
 
@@ -439,7 +439,7 @@ async function startServer() {
       for (const chunk of chunks) {
         try {
           dbg('Firestore getDocs START (chunk)', { collection: 'qr_stats', count: chunk.length });
-          const statsSnaps = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          const statsSnaps = await getDocs(query(collection(db, 'qr_stats'), where('slug', 'in', chunk)));
           dbg('Firestore getDocs END (chunk)', { collection: 'qr_stats', size: statsSnaps.size });
           logger.info(`Plan fetch: chunk stats count: ${statsSnaps.size} for chunk ${chunk.join(',')}`);
           statsSnaps.forEach((s: any) => {
@@ -1187,7 +1187,7 @@ async function startServer() {
       for (const chunk of chunks) {
         if (chunk.length === 0) continue;
         const statsSnaps = await getDocs(
-          query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk))
+          query(collection(db, 'qr_stats'), where('slug', 'in', chunk))
         );
         statsSnaps.forEach((s: any) => { statsMap[s.id] = s.data(); });
       }
@@ -1752,7 +1752,7 @@ async function startServer() {
 
       for (const chunk of chunks) {
         dbg('Firestore getDocs START (chunk)', { collection: 'qr_stats', count: chunk.length });
-        const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+        const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where('slug', 'in', chunk)));
         dbg('Firestore getDocs END (chunk)', { collection: 'qr_stats', size: statsSnapshot.size });
         statsSnapshot.forEach(doc => {
           const data = doc.data();
@@ -1847,7 +1847,7 @@ async function startServer() {
         }
 
         for (const chunk of chunks) {
-          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where('slug', 'in', chunk)));
           logger.info(`Timeseries aggregation: chunk found ${statsSnapshot.size} stats docs`);
           statsSnapshot.forEach(doc => {
             const data = doc.data();
@@ -1906,7 +1906,7 @@ async function startServer() {
 
         for (const chunk of chunks) {
           dbg('Firestore getDocs START (chunk)', { collection: 'qr_stats', count: chunk.length });
-          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where('slug', 'in', chunk)));
           dbg('Firestore getDocs END (chunk)', { collection: 'qr_stats', size: statsSnapshot.size });
           statsSnapshot.forEach(doc => {
             const data = doc.data();
@@ -1965,7 +1965,7 @@ async function startServer() {
 
         for (const chunk of chunks) {
           dbg('Firestore getDocs START (chunk)', { collection: 'qr_stats', count: chunk.length });
-          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where('slug', 'in', chunk)));
           dbg('Firestore getDocs END (chunk)', { collection: 'qr_stats', size: statsSnapshot.size });
           statsSnapshot.forEach(doc => {
             const data = doc.data();
@@ -2015,7 +2015,7 @@ async function startServer() {
         for (let i = 0; i < slugs.length; i += 30) chunks.push(slugs.slice(i, i + 30));
         for (const chunk of chunks) {
           dbg('Firestore getDocs START (chunk)', { collection: 'qr_stats', count: chunk.length });
-          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where('slug', 'in', chunk)));
           dbg('Firestore getDocs END (chunk)', { collection: 'qr_stats', size: statsSnapshot.size });
           statsSnapshot.forEach(doc => {
             const data = doc.data();
@@ -2059,7 +2059,7 @@ async function startServer() {
         for (let i = 0; i < slugs.length; i += 30) chunks.push(slugs.slice(i, i + 30));
         for (const chunk of chunks) {
           dbg('Firestore getDocs START (chunk)', { collection: 'qr_stats', count: chunk.length });
-          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where('slug', 'in', chunk)));
           dbg('Firestore getDocs END (chunk)', { collection: 'qr_stats', size: statsSnapshot.size });
           statsSnapshot.forEach(doc => {
             const data = doc.data();
@@ -2103,7 +2103,7 @@ async function startServer() {
         for (let i = 0; i < slugs.length; i += 30) chunks.push(slugs.slice(i, i + 30));
         for (const chunk of chunks) {
           dbg('Firestore getDocs START (chunk)', { collection: 'qr_stats', count: chunk.length });
-          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where('slug', 'in', chunk)));
           dbg('Firestore getDocs END (chunk)', { collection: 'qr_stats', size: statsSnapshot.size });
           statsSnapshot.forEach(doc => {
             const data = doc.data();
@@ -2147,7 +2147,7 @@ async function startServer() {
         for (let i = 0; i < slugs.length; i += 30) chunks.push(slugs.slice(i, i + 30));
         for (const chunk of chunks) {
           dbg('Firestore getDocs START (chunk)', { collection: 'qr_stats', count: chunk.length });
-          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where(documentId(), 'in', chunk)));
+          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where('slug', 'in', chunk)));
           dbg('Firestore getDocs END (chunk)', { collection: 'qr_stats', size: statsSnapshot.size });
           statsSnapshot.forEach(doc => {
             const data = doc.data();
