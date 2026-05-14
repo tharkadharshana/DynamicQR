@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import ConfirmationModal from '../components/ConfirmationModal';
 import ToastContainer from '../components/ToastContainer';
 
@@ -30,6 +30,8 @@ interface UIContextType {
   closeModal: () => void;
   showToast: (type: ToastType, message: string) => void;
   removeToast: (id: string) => void;
+  theme: 'dark' | 'light';
+  toggleTheme: () => void;
 }
 
 const UIContext = createContext<UIContextType | undefined>(undefined);
@@ -44,6 +46,19 @@ export function UIProvider({ children }: { children: ReactNode }) {
   });
 
   const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    return (localStorage.getItem('theme') as 'dark' | 'light') || 'dark';
+  });
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('light', theme === 'light');
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = useCallback(() => {
+    setTheme(t => t === 'dark' ? 'light' : 'dark');
+  }, []);
 
   const showModal = useCallback((options: Omit<ModalState, 'isOpen'>) => {
     setModal({ ...options, isOpen: true });
@@ -66,7 +81,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <UIContext.Provider value={{ showModal, closeModal, showToast, removeToast }}>
+    <UIContext.Provider value={{ showModal, closeModal, showToast, removeToast, theme, toggleTheme }}>
       {children}
       <InternalUIComponents modal={modal} toasts={toasts} onCloseModal={closeModal} removeToast={removeToast} />
     </UIContext.Provider>
