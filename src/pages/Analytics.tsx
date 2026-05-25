@@ -4,7 +4,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, BarChart, Bar
 } from 'recharts';
-import { auth } from '../firebase';
+import { supabase } from '../supabase';
 import { apiFetch } from '../lib/api';
 
 const COLORS = ['#1A1916', '#E85D3A', '#4D9EFF', '#3DCC7E', '#9B7FFF', '#F5A623', '#D0021B'];
@@ -32,11 +32,18 @@ export default function Analytics() {
   const [advanced, setAdvanced] = useState<any>(null);
   const [qrDetails, setQrDetails] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUserId(session?.user?.id ?? null);
+    });
+  }, []);
 
   useEffect(() => {
     const fetchQRs = async () => {
       try {
-        if (!auth.currentUser) return;
+        if (!userId) return;
         const data = await apiFetch('/api/qr');
         setQrCodes(data);
       } catch (error) {
@@ -44,12 +51,12 @@ export default function Analytics() {
       }
     };
     fetchQRs();
-  }, [auth.currentUser]);
+  }, [userId]);
 
   const fetchTimeseries = async () => {
-    if (!auth.currentUser) return;
+    if (!userId) return;
     try {
-      let baseUrl = `/api/analytics/account/${auth.currentUser.uid}`;
+      let baseUrl = `/api/analytics/account/${userId}`;
       let queryParams = '';
 
       if (selectedSlugs.length === 1) {
@@ -81,18 +88,18 @@ export default function Analytics() {
 
   useEffect(() => {
     fetchTimeseries();
-  }, [selectedSlugs, auth.currentUser, days, rangeMode, startDate, endDate]);
+  }, [selectedSlugs, userId, days, rangeMode, startDate, endDate]);
 
   useEffect(() => {
     const fetchAnalytics = async () => {
       setLoading(true);
       try {
-        if (!auth.currentUser) {
+        if (!userId) {
           console.log("No user found, waiting...");
           return;
         }
 
-        let baseUrl = `/api/analytics/account/${auth.currentUser.uid}`;
+        let baseUrl = `/api/analytics/account/${userId}`;
         let queryParams = '';
 
         if (selectedSlugs.length === 1) {
@@ -146,7 +153,7 @@ export default function Analytics() {
     };
 
     fetchAnalytics();
-  }, [selectedSlugs, auth.currentUser]);
+  }, [selectedSlugs, userId]);
 
   const toggleSlug = (slug: string) => {
     setSelectedSlugs(prev => {
@@ -334,7 +341,7 @@ export default function Analytics() {
                   No scan data found for this period
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height={200}>
                   <LineChart data={timeseries}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                     <XAxis 
@@ -373,7 +380,7 @@ export default function Analytics() {
                   No geographic data yet
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={countries} layout="vertical" margin={{ top: 0, right: 0, left: 40, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="var(--border)" />
                     <XAxis type="number" stroke="var(--text3)" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
@@ -400,7 +407,7 @@ export default function Analytics() {
                       No device data
                     </div>
                   ) : (
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height={160}>
                       <PieChart>
                         <Pie
                           data={devices}

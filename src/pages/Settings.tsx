@@ -1,14 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
-import { auth, logout } from '../firebase';
-import { updateProfile } from 'firebase/auth';
+import { supabase, logout } from '../supabase';
 import { apiFetch, formatNumber } from '../lib/api';
 import { useUI } from '../shared/UIContext';
 
 export default function Settings() {
   const navigate = useNavigate();
   const { planData } = useOutletContext<{ planData: any }>();
-  const user = auth.currentUser;
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => setUser(user));
+  }, []);
+  
+  const [planTimeout, setPlanTimeout] = useState(false);
+  useEffect(() => {
+    if (!planData) {
+      const t = setTimeout(() => setPlanTimeout(true), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [planData]);
   
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -21,8 +32,9 @@ export default function Settings() {
   const [webhookUrl, setWebhookUrl] = useState('');
 
   useEffect(() => {
-    if (user?.displayName) {
-      const parts = user.displayName.split(' ');
+    const displayName = user?.user_metadata?.full_name || user?.user_metadata?.name || '';
+    if (displayName) {
+      const parts = displayName.split(' ');
       setFirstName(parts[0] || '');
       setLastName(parts.slice(1).join(' ') || '');
     }
@@ -41,10 +53,10 @@ export default function Settings() {
     setSavingProfile(true);
     try {
       if (user) {
-        await updateProfile(user, {
-          displayName: `${firstName} ${lastName}`.trim()
+        await supabase.auth.updateUser({
+          data: { full_name: `${firstName} ${lastName}`.trim() }
         });
-        
+
         await apiFetch('/api/user/profile', {
           method: 'PUT',
           body: JSON.stringify({ company, jobTitle, country, timezone })
@@ -88,7 +100,7 @@ export default function Settings() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `dynamicqr-export-${user?.uid}.json`;
+      a.download = `dynamicqr-export-${user?.id}.json`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -140,7 +152,20 @@ export default function Settings() {
   };
 
 
-  if (!planData) return <div className="content" style={{ padding: '28px' }}>Loading...</div>;
+  if (!planData) {
+    return (
+      <div className="content" style={{ padding: '28px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', height: '100%' }}>
+        {planTimeout ? (
+          <>
+            <p style={{ color: 'var(--text3)' }}>Failed to load plan data.</p>
+            <button className="btn btn-primary btn-sm" onClick={() => window.location.reload()}>Reload</button>
+          </>
+        ) : (
+          <p style={{ color: 'var(--text3)' }}>Loading...</p>
+        )}
+      </div>
+    );
+  }
 
   const currentPlan = planData.plan || 'free';
   const planLabel = currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1);
@@ -159,15 +184,15 @@ export default function Settings() {
           {/* LEFT COLUMN */}
           <div>
             <div className="profile-card mb16">
-              <div className="profile-av" id="profile-av-wrap" style={user?.photoURL ? { backgroundImage: `url(${user.photoURL})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}>
-                {!user?.photoURL && <span id="av-initials">{(firstName[0] || '') + (lastName[0] || '')}</span>}
+              <div className="profile-av" id="profile-av-wrap" style={user?.user_metadata?.avatar_url ? { backgroundImage: `url(${user.user_metadata.avatar_url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}>
+                {!user?.user_metadata?.avatar_url && <span id="av-initials">{(firstName[0] || '') + (lastName[0] || '')}</span>}
                 <div className="profile-av-overlay">📷</div>
               </div>
               <div className="profile-name" id="profile-display-name">{firstName} {lastName}</div>
               <div className="profile-email" id="profile-display-email">{user?.email}</div>
               <div className="profile-plan-chip">⭐ {planLabel} Plan · {planData.is_expired ? 'Expired' : 'Active'}</div>
               <div style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '8px', textAlign: 'center' }}>
-                Member since {user?.metadata.creationTime ? new Date(user.metadata.creationTime).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'}
+                Member since {user?.created_at ? new Date(user.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'}
               </div>
               <div className="profile-stats">
                 <div className="p-stat"><div className="p-stat-val">{qrUsed}</div><div className="p-stat-key">QR Codes</div></div>

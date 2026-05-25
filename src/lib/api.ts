@@ -1,21 +1,20 @@
 /**
- * Centralized API helper for the Scnr frontend.
+ * Centralized API helper for the DynamicQR frontend.
  *
- * - Automatically refreshes Firebase ID tokens before every call
+ * - Automatically fetches fresh Supabase access tokens before every call
  * - Provides consistent error handling
  * - Numbers are locale-formatted via formatNumber()
  */
-import { auth } from '../firebase';
+import { supabase } from '../supabase';
 
 /**
- * Get a fresh Firebase ID token. Firebase caches tokens internally
- * and only refreshes when close to expiry, so this is cheap to call
- * on every request.
+ * Get a fresh Supabase JWT access token.
+ * Supabase auto-refreshes tokens internally, so this is cheap to call on every request.
  */
 async function getToken(): Promise<string> {
-  const user = auth.currentUser;
-  if (!user) throw new Error('Not authenticated');
-  return user.getIdToken(); // auto-refreshes if expired
+  const { data: { session }, error } = await supabase.auth.getSession();
+  if (error || !session) throw new Error('Not authenticated');
+  return session.access_token;
 }
 
 /**

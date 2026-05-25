@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from './firebase';
+import { supabase } from './supabase';
 import { apiFetch } from './lib/api';
 
 import DynamicQRLayout from './components/DynamicQRLayout';
@@ -28,25 +27,55 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
-        try {
-          const data = await apiFetch('/api/user/plan');
-          setPlanData(data);
-        } catch (err) {
-          console.error("Failed to fetch plan:", err);
-        }
+    // Listen for auth state changes FIRST — this catches the OAuth callback
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+
+      if (session?.user) {
+        apiFetch('/api/user/plan')
+          .then(setPlanData)
+          .catch(err => console.error('Failed to fetch plan:', err));
       } else {
         setPlanData(null);
       }
-      setLoading(false);
     });
-    return () => unsubscribe();
+
+    // Also check existing session on mount (for page refreshes)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      // onAuthStateChange will also fire, but this ensures we don't hang
+      // if the event doesn't fire quickly
+      if (!session) {
+        setLoading(false);
+      }
+    });
+
+    // Safety timeout
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 8000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(timer);
+    };
   }, []);
 
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center bg-zinc-50">Loading...</div>;
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        background: '#0C0D10',
+        color: '#9B9A93',
+        fontSize: '14px',
+        fontFamily: 'sans-serif'
+      }}>
+        Loading...
+      </div>
+    );
   }
 
   return (

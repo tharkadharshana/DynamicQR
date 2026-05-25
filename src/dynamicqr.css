@@ -29,6 +29,32 @@
   --radius:   10px;
   --radius-lg:16px;
 }
+:root.light {
+  --bg:       #F2F2F7;
+  --surface:  #FFFFFF;
+  --surface2: #F2F2F7;
+  --surface3: #E5E5EA;
+  --border:   rgba(0,0,0,0.07);
+  --border2:  rgba(0,0,0,0.12);
+  --border3:  rgba(0,0,0,0.18);
+  --text:     #1C1C1E;
+  --text2:    #48484A;
+  --text3:    #8E8E93;
+  --coral:    #D94F2B;
+  --coral-d:  #B8401F;
+  --coral-l:  rgba(217,79,43,0.12);
+  --coral-ll: rgba(217,79,43,0.06);
+  --green:    #28A65A;
+  --green-l:  rgba(40,166,90,0.12);
+  --blue:     #2274E0;
+  --blue-l:   rgba(34,116,224,0.12);
+  --amber:    #C47F10;
+  --amber-l:  rgba(196,127,16,0.12);
+  --red:      #D93025;
+  --red-l:    rgba(217,48,37,0.12);
+  --purple:   #6A52D4;
+  --purple-l: rgba(106,82,212,0.12);
+}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{width:100%;overflow-x:hidden;}
 body{background:var(--bg);color:var(--text);font-family:var(--font-b);font-size:14px;-webkit-font-smoothing:antialiased;width:100%;min-height:100vh;overflow-x:hidden;}

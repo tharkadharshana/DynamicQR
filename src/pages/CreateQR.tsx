@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+import { supabase } from '../supabase';
 import QRCodeStyling from 'qr-code-styling';
 import { apiFetch } from '../lib/api';
 import { useUI } from '../shared/UIContext';
@@ -48,14 +47,18 @@ export default function CreateQR() {
   const qrCodeRef = useRef<QRCodeStyling | null>(null);
 
   useEffect(() => {
-    qrCodeRef.current = new QRCodeStyling({
-      width: 180,
-      height: 180,
-      margin: 0,
-      type: "canvas",
-    });
-    if (canvasRef.current) {
-      qrCodeRef.current.append(canvasRef.current);
+    try {
+      qrCodeRef.current = new QRCodeStyling({
+        width: 180,
+        height: 180,
+        margin: 0,
+        type: "canvas",
+      });
+      if (canvasRef.current && qrCodeRef.current) {
+        qrCodeRef.current.append(canvasRef.current);
+      }
+    } catch (err) {
+      console.error("Failed to initialize QR Code library:", err);
     }
   }, []);
 
@@ -213,7 +216,7 @@ export default function CreateQR() {
     }
     setUrlError(false);
     
-    if (!auth.currentUser) return;
+    if (!(await supabase.auth.getSession()).data.session) return;
     setLoading(true);
 
     try {

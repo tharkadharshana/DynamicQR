@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { auth } from '../firebase';
+import { supabase } from '../supabase';
 import { apiFetch } from '../lib/api';
 import { Link, useNavigate } from 'react-router-dom';
 import {
@@ -20,12 +20,27 @@ export default function AccountAnalytics() {
   const [qrPerformance, setQrPerformance] = useState<any[]>([]);
   const [accountCountries, setAccountCountries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
   const navigate = useNavigate();
+  
+  // Safety timeout to prevent infinite loading if userId never arrives
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUserId(session?.user?.id ?? null);
+    });
+  }, []);
 
   const fetchTimeseries = async () => {
-    if (!auth.currentUser) return;
+    if (!userId) return;
     try {
-      let tsUrl = `/api/analytics/account/${auth.currentUser.uid}/timeseries`;
+      let tsUrl = `/api/analytics/account/${userId}/timeseries`;
       if (rangeMode === 'days') {
         tsUrl += `?days=${days}`;
       } else if (startDate && endDate) {
@@ -42,17 +57,17 @@ export default function AccountAnalytics() {
 
   useEffect(() => {
     fetchTimeseries();
-  }, [auth.currentUser, days, rangeMode, startDate, endDate]);
+  }, [userId, days, rangeMode, startDate, endDate]);
 
   useEffect(() => {
-    if (!auth.currentUser) return;
+    if (!userId) return;
 
     const fetchStats = async () => {
       try {
         const [stats, performance, countries] = await Promise.all([
-          apiFetch(`/api/analytics/account/${auth.currentUser?.uid}`),
-          apiFetch(`/api/analytics/account/${auth.currentUser?.uid}/performance`),
-          apiFetch(`/api/analytics/account/${auth.currentUser?.uid}/countries`),
+          apiFetch(`/api/analytics/account/${userId}`),
+          apiFetch(`/api/analytics/account/${userId}/performance`),
+          apiFetch(`/api/analytics/account/${userId}/countries`),
         ]);
 
         setAccountStats(stats);
@@ -66,7 +81,7 @@ export default function AccountAnalytics() {
     };
 
     fetchStats();
-  }, [auth.currentUser]);
+  }, [userId]);
 
   if (loading) {
     return <div className="flex justify-center items-center h-64">Loading analytics...</div>;
@@ -92,10 +107,10 @@ export default function AccountAnalytics() {
             <div className="stat-val">{(() => {
               const total = accountStats?.total_scans || 0;
               if (!total) return 0;
-              const days = accountStats?.first_scan
+              const daysCount = (accountStats && accountStats.first_scan)
                 ? Math.max(1, Math.ceil((Date.now() - new Date(accountStats.first_scan + 'T00:00').getTime()) / 86400000))
                 : 1;
-              return Math.round(total / days).toLocaleString();
+              return Math.round(total / daysCount).toLocaleString();
             })()}</div>
             <span className="stat-change neutral">--</span>
           </div>
@@ -171,7 +186,7 @@ export default function AccountAnalytics() {
                   No scan data found for this period
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height={200}>
                   <LineChart data={accountTimeseries}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                     <XAxis 
@@ -210,7 +225,7 @@ export default function AccountAnalytics() {
                   No geographic data yet
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={accountCountries} layout="vertical" margin={{ top: 0, right: 0, left: 40, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="var(--border)" />
                     <XAxis type="number" stroke="var(--text3)" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
