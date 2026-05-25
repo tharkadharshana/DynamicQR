@@ -567,7 +567,7 @@ async function startServer() {
   });
 
   // User Profile Update API
-  app.put('/api/user/profile', authenticate, async (req, res) => {
+  app.put('/api/user/profile', writeLimiter, authenticate, async (req, res) => {
     dbg('ROUTE START', { method: 'PUT', path: '/api/user/profile', uid: (req as any).user?.uid });
     try {
       const uid = (req as any).user.uid;
@@ -2573,12 +2573,8 @@ await startServer().catch((err) => {
 
 // Analytics Capture Logic
 async function captureAnalyticsFromPayload(payload: any, qrOwnerUid?: string) {
-  const { slug, ip, ua, country, asn, colo, tls, lang, is_eu, is_unique: payloadIsUnique, status } = payload;
+  const { slug, ua, country, referer, is_unique: payloadIsUnique, status } = payload;
   if (isBot(ua)) return;
-
-  const today = new Date().toISOString().slice(0, 10);
-  const fingerprint = `${ip}:${ua.slice(0, 100)}:${today}:${process.env.HASH_SALT || ''}`;
-  const visitorHash = crypto.createHash('sha256').update(fingerprint).digest('hex');
 
   let isUnique = payloadIsUnique;
   if (isUnique === undefined) {
@@ -2589,90 +2585,62 @@ async function captureAnalyticsFromPayload(payload: any, qrOwnerUid?: string) {
   const parsed = parseUA(ua);
   const now = new Date();
   const dateStr = now.toISOString().split('T')[0];
-  const hourStr = now.getHours().toString();
+  const currentMonth = dateStr.slice(0, 7);
 
   const isFailed = status === 'failed_password';
 
-  // 1. EXACT SCHEMA for scan_events
+  // 1. Insert into scan_events — only columns that exist in the schema
   dbg('Firestore addDoc START (scan_events)', { slug });
   await addDoc(collection(db, 'scan_events'), {
     slug,
-    date: dateStr,
+    scanned_at: serverTimestamp(),
     country: country || 'Unknown',
     device: parsed.device,
     browser: parsed.browser,
     os: parsed.os,
+    referer: referer || null,
     is_unique: isUnique,
-    scanned_at: serverTimestamp(),
-    visitor_hash: visitorHash,
-    asn: asn || null,
-    colo: colo || null,
-    lang: lang || null,
-    tls: tls || null,
-    is_eu: is_eu || false,
-    status: status || 'success'
   });
   dbg('Firestore addDoc END (scan_events)', { slug });
 
-  // 2. EXACT SCHEMA for qr_stats
-  const statsRef = doc(db, 'qr_stats', slug);
-  const inc = increment(1);
-  
-  const updateData: any = {
-    [`countries.${country || 'Unknown'}`]: inc,
-    last_scan_at: serverTimestamp()
+  // Failed password scans are logged but don't increment stats
+  if (isFailed) return;
+
+  // 2. Update qr_stats via read-modify-write
+  // Only writes columns that exist in the schema: total_scans, unique_scans,
+  // days, countries, browsers, os, devices, monthly_scans
+  dbg('qr_stats read START', { slug });
+  const { data: currentStats } = await supabase.from('qr_stats').select('*').eq('slug', slug).maybeSingle();
+  dbg('qr_stats read END', { slug, found: !!currentStats });
+
+  const statsUpdate: Record<string, any> = {
+    total_scans: (currentStats?.total_scans || 0) + 1,
+    days:         { ...(currentStats?.days || {}),         [dateStr]:             ((currentStats?.days?.[dateStr])                             || 0) + 1 },
+    countries:    { ...(currentStats?.countries || {}),    [country || 'Unknown']: ((currentStats?.countries?.[country || 'Unknown'])           || 0) + 1 },
+    browsers:     { ...(currentStats?.browsers || {}),     [parsed.browser]:       ((currentStats?.browsers?.[parsed.browser])                  || 0) + 1 },
+    os:           { ...(currentStats?.os || {}),           [parsed.os]:            ((currentStats?.os?.[parsed.os])                            || 0) + 1 },
+    devices:      { ...(currentStats?.devices || {}),      [parsed.device]:        ((currentStats?.devices?.[parsed.device])                   || 0) + 1 },
+    monthly_scans:{ ...(currentStats?.monthly_scans || {}), [currentMonth]:        ((currentStats?.monthly_scans?.[currentMonth])              || 0) + 1 },
   };
 
-  if (isFailed) {
-    updateData.failed_scans = inc;
-  } else {
-    updateData.total_scans = inc;
-    
-    // Use manual increment for JSONB nested objects because Supabase JS client update() 
-    // doesn't support dot notation for JSONB deep paths easily without rpc
-    const { data: currentStats } = await supabase.from('qr_stats').select('*').eq('slug', slug).maybeSingle();
-    
-    if (currentStats) {
-      const currentMonth = new Date().toISOString().slice(0, 7);
-      
-      updateData.devices = { ...(currentStats.devices || {}), [parsed.device]: ((currentStats.devices?.[parsed.device]) || 0) + 1 };
-      updateData.countries = { ...(currentStats.countries || {}), [country || 'Unknown']: ((currentStats.countries?.[country || 'Unknown']) || 0) + 1 };
-      updateData.browsers = { ...(currentStats.browsers || {}), [parsed.browser]: ((currentStats.browsers?.[parsed.browser]) || 0) + 1 };
-      updateData.os = { ...(currentStats.os || {}), [parsed.os]: ((currentStats.os?.[parsed.os]) || 0) + 1 };
-      updateData.days = { ...(currentStats.days || {}), [dateStr]: ((currentStats.days?.[dateStr]) || 0) + 1 };
-      updateData.hours = { ...(currentStats.hours || {}), [hourStr]: ((currentStats.hours?.[hourStr]) || 0) + 1 };
-      updateData.monthly_scans = { ...(currentStats.monthly_scans || {}), [currentMonth]: ((currentStats.monthly_scans?.[currentMonth]) || 0) + 1 };
-
-      if (asn) updateData.isps = { ...(currentStats.isps || {}), [`AS${asn}`]: ((currentStats.isps?.[`AS${asn}`]) || 0) + 1 };
-      if (colo) updateData.regions = { ...(currentStats.regions || {}), [colo]: ((currentStats.regions?.[colo]) || 0) + 1 };
-      if (lang) updateData.languages = { ...(currentStats.languages || {}), [lang.substring(0, 2)]: ((currentStats.languages?.[lang.substring(0, 2)]) || 0) + 1 };
-      if (parsed.osVersion) updateData.os_versions = { ...(currentStats.os_versions || {}), [`${parsed.os} ${parsed.osVersion}`]: ((currentStats.os_versions?.[`${parsed.os} ${parsed.osVersion}`]) || 0) + 1 };
-      if (tls) updateData.tls_protocols = { ...(currentStats.tls_protocols || {}), [tls]: ((currentStats.tls_protocols?.[tls]) || 0) + 1 };
-      
-      if (is_eu) updateData.eu_scans = (currentStats.eu_scans || 0) + 1;
-    }
-
-    if (isUnique) updateData.unique_scans = inc;
-
-    // Track monthly scans for quota enforcement
-    const currentMonth = new Date().toISOString().slice(0, 7);
-    updateData[`monthly_scans.${currentMonth}`] = inc;
-
-    // OPTIMIZATION: Maintain per-user monthly counter to avoid O(N) reads on billing page
-    if (qrOwnerUid) {
-      dbg('Firestore updateDoc START (user monthly scans)', { uid: qrOwnerUid });
-      await updateDoc(doc(db, 'profiles', qrOwnerUid), {
-        [`monthly_scans.${currentMonth}`]: inc
-      }).catch(err => {
-        logger.error('User monthly_scans update failed', err);
-        logger.error('User monthly_scans update background error', { error: err.message });
-      });
-    }
+  if (isUnique) {
+    statsUpdate.unique_scans = (currentStats?.unique_scans || 0) + 1;
   }
 
-  dbg('Firestore setDoc START (qr_stats merge)', { slug });
-  await setDoc(statsRef, updateData, { merge: true });
-  dbg('Firestore setDoc END (qr_stats merge)', { slug });
+  dbg('qr_stats upsert START', { slug });
+  await setDoc(doc(db, 'qr_stats', slug), statsUpdate, { merge: true });
+  dbg('qr_stats upsert END', { slug });
+
+  // 3. Maintain per-user monthly scan counter on the profile (for quota enforcement on billing page)
+  if (qrOwnerUid) {
+    const { data: profileData } = await supabase.from('profiles').select('monthly_scans').eq('id', qrOwnerUid).maybeSingle();
+    const profileMonthly = profileData?.monthly_scans || {};
+    await updateDoc(doc(db, 'profiles', qrOwnerUid), {
+      monthly_scans: { ...profileMonthly, [currentMonth]: (profileMonthly[currentMonth] || 0) + 1 }
+    }).catch((err: any) => {
+      logger.error('User monthly_scans update background error', { error: err.message });
+    });
+  }
 }
 
 async function captureAnalytics(req: express.Request, slug: string) {
