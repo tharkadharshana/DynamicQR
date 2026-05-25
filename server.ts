@@ -1,10 +1,7 @@
 import 'dotenv/config';
 
-// ── Debug Logging ─────────────────────────────────────────────────────────────
-// Set DEBUG_VERBOSE=true in Vercel env vars to enable.
-const DEBUG = process.env.DEBUG_VERBOSE === 'true';
-const dbg = (...args: any[]) => { if (DEBUG) console.log('[DBG]', ...args); };
-// ──────────────────────────────────────────────────────────────────────────────
+// dbg() → structured debug logs via Winston. Set LOG_LEVEL=debug in .env to see them.
+const dbg = (message: string, meta?: Record<string, any>) => logger.debug(message, meta ?? {});
 import express from 'express';
 import path from 'path';
 import cors from 'cors';
@@ -37,8 +34,8 @@ const getDoc = async (ref: SupabaseRef) => {
   if (!ref.id) throw new Error("doc() id required");
   const idCol = (ref.table === 'profiles' || ref.table === 'profiles') ? 'id' : (ref.table === 'qr_codes' || ref.table === 'qr_stats' || ref.table === 'scan_events' ? 'slug' : 'id');
   const { data, error } = await supabase.from(ref.table).select('*').eq(idCol, ref.id).maybeSingle();
-  if (error) { 
-    console.error('getDoc error:', error);
+  if (error) {
+    logger.error('DB read failed', { table: ref.table, id: ref.id, code: error.code, detail: error.message });
     throw new Error(`Database error: ${error.message}`);
   }
   return {
@@ -58,7 +55,7 @@ async function testConnection() {
     dbg('Supabase connection test SUCCESS');
   } catch (error) {
     logger.error("Supabase connection test error:", error);
-    console.error('[DBG] Supabase connection test FAILED:', error);
+    logger.error('Supabase connection test failed', { error: String(error) });
     dbg('Supabase connection test FAILURE', error);
   }
 }
@@ -87,7 +84,7 @@ const getDocs = async (query: SupabaseQuery) => {
 
   const { data, error } = await builder;
   if (error) {
-    console.error('getDocs error:', error);
+    logger.error('DB query failed', { table: query.table, code: error.code, detail: error.message });
     throw new Error(`Database query error: ${error.message}`);
   }
   const rows = data || [];
@@ -114,7 +111,7 @@ const setDoc = async (ref: SupabaseRef, data: any, opts?: any) => {
   const payload = { ...data, [idCol]: ref.id };
   const { error } = await supabase.from(ref.table).upsert(payload);
   if (error) {
-    console.error('setDoc error:', error);
+    logger.error('DB upsert failed', { table: ref.table, id: ref.id, code: error.code, detail: error.message });
     throw new Error(`Database insert error: ${error.message}`);
   }
 };
@@ -142,7 +139,7 @@ const updateDoc = async (ref: SupabaseRef, data: any) => {
   }
   const { error } = await supabase.from(ref.table).update(plainData).eq(idCol, ref.id);
   if (error) {
-    console.error('updateDoc error:', error);
+    logger.error('DB update failed', { table: ref.table, id: ref.id, code: error.code, detail: error.message });
     throw new Error(`Database update error: ${error.message}`);
   }
 };
@@ -156,7 +153,7 @@ const addDoc = async (col: SupabaseRef, data: any) => {
   }
   const { data: result, error } = await supabase.from(col.table).insert(plainData).select().single();
   if (error) {
-    console.error('addDoc error:', error);
+    logger.error('DB insert failed', { table: col.table, code: error.code, detail: error.message });
     throw new Error(`Database create error: ${error.message}`);
   }
   const generatedId = result?.id || result?.slug;
@@ -168,7 +165,7 @@ const deleteDoc = async (ref: SupabaseRef) => {
   const idCol = (ref.table === 'profiles' || ref.table === 'profiles') ? 'id' : (ref.table === 'qr_codes' || ref.table === 'qr_stats' || ref.table === 'scan_events' ? 'slug' : 'id');
   const { error } = await supabase.from(ref.table).delete().eq(idCol, ref.id);
   if (error) {
-    console.error('deleteDoc error:', error);
+    logger.error('DB delete failed', { table: ref.table, id: ref.id, code: error.code, detail: error.message });
     throw new Error(`Database delete error: ${error.message}`);
   }
 };
@@ -252,6 +249,28 @@ async function startServer() {
   app.use(express.json());
   dbg('Registered express.json middleware');
 
+  // ── Request ID + HTTP access log ───────────────────────────────────────────
+  app.use((req, res, next) => {
+    const requestId = crypto.randomUUID().slice(0, 8);
+    (req as any).requestId = requestId;
+    res.setHeader('X-Request-Id', requestId);
+    const start = Date.now();
+    res.on('finish', () => {
+      const ms = Date.now() - start;
+      const uid = (req as any).user?.uid;
+      const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
+      logger[level](`${req.method} ${req.path} ${res.statusCode}`, {
+        requestId,
+        ms,
+        uid: uid ?? undefined,
+        ip: (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() ?? req.socket.remoteAddress,
+        ua: req.headers['user-agent']?.slice(0, 80),
+      });
+    });
+    next();
+  });
+  // ──────────────────────────────────────────────────────────────────────────
+
   // Middlewares
   const authenticate = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     dbg('authenticate middleware START', { path: req.path, hasToken: !!req.headers.authorization });
@@ -277,7 +296,6 @@ async function startServer() {
         stack: error.stack?.substring(0, 500)
       });
       dbg('authenticate middleware END (failure)', { error: error.message });
-      console.error('[500] Auth failure:', error);
       res.status(401).send(`Unauthorized: ${error.message || 'Invalid token'}`);
     }
   };
@@ -303,7 +321,6 @@ async function startServer() {
     } catch (error) {
       logger.error('Ownership check error:', error);
       dbg('requireOwnership middleware END (error)');
-      console.error('[500] Ownership check error:', error);
       res.status(500).send('Internal Server Error');
     }
   };
@@ -453,7 +470,6 @@ async function startServer() {
           });
         } catch (e: any) {
           logger.error('Plan fetch error in stats chunk query', { error: e.message, chunk, uid });
-          console.error('[500] Plan fetch stats chunk error:', e);
         }
       }
 
@@ -504,7 +520,6 @@ async function startServer() {
       });
       res.status(500).json({ error: 'Failed to fetch plan', details: error.message });
       dbg('500 Error in GET /api/user/plan', { error: error.message });
-      console.error('[500] GET /api/user/plan error:', error);
     }
   });
 
@@ -530,7 +545,6 @@ async function startServer() {
     } catch (error) {
       logger.error('Profile update error:', error);
       dbg('500 Error in PUT /api/user/profile');
-      console.error('[500] PUT /api/user/profile error:', error);
       res.status(500).json({ error: 'Failed to update profile' });
     }
   });
@@ -546,7 +560,6 @@ async function startServer() {
     } catch (error) {
       logger.error('Session revocation error:', error);
       dbg('500 Error in POST /api/user/revoke-sessions');
-      console.error('[500] POST /api/user/revoke-sessions error:', error);
       res.status(500).json({ error: 'Failed to revoke sessions' });
     }
   });
@@ -585,7 +598,6 @@ async function startServer() {
     } catch (error) {
       logger.error('Export error:', error);
       dbg('500 Error in GET /api/user/export');
-      console.error('[500] GET /api/user/export error:', error);
       res.status(500).json({ error: 'Failed to export data' });
     }
   });
@@ -611,7 +623,6 @@ async function startServer() {
     } catch (error) {
       logger.error('Deactivate all error:', error);
       dbg('500 Error in PUT /api/user/deactivate-all');
-      console.error('[500] PUT /api/user/deactivate-all error:', error);
       res.status(500).json({ error: 'Failed to deactivate QR codes' });
     }
   });
@@ -673,13 +684,12 @@ async function startServer() {
         }
       })().catch(err => {
         logger.error('Cleanup background error:', err);
-        console.error('[DBG] Account cleanup background error:', err);
+        logger.error('Account cleanup background error', { error: err.message });
       });
       
     } catch (error) {
       logger.error('Account deletion error:', error);
       dbg('500 Error in DELETE /api/user/account');
-      console.error('[500] DELETE /api/user/account error:', error);
       res.status(500).json({ error: 'Failed to delete account' });
     }
   });
@@ -751,7 +761,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Checkout error:', error);
       dbg('500 Error in POST /api/billing/checkout', { error: error.message });
-      console.error('[500] POST /api/billing/checkout error:', error);
       res.status(500).json({ error: 'Failed to generate checkout' });
     }
   });
@@ -785,7 +794,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Invoice fetch error:', error);
       dbg('500 Error in GET /api/billing/invoices', { error: error.message });
-      console.error('[500] GET /api/billing/invoices error:', error);
       res.status(500).json({ error: 'Failed to fetch invoices' });
     }
   });
@@ -846,7 +854,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Addon checkout error:', error);
       dbg('500 Error in POST /api/billing/addon/checkout', { error: error.message });
-      console.error('[500] POST /api/billing/addon/checkout error:', error);
       res.status(500).json({ error: 'Failed' });
     }
   });
@@ -977,7 +984,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Billing notify error:', error);
       dbg('500 Error in POST /api/billing/notify', { error: error.message });
-      console.error('[500] POST /api/billing/notify error:', error);
       res.status(500).send('Error');
     }
   });
@@ -1162,7 +1168,6 @@ async function startServer() {
         error
       });
       dbg('500 Error in POST /api/qr', { error: error.message });
-      console.error('[500] POST /api/qr error:', error);
       res.status(500).json({ error: error.message || 'Failed to create QR' });
     }
   });
@@ -1205,7 +1210,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('QR list error:', error);
       dbg('500 Error in GET /api/qr', { error: error.message });
-      console.error('[500] GET /api/qr error:', error);
       res.status(500).json({ error: 'Failed to list QR codes' });
     }
   });
@@ -1222,7 +1226,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('QR fetch error:', error);
       dbg('500 Error in GET /api/qr/:slug', { error: error.message });
-      console.error('[500] GET /api/qr/:slug error:', error);
       res.status(500).json({ error: 'Failed to fetch QR code' });
     }
   });
@@ -1300,7 +1303,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('QR update error:', error);
       dbg('500 Error in PUT /api/qr/:slug', { error: error.message });
-      console.error('[500] PUT /api/qr/:slug error:', error);
       res.status(500).json({ error: 'Failed to update QR code' });
     }
   });
@@ -1330,8 +1332,7 @@ async function startServer() {
       fetch(`${appUrl}/internal/purge/${slug}`, {
         headers: { 'x-internal-secret': process.env.INTERNAL_SECRET || '' }
       }).catch(err => {
-        logger.error(`Cache purge failed for ${slug}`, err);
-        console.error(`[DBG] Cache purge failed for ${slug}:`, err);
+        logger.error(`Cache purge failed for ${slug}`, { error: err.message });
       });
 
       // Phase 12: Background orphan scan_events cleanup
@@ -1353,13 +1354,12 @@ async function startServer() {
         logger.info(`Cleaned up ${deletedTotal} scan events for deleted QR ${slug}`);
       })().catch(err => {
         logger.error('scan_events cleanup failed', err);
-        console.error('[DBG] scan_events cleanup background error:', err);
+        logger.error('scan_events cleanup background error', { error: err.message });
       });
 
     } catch (error: any) {
       logger.error('QR delete error:', error);
       dbg('500 Error in DELETE /api/qr/:slug', { error: error.message });
-      console.error('[500] DELETE /api/qr/:slug error:', error);
       res.status(500).json({ error: 'Failed to delete QR code' });
     }
   });
@@ -1406,7 +1406,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Analytics error:', error);
       dbg('500 Error in GET /api/analytics/:slug/summary', { error: error.message });
-      console.error('[500] GET /api/analytics/:slug/summary error:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
@@ -1478,7 +1477,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Analytics error:', error);
       dbg('500 Error in GET /api/analytics/:slug/timeseries', { error: error.message });
-      console.error('[500] GET /api/analytics/:slug/timeseries error:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
@@ -1510,7 +1508,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Analytics error:', error);
       dbg('500 Error in GET /api/analytics/:slug/devices', { error: error.message });
-      console.error('[500] GET /api/analytics/:slug/devices error:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
@@ -1538,7 +1535,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Analytics error:', error);
       dbg('500 Error in GET /api/analytics/:slug/countries', { error: error.message });
-      console.error('[500] GET /api/analytics/:slug/countries error:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
@@ -1568,7 +1564,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Analytics error:', error);
       dbg('500 Error in GET /api/analytics/:slug/os', { error: error.message });
-      console.error('[500] GET /api/analytics/:slug/os error:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
@@ -1598,7 +1593,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Analytics error:', error);
       dbg('500 Error in GET /api/analytics/:slug/browsers', { error: error.message });
-      console.error('[500] GET /api/analytics/:slug/browsers error:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
@@ -1628,7 +1622,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Analytics error:', error);
       dbg('500 Error in GET /api/analytics/:slug/referrers', { error: error.message });
-      console.error('[500] GET /api/analytics/:slug/referrers error:', error);
       res.status(500).json({ error: 'Failed to fetch analytics' });
     }
   });
@@ -1661,7 +1654,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Analytics error:', error);
       dbg('500 Error in GET /api/analytics/:slug/recent', { error: error.message });
-      console.error('[500] GET /api/analytics/:slug/recent error:', error);
       res.status(500).json({ error: 'Failed to fetch recent scans' });
     }
   });
@@ -1710,7 +1702,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Analytics error:', error);
       dbg('500 Error in GET /api/analytics/:slug/advanced', { error: error.message });
-      console.error('[500] GET /api/analytics/:slug/advanced error:', error);
       res.status(500).json({ error: 'Failed to fetch advanced analytics' });
     }
   });
@@ -1780,7 +1771,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Account analytics error:', error);
       dbg('500 Error in GET /api/analytics/account/:uid', { error: error.message });
-      console.error('[500] GET /api/analytics/account/:uid error:', error);
       res.status(500).json({ error: 'Failed to fetch account analytics' });
     }
   });
@@ -1871,7 +1861,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Account timeseries error:', error);
       dbg('500 Error in GET /api/analytics/account/:uid/timeseries', { error: error.message });
-      console.error('[500] GET /api/analytics/account/:uid/timeseries error:', error);
       res.status(500).json({ error: 'Failed to fetch account timeseries' });
     }
   });
@@ -1930,7 +1919,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Account devices error:', error);
       dbg('500 Error in GET /api/analytics/account/:uid/devices', { error: error.message });
-      console.error('[500] GET /api/analytics/account/:uid/devices error:', error);
       res.status(500).json({ error: 'Failed to fetch account devices' });
     }
   });
@@ -1987,7 +1975,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Account countries error:', error);
       dbg('500 Error in GET /api/analytics/account/:uid/countries', { error: error.message });
-      console.error('[500] GET /api/analytics/account/:uid/countries error:', error);
       res.status(500).json({ error: 'Failed to fetch account countries' });
     }
   });
@@ -2031,7 +2018,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Account browsers error:', error);
       dbg('500 Error in GET /api/analytics/account/:uid/browsers', { error: error.message });
-      console.error('[500] GET /api/analytics/account/:uid/browsers error:', error);
       res.status(500).json({ error: 'Failed to fetch account browsers' });
     }
   });
@@ -2075,7 +2061,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Account OS error:', error);
       dbg('500 Error in GET /api/analytics/account/:uid/os', { error: error.message });
-      console.error('[500] GET /api/analytics/account/:uid/os error:', error);
       res.status(500).json({ error: 'Failed to fetch account OS' });
     }
   });
@@ -2119,7 +2104,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Account referrers error:', error);
       dbg('500 Error in GET /api/analytics/account/:uid/referrers', { error: error.message });
-      console.error('[500] GET /api/analytics/account/:uid/referrers error:', error);
       res.status(500).json({ error: 'Failed to fetch account referrers' });
     }
   });
@@ -2160,7 +2144,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Account summary error:', error);
       dbg('500 Error in GET /api/analytics/account/:uid/summary', { error: error.message });
-      console.error('[500] GET /api/analytics/account/:uid/summary error:', error);
       res.status(500).json({ error: 'Failed to fetch account summary' });
     }
   });
@@ -2225,7 +2208,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Account recent scans error:', error);
       dbg('500 Error in GET /api/analytics/account/:uid/recent', { error: error.message });
-      console.error('[500] GET /api/analytics/account/:uid/recent error:', error);
       res.status(500).json({ error: 'Failed to fetch account recent scans' });
     }
   });
@@ -2267,7 +2249,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Account performance error:', error);
       dbg('500 Error in GET /api/analytics/account/:uid/performance', { error: error.message });
-      console.error('[500] GET /api/analytics/account/:uid/performance error:', error);
       res.status(500).json({ error: 'Failed to fetch account performance' });
     }
   });
@@ -2319,7 +2300,6 @@ async function startServer() {
         stack: error.stack 
       });
       dbg('500 Error in POST /internal/scan', { error: error.message });
-      console.error('[500] POST /internal/scan error:', error);
       res.status(500).json({ error: 'Failed' });
     }
   });
@@ -2372,7 +2352,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Internal fetch error:', error);
       dbg('500 Error in GET /internal/slug/:slug', { error: error.message });
-      console.error('[500] GET /internal/slug/:slug error:', error);
       res.status(500).json({ error: 'Failed' });
     }
   });
@@ -2410,7 +2389,7 @@ async function startServer() {
       dbg('captureAnalytics START (async)', { slug });
       captureAnalytics(req, slug).catch(err => {
         logger.error('Analytics capture failed', { error: err });
-        console.error('[DBG] captureAnalytics background error:', err);
+        logger.error('Analytics capture background error', { error: err.message });
       });
 
       // 3. Handle different QR types
@@ -2449,7 +2428,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Redirect error', { error });
       dbg('REDIRECT ERROR (500)', { slug, error: error.message });
-      console.error('[500] Redirect engine error:', error);
       next();
     }
   });
@@ -2471,8 +2449,37 @@ async function startServer() {
   }
 
   if (!process.env.VERCEL) {
-    app.listen(PORT, '0.0.0.0', () => {
-      logger.info(`Server running on port ${PORT}`);
+    const server = app.listen(PORT, '0.0.0.0', () => {
+      logger.info('Server ready', {
+        port: PORT,
+        env: process.env.NODE_ENV,
+        logLevel: process.env.LOG_LEVEL || 'debug',
+        supabase: supabaseUrl.replace(/https?:\/\//, '').split('.')[0],
+        cors: corsOrigin || '*',
+        logFiles: process.env.NODE_ENV !== 'production' ? 'logs/combined.log + logs/error.log' : 'disabled',
+      });
+    });
+
+    const shutdown = (signal: string) => {
+      logger.info(`${signal} received — shutting down gracefully`);
+      server.close(() => {
+        logger.info('HTTP server closed');
+        process.exit(0);
+      });
+      setTimeout(() => {
+        logger.error('Graceful shutdown timed out — forcing exit');
+        process.exit(1);
+      }, 10_000);
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+    process.on('uncaughtException', (err) => {
+      logger.error('Uncaught exception', { message: err.message, stack: err.stack });
+      process.exit(1);
+    });
+    process.on('unhandledRejection', (reason) => {
+      logger.error('Unhandled promise rejection', { reason: String(reason) });
     });
   }
   return app;
@@ -2480,7 +2487,7 @@ async function startServer() {
 
 await startServer().catch((err) => {
   logger.error('Server startup failed', err);
-  console.error('[FATAL] Server startup failed:', err);
+  logger.error('Server startup failed', { error: err.message, stack: err.stack });
   process.exit(1);
 });
 
@@ -2578,7 +2585,7 @@ async function captureAnalyticsFromPayload(payload: any, qrOwnerUid?: string) {
         [`monthly_scans.${currentMonth}`]: inc
       }).catch(err => {
         logger.error('User monthly_scans update failed', err);
-        console.error('[DBG] User monthly_scans update background error:', err);
+        logger.error('User monthly_scans update background error', { error: err.message });
       });
     }
   }
