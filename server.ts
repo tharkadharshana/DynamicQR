@@ -5,6 +5,8 @@ const dbg = (message: string, meta?: Record<string, any>) => logger.debug(messag
 import express from 'express';
 import path from 'path';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { createClient } from '@supabase/supabase-js';
 
 // Initialize Supabase Client
@@ -230,6 +232,13 @@ async function startServer() {
   
   logger.info(`CORS Origin: ${corsOrigin || '*'}`);
   
+  // Security headers (helmet) — CSP disabled to allow Supabase OAuth popup
+  app.use(helmet({
+    contentSecurityPolicy: false,
+    crossOriginOpenerPolicy: false,   // overridden below for OAuth
+    crossOriginResourcePolicy: false, // overridden below for OAuth
+  }));
+
   // Required for Supabase OAuth popup flow
   app.use((req, res, next) => {
     res.setHeader('Cross-Origin-Opener-Policy', 'unsafe-none');
@@ -237,8 +246,8 @@ async function startServer() {
     next();
   });
   dbg('Registered security headers middleware');
-  
-  app.use(cors({ 
+
+  app.use(cors({
     origin: corsOrigin || '*',
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -246,8 +255,42 @@ async function startServer() {
   }));
   dbg('Registered CORS middleware');
 
-  app.use(express.json());
+  app.use(express.json({ limit: '100kb' }));
   dbg('Registered express.json middleware');
+
+  // ── Rate Limiting ────────────────────────────────────────────────────────────
+  // Global: applied to all routes
+  const globalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 300,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests, please try again later.' },
+    skip: (req) => req.headers['x-internal-secret'] === process.env.INTERNAL_SECRET,
+  });
+
+  // Tighter limit for write operations (create/delete/billing)
+  const writeLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests, please try again later.' },
+    skip: (req) => req.headers['x-internal-secret'] === process.env.INTERNAL_SECRET,
+  });
+
+  // Webhook: separate window — PayHere can retry legitimately
+  const webhookLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many webhook calls.' },
+  });
+
+  app.use(globalLimiter);
+  dbg('Registered rate limiting middleware');
+  // ────────────────────────────────────────────────────────────────────────────
 
   // ── Request ID + HTTP access log ───────────────────────────────────────────
   app.use((req, res, next) => {
@@ -518,7 +561,7 @@ async function startServer() {
         stack: error.stack?.substring(0, 1000),
         uid
       });
-      res.status(500).json({ error: 'Failed to fetch plan', details: error.message });
+      res.status(500).json({ error: 'Failed to fetch plan' });
       dbg('500 Error in GET /api/user/plan', { error: error.message });
     }
   });
@@ -550,12 +593,16 @@ async function startServer() {
   });
 
   // Revoke All Sessions API
-  app.post('/api/user/revoke-sessions', authenticate, async (req, res) => {
+  app.post('/api/user/revoke-sessions', writeLimiter, authenticate, async (req, res) => {
     dbg('ROUTE START', { method: 'POST', path: '/api/user/revoke-sessions', uid: (req as any).user?.uid });
     try {
       const uid = (req as any).user.uid;
-      // Supabase handles session invalidation when requested via client or DB flags.
-      // Skipping revokeRefreshTokens explicit call.
+      const { error } = await supabase.auth.admin.signOut(uid, 'global');
+      if (error) {
+        logger.error('Session revocation failed', { uid, code: error.status, message: error.message });
+        return res.status(500).json({ error: 'Failed to revoke sessions' });
+      }
+      logger.info('All sessions revoked', { uid });
       res.json({ success: true });
     } catch (error) {
       logger.error('Session revocation error:', error);
@@ -603,7 +650,7 @@ async function startServer() {
   });
 
   // Deactivate All QR Codes API
-  app.put('/api/user/deactivate-all', authenticate, async (req, res) => {
+  app.put('/api/user/deactivate-all', writeLimiter, authenticate, async (req, res) => {
     dbg('ROUTE START', { method: 'PUT', path: '/api/user/deactivate-all', uid: (req as any).user?.uid });
     try {
       const uid = (req as any).user.uid;
@@ -628,7 +675,7 @@ async function startServer() {
   });
 
   // Delete Account API
-  app.delete('/api/user/account', authenticate, async (req, res) => {
+  app.delete('/api/user/account', writeLimiter, authenticate, async (req, res) => {
     dbg('ROUTE START', { method: 'DELETE', path: '/api/user/account', uid: (req as any).user?.uid });
     try {
       const uid = (req as any).user.uid;
@@ -695,13 +742,20 @@ async function startServer() {
   });
 
   // Billing Checkout API
-  app.post('/api/billing/checkout', authenticate, async (req, res) => {
+  app.post('/api/billing/checkout', writeLimiter, authenticate, async (req, res) => {
     dbg('ROUTE START', { method: 'POST', path: '/api/billing/checkout', uid: (req as any).user?.uid });
     try {
       const user = (req as any).user;
       const { plan, interval } = req.body;
       const uid = user.uid;
-      
+
+      if (!['monthly', 'annual'].includes(interval)) {
+        return res.status(400).json({ error: 'interval must be monthly or annual' });
+      }
+      if (!['pro', 'team'].includes(plan)) {
+        return res.status(400).json({ error: 'plan must be pro or team' });
+      }
+
       const prices: Record<string, any> = {
         pro: { monthly: 7, annual: 70 },
         team: { monthly: 29, annual: 290 }
@@ -799,7 +853,7 @@ async function startServer() {
   });
 
   // Addon Checkout API
-  app.post('/api/billing/addon/checkout', authenticate, async (req, res) => {
+  app.post('/api/billing/addon/checkout', writeLimiter, authenticate, async (req, res) => {
     dbg('ROUTE START', { method: 'POST', path: '/api/billing/addon/checkout', uid: (req as any).user?.uid });
     try {
       const user = (req as any).user;
@@ -862,7 +916,7 @@ async function startServer() {
   const generateSlug = customAlphabet(ALPHABET, 7);
 
   // PayHere Webhook
-  app.post('/api/billing/notify', async (req, res) => {
+  app.post('/api/billing/notify', webhookLimiter, async (req, res) => {
     dbg('ROUTE START', { method: 'POST', path: '/api/billing/notify' });
     try {
       const { 
@@ -1006,12 +1060,25 @@ async function startServer() {
   }
 
   // ── EXACT SCHEMA CREATION for qr_codes AND qr_stats ─────────
-  app.post('/api/qr', authenticate, async (req, res) => {
+  app.post('/api/qr', writeLimiter, authenticate, async (req, res) => {
     dbg('ROUTE START', { method: 'POST', path: '/api/qr', uid: (req as any).user?.uid });
     try {
       const user = (req as any).user;
       const { destination_url, title, style, is_dynamic, qr_type, content_data, options } = req.body;
       const uid = user.uid;
+
+      // Input validation
+      if (title !== undefined && (typeof title !== 'string' || title.length > 120)) {
+        return res.status(400).json({ error: 'title must be a string under 120 characters' });
+      }
+      if (destination_url !== undefined && destination_url !== '') {
+        try { new URL(destination_url); } catch {
+          return res.status(400).json({ error: 'destination_url must be a valid URL' });
+        }
+      }
+      if (options?.password && (typeof options.password !== 'string' || options.password.length > 128)) {
+        return res.status(400).json({ error: 'password must be a string under 128 characters' });
+      }
 
       // Map options to stored fields
       const rate_limit = {
@@ -1168,7 +1235,7 @@ async function startServer() {
         error
       });
       dbg('500 Error in POST /api/qr', { error: error.message });
-      res.status(500).json({ error: error.message || 'Failed to create QR' });
+      res.status(500).json({ error: 'Failed to create QR' });
     }
   });
 
@@ -1250,7 +1317,20 @@ async function startServer() {
       const { slug } = req.params;
       const { destination_url, title, style, is_active, options } = req.body;
       const updateData: any = {};
-      
+
+      // Input validation
+      if (title !== undefined && (typeof title !== 'string' || title.length > 120)) {
+        return res.status(400).json({ error: 'title must be a string under 120 characters' });
+      }
+      if (destination_url !== undefined && destination_url !== '') {
+        try { new URL(destination_url); } catch {
+          return res.status(400).json({ error: 'destination_url must be a valid URL' });
+        }
+      }
+      if (options?.password && (typeof options.password !== 'string' || options.password.length > 128)) {
+        return res.status(400).json({ error: 'password must be a string under 128 characters' });
+      }
+
       if (destination_url !== undefined) updateData.destination_url = destination_url;
       if (title !== undefined) updateData.title = title;
       if (style !== undefined) updateData.style = style;
@@ -1308,7 +1388,7 @@ async function startServer() {
   });
 
   // Delete QR code
-  app.delete('/api/qr/:slug', authenticate, requireOwnership, async (req, res) => {
+  app.delete('/api/qr/:slug', writeLimiter, authenticate, requireOwnership, async (req, res) => {
     dbg('ROUTE START', { method: 'DELETE', path: '/api/qr/:slug', uid: (req as any).user?.uid });
     try {
       const { slug } = req.params;
