@@ -54,6 +54,7 @@ export default function Billing() {
   }
 
   const { plan, plan_expires_at, monthly_scans_used, limits, is_trial, is_expired, plan_since, email } = planData;
+  const trialEnded = plan === 'free' && !is_trial && !is_expired;
   // plan_expires_at arrives as a Firestore Timestamp serialised to {_seconds, _nanoseconds}
   const expiryDate = plan_expires_at?._seconds
     ? new Date(plan_expires_at._seconds * 1000).toLocaleDateString()
@@ -100,22 +101,72 @@ export default function Billing() {
   return (
     <div className="content" style={{ padding: '28px', overflow: 'auto', height: '100%' }}>
       <div className="page active">
+
+        {/* Trial ended callout — shown prominently at top of billing page */}
+        {trialEnded && (
+          <div style={{
+            background: 'rgba(245,158,11,0.08)',
+            border: '1px solid var(--amber, #f59e0b)',
+            borderRadius: '12px',
+            padding: '16px 20px',
+            marginBottom: '24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '16px',
+            flexWrap: 'wrap',
+          }}>
+            <div>
+              <div style={{ fontWeight: 700, color: 'var(--amber, #f59e0b)', fontSize: '14px', marginBottom: '4px' }}>
+                Your free trial has ended
+              </div>
+              <div style={{ fontSize: '13px', color: 'var(--text3)' }}>
+                You're now on the free plan — dynamic QR codes, password protection, expiry dates, and advanced analytics are locked. Upgrade to Pro to restore full access.
+              </div>
+            </div>
+            <button
+              className="btn btn-primary btn-sm"
+              style={{ flexShrink: 0 }}
+              onClick={() => document.getElementById('upgrade-section')?.scrollIntoView({ behavior: 'smooth' })}
+            >
+              See upgrade options ↓
+            </button>
+          </div>
+        )}
+
+        {is_expired && (
+          <div style={{
+            background: 'var(--red-l, rgba(239,68,68,0.08))',
+            border: '1px solid var(--red, #ef4444)',
+            borderRadius: '12px',
+            padding: '16px 20px',
+            marginBottom: '24px',
+          }}>
+            <div style={{ fontWeight: 700, color: 'var(--red, #ef4444)', fontSize: '14px', marginBottom: '4px' }}>
+              Your subscription has expired
+            </div>
+            <div style={{ fontSize: '13px', color: 'var(--text3)' }}>
+              Your Pro or Team subscription lapsed and you've been moved to the free plan. Renew below to restore access.
+            </div>
+          </div>
+        )}
+
         {/* Billing Cycle Toggle */}
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
           <div style={{ background: 'var(--surface2)', padding: '4px', borderRadius: '30px', display: 'flex', gap: '4px', border: '1px solid var(--border)' }}>
-            <button 
+            <button
               onClick={() => setIsAnnual(false)}
-              style={{ 
+              style={{
                 padding: '8px 20px', borderRadius: '26px', border: 'none', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                background: !isAnnual ? 'white' : 'transparent', color: !isAnnual ? 'var(--text)' : 'var(--text3)',
+                background: !isAnnual ? 'white' : 'transparent', color: !isAnnual ? '#111' : 'var(--text3)',
                 boxShadow: !isAnnual ? '0 2px 8px rgba(0,0,0,0.05)' : 'none'
               }}
             >Monthly</button>
-            <button 
+            <button
               onClick={() => setIsAnnual(true)}
-              style={{ 
+              style={{
                 padding: '8px 20px', borderRadius: '26px', border: 'none', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                background: isAnnual ? 'white' : 'transparent', color: isAnnual ? 'var(--text)' : 'var(--text3)',
+                background: isAnnual ? 'white' : 'transparent', color: isAnnual ? '#111' : 'var(--text3)',
                 boxShadow: isAnnual ? '0 2px 8px rgba(0,0,0,0.05)' : 'none',
                 display: 'flex', alignItems: 'center', gap: '6px'
               }}
@@ -132,12 +183,12 @@ export default function Billing() {
               <span className="chip" style={{ background: 'var(--amber-l)', color: 'var(--amber)', fontSize: '11px', padding: '4px 10px', borderRadius: '20px', fontWeight: 700 }}>
                 ⭐ {plan.charAt(0).toUpperCase() + plan.slice(1)} Plan
               </span>
-              <span className={`chip ${is_expired ? 'expired' : 'active'}`} style={{ 
-                background: is_expired ? 'var(--red-l)' : 'var(--green-l)', 
-                color: is_expired ? 'var(--red)' : 'var(--green)', 
-                fontSize: '11px', padding: '4px 10px', borderRadius: '20px', fontWeight: 600 
+              <span style={{
+                background: is_expired ? 'var(--red-l, rgba(239,68,68,0.1))' : trialEnded ? 'rgba(245,158,11,0.1)' : 'var(--green-l)',
+                color: is_expired ? 'var(--red, #ef4444)' : trialEnded ? 'var(--amber, #f59e0b)' : 'var(--green)',
+                fontSize: '11px', padding: '4px 10px', borderRadius: '20px', fontWeight: 600
               }}>
-                ● {is_expired ? 'Expired' : 'Active'}
+                ● {is_expired ? 'Expired' : trialEnded ? 'Trial Ended' : is_trial ? 'Trial Active' : 'Active'}
               </span>
             </div>
             <div className="billing-plan-name">{plan.charAt(0).toUpperCase() + plan.slice(1)} — {plan === 'free' ? '$0' : plan === 'pro' ? '$7' : '$29'} / month</div>
@@ -187,7 +238,7 @@ export default function Billing() {
         </div>
 
         {/* Plan comparison + upgrade */}
-        <div className="grid-21 mb24">
+        <div id="upgrade-section" className="grid-21 mb24">
           <div className="card">
             <div className="section-row">
               <span className="section-title">Plan comparison</span>

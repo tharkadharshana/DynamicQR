@@ -6,6 +6,7 @@ import {
 } from 'recharts';
 import { supabase } from '../supabase';
 import { apiFetch } from '../lib/api';
+import QRViewerModal from '../components/QRViewerModal';
 
 const COLORS = ['#1A1916', '#E85D3A', '#4D9EFF', '#3DCC7E', '#9B7FFF', '#F5A623', '#D0021B'];
 
@@ -33,6 +34,7 @@ export default function Analytics() {
   const [qrDetails, setQrDetails] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+  const [viewQR, setViewQR] = useState<any | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -183,6 +185,18 @@ export default function Analytics() {
                 </div>
               )}
             </div>
+            {selectedSlugs.length === 1 && qrDetails && (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setViewQR(qrDetails)}
+                title="View & download QR code"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '4px' }}>
+                  <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/>
+                </svg>
+                View QR
+              </button>
+            )}
           </div>
           
           <div className="analytics-actions" style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%', maxWidth: '100%', justifyContent: 'flex-end' }}>
@@ -552,6 +566,7 @@ export default function Analytics() {
         </div>
 
       </div>
+      {viewQR && <QRViewerModal qr={viewQR} onClose={() => setViewQR(null)} />}
     </div>
   );
 }

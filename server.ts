@@ -5,6 +5,8 @@ const dbg = (message: string, meta?: Record<string, any>) => logger.debug(messag
 import express from 'express';
 import path from 'path';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { createClient } from '@supabase/supabase-js';
 
 // Initialize Supabase Client
@@ -230,6 +232,13 @@ async function startServer() {
   
   logger.info(`CORS Origin: ${corsOrigin || '*'}`);
   
+  // Security headers (helmet) — CSP disabled to allow Supabase OAuth popup
+  app.use(helmet({
+    contentSecurityPolicy: false,
+    crossOriginOpenerPolicy: false,   // overridden below for OAuth
+    crossOriginResourcePolicy: false, // overridden below for OAuth
+  }));
+
   // Required for Supabase OAuth popup flow
   app.use((req, res, next) => {
     res.setHeader('Cross-Origin-Opener-Policy', 'unsafe-none');
@@ -237,8 +246,8 @@ async function startServer() {
     next();
   });
   dbg('Registered security headers middleware');
-  
-  app.use(cors({ 
+
+  app.use(cors({
     origin: corsOrigin || '*',
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -246,8 +255,42 @@ async function startServer() {
   }));
   dbg('Registered CORS middleware');
 
-  app.use(express.json());
+  app.use(express.json({ limit: '100kb' }));
   dbg('Registered express.json middleware');
+
+  // ── Rate Limiting ────────────────────────────────────────────────────────────
+  // Global: applied to all routes
+  const globalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 300,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests, please try again later.' },
+    skip: (req) => req.headers['x-internal-secret'] === process.env.INTERNAL_SECRET,
+  });
+
+  // Tighter limit for write operations (create/delete/billing)
+  const writeLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests, please try again later.' },
+    skip: (req) => req.headers['x-internal-secret'] === process.env.INTERNAL_SECRET,
+  });
+
+  // Webhook: separate window — PayHere can retry legitimately
+  const webhookLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many webhook calls.' },
+  });
+
+  app.use(globalLimiter);
+  dbg('Registered rate limiting middleware');
+  // ────────────────────────────────────────────────────────────────────────────
 
   // ── Request ID + HTTP access log ───────────────────────────────────────────
   app.use((req, res, next) => {
@@ -505,7 +548,7 @@ async function startServer() {
         countries_count: countriesSet.size,
         profile: {
           company: userDoc?.company || '',
-          jobTitle: userDoc?.jobTitle || '',
+          jobTitle: userDoc?.job_title || '',
           country: userDoc?.country || 'LK',
           timezone: userDoc?.timezone || 'Asia/Colombo'
         },
@@ -518,13 +561,13 @@ async function startServer() {
         stack: error.stack?.substring(0, 1000),
         uid
       });
-      res.status(500).json({ error: 'Failed to fetch plan', details: error.message });
+      res.status(500).json({ error: 'Failed to fetch plan' });
       dbg('500 Error in GET /api/user/plan', { error: error.message });
     }
   });
 
   // User Profile Update API
-  app.put('/api/user/profile', authenticate, async (req, res) => {
+  app.put('/api/user/profile', writeLimiter, authenticate, async (req, res) => {
     dbg('ROUTE START', { method: 'PUT', path: '/api/user/profile', uid: (req as any).user?.uid });
     try {
       const uid = (req as any).user.uid;
@@ -534,7 +577,7 @@ async function startServer() {
       dbg('Firestore updateDoc START', { collection: 'profiles', docId: uid });
       await updateDoc(userRef, {
         company: company || '',
-        jobTitle: jobTitle || '',
+        job_title: jobTitle || '',
         country: country || 'LK',
         timezone: timezone || 'Asia/Colombo',
         updated_at: serverTimestamp()
@@ -550,12 +593,16 @@ async function startServer() {
   });
 
   // Revoke All Sessions API
-  app.post('/api/user/revoke-sessions', authenticate, async (req, res) => {
+  app.post('/api/user/revoke-sessions', writeLimiter, authenticate, async (req, res) => {
     dbg('ROUTE START', { method: 'POST', path: '/api/user/revoke-sessions', uid: (req as any).user?.uid });
     try {
       const uid = (req as any).user.uid;
-      // Supabase handles session invalidation when requested via client or DB flags.
-      // Skipping revokeRefreshTokens explicit call.
+      const { error } = await supabase.auth.admin.signOut(uid, 'global');
+      if (error) {
+        logger.error('Session revocation failed', { uid, code: error.status, message: error.message });
+        return res.status(500).json({ error: 'Failed to revoke sessions' });
+      }
+      logger.info('All sessions revoked', { uid });
       res.json({ success: true });
     } catch (error) {
       logger.error('Session revocation error:', error);
@@ -585,7 +632,7 @@ async function startServer() {
           email: profile.email,
           plan: profile.plan,
           company: profile.company,
-          jobTitle: profile.jobTitle,
+          jobTitle: profile.job_title,
           country: profile.country,
           timezone: profile.timezone
         },
@@ -603,7 +650,7 @@ async function startServer() {
   });
 
   // Deactivate All QR Codes API
-  app.put('/api/user/deactivate-all', authenticate, async (req, res) => {
+  app.put('/api/user/deactivate-all', writeLimiter, authenticate, async (req, res) => {
     dbg('ROUTE START', { method: 'PUT', path: '/api/user/deactivate-all', uid: (req as any).user?.uid });
     try {
       const uid = (req as any).user.uid;
@@ -628,7 +675,7 @@ async function startServer() {
   });
 
   // Delete Account API
-  app.delete('/api/user/account', authenticate, async (req, res) => {
+  app.delete('/api/user/account', writeLimiter, authenticate, async (req, res) => {
     dbg('ROUTE START', { method: 'DELETE', path: '/api/user/account', uid: (req as any).user?.uid });
     try {
       const uid = (req as any).user.uid;
@@ -695,13 +742,20 @@ async function startServer() {
   });
 
   // Billing Checkout API
-  app.post('/api/billing/checkout', authenticate, async (req, res) => {
+  app.post('/api/billing/checkout', writeLimiter, authenticate, async (req, res) => {
     dbg('ROUTE START', { method: 'POST', path: '/api/billing/checkout', uid: (req as any).user?.uid });
     try {
       const user = (req as any).user;
       const { plan, interval } = req.body;
       const uid = user.uid;
-      
+
+      if (!['monthly', 'annual'].includes(interval)) {
+        return res.status(400).json({ error: 'interval must be monthly or annual' });
+      }
+      if (!['pro', 'team'].includes(plan)) {
+        return res.status(400).json({ error: 'plan must be pro or team' });
+      }
+
       const prices: Record<string, any> = {
         pro: { monthly: 7, annual: 70 },
         team: { monthly: 29, annual: 290 }
@@ -799,7 +853,7 @@ async function startServer() {
   });
 
   // Addon Checkout API
-  app.post('/api/billing/addon/checkout', authenticate, async (req, res) => {
+  app.post('/api/billing/addon/checkout', writeLimiter, authenticate, async (req, res) => {
     dbg('ROUTE START', { method: 'POST', path: '/api/billing/addon/checkout', uid: (req as any).user?.uid });
     try {
       const user = (req as any).user;
@@ -862,7 +916,7 @@ async function startServer() {
   const generateSlug = customAlphabet(ALPHABET, 7);
 
   // PayHere Webhook
-  app.post('/api/billing/notify', async (req, res) => {
+  app.post('/api/billing/notify', webhookLimiter, async (req, res) => {
     dbg('ROUTE START', { method: 'POST', path: '/api/billing/notify' });
     try {
       const { 
@@ -1006,12 +1060,25 @@ async function startServer() {
   }
 
   // ── EXACT SCHEMA CREATION for qr_codes AND qr_stats ─────────
-  app.post('/api/qr', authenticate, async (req, res) => {
+  app.post('/api/qr', writeLimiter, authenticate, async (req, res) => {
     dbg('ROUTE START', { method: 'POST', path: '/api/qr', uid: (req as any).user?.uid });
     try {
       const user = (req as any).user;
       const { destination_url, title, style, is_dynamic, qr_type, content_data, options } = req.body;
       const uid = user.uid;
+
+      // Input validation
+      if (title !== undefined && (typeof title !== 'string' || title.length > 120)) {
+        return res.status(400).json({ error: 'title must be a string under 120 characters' });
+      }
+      if (destination_url !== undefined && destination_url !== '') {
+        try { new URL(destination_url); } catch {
+          return res.status(400).json({ error: 'destination_url must be a valid URL' });
+        }
+      }
+      if (options?.password && (typeof options.password !== 'string' || options.password.length > 128)) {
+        return res.status(400).json({ error: 'password must be a string under 128 characters' });
+      }
 
       // Map options to stored fields
       const rate_limit = {
@@ -1139,8 +1206,7 @@ async function startServer() {
         browsers: {},
         os: {},
         devices: { mobile: 0, desktop: 0, tablet: 0 },
-        monthly_scans: {},
-        last_scan_at: null
+        monthly_scans: {}
       };
 
       // 4. Firestore Commit
@@ -1168,7 +1234,7 @@ async function startServer() {
         error
       });
       dbg('500 Error in POST /api/qr', { error: error.message });
-      res.status(500).json({ error: error.message || 'Failed to create QR' });
+      res.status(500).json({ error: 'Failed to create QR' });
     }
   });
 
@@ -1250,7 +1316,20 @@ async function startServer() {
       const { slug } = req.params;
       const { destination_url, title, style, is_active, options } = req.body;
       const updateData: any = {};
-      
+
+      // Input validation
+      if (title !== undefined && (typeof title !== 'string' || title.length > 120)) {
+        return res.status(400).json({ error: 'title must be a string under 120 characters' });
+      }
+      if (destination_url !== undefined && destination_url !== '') {
+        try { new URL(destination_url); } catch {
+          return res.status(400).json({ error: 'destination_url must be a valid URL' });
+        }
+      }
+      if (options?.password && (typeof options.password !== 'string' || options.password.length > 128)) {
+        return res.status(400).json({ error: 'password must be a string under 128 characters' });
+      }
+
       if (destination_url !== undefined) updateData.destination_url = destination_url;
       if (title !== undefined) updateData.title = title;
       if (style !== undefined) updateData.style = style;
@@ -1308,7 +1387,7 @@ async function startServer() {
   });
 
   // Delete QR code
-  app.delete('/api/qr/:slug', authenticate, requireOwnership, async (req, res) => {
+  app.delete('/api/qr/:slug', writeLimiter, authenticate, requireOwnership, async (req, res) => {
     dbg('ROUTE START', { method: 'DELETE', path: '/api/qr/:slug', uid: (req as any).user?.uid });
     try {
       const { slug } = req.params;
@@ -1389,12 +1468,11 @@ async function startServer() {
       const mobile_scans = data.devices?.mobile || 0;
       const mobile_pct = total_scans > 0 ? ((mobile_scans / total_scans) * 100).toFixed(1) : 0;
       
-      const last_scan = toDate(data.last_scan_at) || null;
-
-      // Derive first scan date from the days map (earliest key)
+      // Derive first and last scan dates from the days map
       const daysMap = data.days || {};
       const dayKeys = Object.keys(daysMap).sort(); // "2026-03-20", "2026-03-21", ...
       const first_scan = dayKeys.length > 0 ? dayKeys[0] : null;
+      const last_scan = dayKeys.length > 0 ? dayKeys[dayKeys.length - 1] : null;
 
       res.json({
         total_scans,
@@ -2493,12 +2571,8 @@ await startServer().catch((err) => {
 
 // Analytics Capture Logic
 async function captureAnalyticsFromPayload(payload: any, qrOwnerUid?: string) {
-  const { slug, ip, ua, country, asn, colo, tls, lang, is_eu, is_unique: payloadIsUnique, status } = payload;
+  const { slug, ua, country, referer, is_unique: payloadIsUnique, status } = payload;
   if (isBot(ua)) return;
-
-  const today = new Date().toISOString().slice(0, 10);
-  const fingerprint = `${ip}:${ua.slice(0, 100)}:${today}:${process.env.HASH_SALT || ''}`;
-  const visitorHash = crypto.createHash('sha256').update(fingerprint).digest('hex');
 
   let isUnique = payloadIsUnique;
   if (isUnique === undefined) {
@@ -2509,90 +2583,62 @@ async function captureAnalyticsFromPayload(payload: any, qrOwnerUid?: string) {
   const parsed = parseUA(ua);
   const now = new Date();
   const dateStr = now.toISOString().split('T')[0];
-  const hourStr = now.getHours().toString();
+  const currentMonth = dateStr.slice(0, 7);
 
   const isFailed = status === 'failed_password';
 
-  // 1. EXACT SCHEMA for scan_events
+  // 1. Insert into scan_events — only columns that exist in the schema
   dbg('Firestore addDoc START (scan_events)', { slug });
   await addDoc(collection(db, 'scan_events'), {
     slug,
-    date: dateStr,
+    scanned_at: serverTimestamp(),
     country: country || 'Unknown',
     device: parsed.device,
     browser: parsed.browser,
     os: parsed.os,
+    referer: referer || null,
     is_unique: isUnique,
-    scanned_at: serverTimestamp(),
-    visitor_hash: visitorHash,
-    asn: asn || null,
-    colo: colo || null,
-    lang: lang || null,
-    tls: tls || null,
-    is_eu: is_eu || false,
-    status: status || 'success'
   });
   dbg('Firestore addDoc END (scan_events)', { slug });
 
-  // 2. EXACT SCHEMA for qr_stats
-  const statsRef = doc(db, 'qr_stats', slug);
-  const inc = increment(1);
-  
-  const updateData: any = {
-    [`countries.${country || 'Unknown'}`]: inc,
-    last_scan_at: serverTimestamp()
+  // Failed password scans are logged but don't increment stats
+  if (isFailed) return;
+
+  // 2. Update qr_stats via read-modify-write
+  // Only writes columns that exist in the schema: total_scans, unique_scans,
+  // days, countries, browsers, os, devices, monthly_scans
+  dbg('qr_stats read START', { slug });
+  const { data: currentStats } = await supabase.from('qr_stats').select('*').eq('slug', slug).maybeSingle();
+  dbg('qr_stats read END', { slug, found: !!currentStats });
+
+  const statsUpdate: Record<string, any> = {
+    total_scans: (currentStats?.total_scans || 0) + 1,
+    days:         { ...(currentStats?.days || {}),         [dateStr]:             ((currentStats?.days?.[dateStr])                             || 0) + 1 },
+    countries:    { ...(currentStats?.countries || {}),    [country || 'Unknown']: ((currentStats?.countries?.[country || 'Unknown'])           || 0) + 1 },
+    browsers:     { ...(currentStats?.browsers || {}),     [parsed.browser]:       ((currentStats?.browsers?.[parsed.browser])                  || 0) + 1 },
+    os:           { ...(currentStats?.os || {}),           [parsed.os]:            ((currentStats?.os?.[parsed.os])                            || 0) + 1 },
+    devices:      { ...(currentStats?.devices || {}),      [parsed.device]:        ((currentStats?.devices?.[parsed.device])                   || 0) + 1 },
+    monthly_scans:{ ...(currentStats?.monthly_scans || {}), [currentMonth]:        ((currentStats?.monthly_scans?.[currentMonth])              || 0) + 1 },
   };
 
-  if (isFailed) {
-    updateData.failed_scans = inc;
-  } else {
-    updateData.total_scans = inc;
-    
-    // Use manual increment for JSONB nested objects because Supabase JS client update() 
-    // doesn't support dot notation for JSONB deep paths easily without rpc
-    const { data: currentStats } = await supabase.from('qr_stats').select('*').eq('slug', slug).maybeSingle();
-    
-    if (currentStats) {
-      const currentMonth = new Date().toISOString().slice(0, 7);
-      
-      updateData.devices = { ...(currentStats.devices || {}), [parsed.device]: ((currentStats.devices?.[parsed.device]) || 0) + 1 };
-      updateData.countries = { ...(currentStats.countries || {}), [country || 'Unknown']: ((currentStats.countries?.[country || 'Unknown']) || 0) + 1 };
-      updateData.browsers = { ...(currentStats.browsers || {}), [parsed.browser]: ((currentStats.browsers?.[parsed.browser]) || 0) + 1 };
-      updateData.os = { ...(currentStats.os || {}), [parsed.os]: ((currentStats.os?.[parsed.os]) || 0) + 1 };
-      updateData.days = { ...(currentStats.days || {}), [dateStr]: ((currentStats.days?.[dateStr]) || 0) + 1 };
-      updateData.hours = { ...(currentStats.hours || {}), [hourStr]: ((currentStats.hours?.[hourStr]) || 0) + 1 };
-      updateData.monthly_scans = { ...(currentStats.monthly_scans || {}), [currentMonth]: ((currentStats.monthly_scans?.[currentMonth]) || 0) + 1 };
-
-      if (asn) updateData.isps = { ...(currentStats.isps || {}), [`AS${asn}`]: ((currentStats.isps?.[`AS${asn}`]) || 0) + 1 };
-      if (colo) updateData.regions = { ...(currentStats.regions || {}), [colo]: ((currentStats.regions?.[colo]) || 0) + 1 };
-      if (lang) updateData.languages = { ...(currentStats.languages || {}), [lang.substring(0, 2)]: ((currentStats.languages?.[lang.substring(0, 2)]) || 0) + 1 };
-      if (parsed.osVersion) updateData.os_versions = { ...(currentStats.os_versions || {}), [`${parsed.os} ${parsed.osVersion}`]: ((currentStats.os_versions?.[`${parsed.os} ${parsed.osVersion}`]) || 0) + 1 };
-      if (tls) updateData.tls_protocols = { ...(currentStats.tls_protocols || {}), [tls]: ((currentStats.tls_protocols?.[tls]) || 0) + 1 };
-      
-      if (is_eu) updateData.eu_scans = (currentStats.eu_scans || 0) + 1;
-    }
-
-    if (isUnique) updateData.unique_scans = inc;
-
-    // Track monthly scans for quota enforcement
-    const currentMonth = new Date().toISOString().slice(0, 7);
-    updateData[`monthly_scans.${currentMonth}`] = inc;
-
-    // OPTIMIZATION: Maintain per-user monthly counter to avoid O(N) reads on billing page
-    if (qrOwnerUid) {
-      dbg('Firestore updateDoc START (user monthly scans)', { uid: qrOwnerUid });
-      await updateDoc(doc(db, 'profiles', qrOwnerUid), {
-        [`monthly_scans.${currentMonth}`]: inc
-      }).catch(err => {
-        logger.error('User monthly_scans update failed', err);
-        logger.error('User monthly_scans update background error', { error: err.message });
-      });
-    }
+  if (isUnique) {
+    statsUpdate.unique_scans = (currentStats?.unique_scans || 0) + 1;
   }
 
-  dbg('Firestore setDoc START (qr_stats merge)', { slug });
-  await setDoc(statsRef, updateData, { merge: true });
-  dbg('Firestore setDoc END (qr_stats merge)', { slug });
+  dbg('qr_stats upsert START', { slug });
+  await setDoc(doc(db, 'qr_stats', slug), statsUpdate, { merge: true });
+  dbg('qr_stats upsert END', { slug });
+
+  // 3. Maintain per-user monthly scan counter on the profile (for quota enforcement on billing page)
+  if (qrOwnerUid) {
+    const { data: profileData } = await supabase.from('profiles').select('monthly_scans').eq('id', qrOwnerUid).maybeSingle();
+    const profileMonthly = profileData?.monthly_scans || {};
+    await updateDoc(doc(db, 'profiles', qrOwnerUid), {
+      monthly_scans: { ...profileMonthly, [currentMonth]: (profileMonthly[currentMonth] || 0) + 1 }
+    }).catch((err: any) => {
+      logger.error('User monthly_scans update background error', { error: err.message });
+    });
+  }
 }
 
 async function captureAnalytics(req: express.Request, slug: string) {
