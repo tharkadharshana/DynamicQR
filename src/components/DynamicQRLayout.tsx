@@ -9,10 +9,15 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
   const [userEmail, setUserEmail] = useState('');
   const [userName, setUserName] = useState('');
   const [userInitials, setUserInitials] = useState('');
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
   const currentPlan = planData?.plan || 'free';
   const planLabel = currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1);
   const isTrial = planData?.is_trial;
+
+  // Show banner when trial has ended or paid plan has expired
+  const showTrialBanner = !bannerDismissed && planData && planData.plan === 'free' && !planData.is_trial;
+  const bannerIsExpired = planData?.is_expired;
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -236,6 +241,38 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
             </button>
           </div>
         </div>
+        {/* Trial ended / subscription expired banner */}
+        {showTrialBanner && (
+          <div style={{
+            background: bannerIsExpired ? 'var(--red-l, rgba(239,68,68,0.1))' : 'rgba(245,158,11,0.08)',
+            borderBottom: `1px solid ${bannerIsExpired ? 'var(--red, #ef4444)' : 'var(--amber, #f59e0b)'}`,
+            padding: '10px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            flexShrink: 0,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={bannerIsExpired ? 'var(--red, #ef4444)' : 'var(--amber, #f59e0b)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+              <span style={{ fontSize: '13px', color: bannerIsExpired ? 'var(--red, #ef4444)' : 'var(--amber, #f59e0b)', fontWeight: 500 }}>
+                {bannerIsExpired ? 'Your subscription has expired.' : 'Your free trial has ended.'}{' '}
+                Dynamic QR codes and advanced features are locked.{' '}
+                <Link to="/billing" style={{ color: 'inherit', fontWeight: 700, textDecoration: 'underline' }}>
+                  Upgrade to Pro →
+                </Link>
+              </span>
+            </div>
+            <button
+              onClick={() => setBannerDismissed(true)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: '2px 6px', lineHeight: 1, fontSize: '16px', flexShrink: 0 }}
+              aria-label="Dismiss"
+            >×</button>
+          </div>
+        )}
+
         <Outlet context={{ planData }} />
       </div>
     </div>
