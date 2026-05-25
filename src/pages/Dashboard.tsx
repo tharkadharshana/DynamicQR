@@ -5,9 +5,11 @@ import QRCode from 'qrcode';
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
 import { apiFetch } from '../lib/api';
 import { useUI } from '../shared/UIContext';
+import QRViewerModal from '../components/QRViewerModal';
 
 export default function Dashboard() {
   const [qrCodes, setQrCodes] = useState<any[]>([]);
+  const [viewQR, setViewQR] = useState<any | null>(null);
   const [stats, setStats] = useState<Record<string, any>>({});
   const [timeseries, setTimeseries] = useState<any[]>([]);
   const [rangeMode, setRangeMode] = useState<'days' | 'range'>('days');
@@ -364,7 +366,12 @@ export default function Dashboard() {
                         <tr key={qr.id}>
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <div className="qr-thumb">
+                              <div
+                                className="qr-thumb"
+                                style={{ cursor: 'pointer' }}
+                                title="View QR code"
+                                onClick={() => setViewQR(qr)}
+                              >
                                 <canvas id={`thumb-${qr.id}`} width="32" height="32"></canvas>
                               </div>
                               <div>
@@ -393,6 +400,11 @@ export default function Dashboard() {
                           </td>
                           <td>
                             <div style={{ display: 'flex', gap: '8px' }}>
+                              <button className="btn btn-ghost btn-sm" onClick={() => setViewQR(qr)} title="View & download QR">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/>
+                                </svg>
+                              </button>
                               <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/analytics/${qr.slug}`)}>Stats →</button>
                               <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/edit/${qr.id}`)}>Edit</button>
                               <button className="btn btn-ghost btn-sm" style={{ color: 'var(--coral)' }} onClick={() => handleDelete(qr.id, qr.slug)}>Delete</button>
@@ -457,6 +469,7 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {viewQR && <QRViewerModal qr={viewQR} onClose={() => setViewQR(null)} />}
     </div>
   );
 }

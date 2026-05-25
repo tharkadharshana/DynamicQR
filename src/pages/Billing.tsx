@@ -154,19 +154,19 @@ export default function Billing() {
         {/* Billing Cycle Toggle */}
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
           <div style={{ background: 'var(--surface2)', padding: '4px', borderRadius: '30px', display: 'flex', gap: '4px', border: '1px solid var(--border)' }}>
-            <button 
+            <button
               onClick={() => setIsAnnual(false)}
-              style={{ 
+              style={{
                 padding: '8px 20px', borderRadius: '26px', border: 'none', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                background: !isAnnual ? 'white' : 'transparent', color: !isAnnual ? 'var(--text)' : 'var(--text3)',
+                background: !isAnnual ? 'white' : 'transparent', color: !isAnnual ? '#111' : 'var(--text3)',
                 boxShadow: !isAnnual ? '0 2px 8px rgba(0,0,0,0.05)' : 'none'
               }}
             >Monthly</button>
-            <button 
+            <button
               onClick={() => setIsAnnual(true)}
-              style={{ 
+              style={{
                 padding: '8px 20px', borderRadius: '26px', border: 'none', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                background: isAnnual ? 'white' : 'transparent', color: isAnnual ? 'var(--text)' : 'var(--text3)',
+                background: isAnnual ? 'white' : 'transparent', color: isAnnual ? '#111' : 'var(--text3)',
                 boxShadow: isAnnual ? '0 2px 8px rgba(0,0,0,0.05)' : 'none',
                 display: 'flex', alignItems: 'center', gap: '6px'
               }}

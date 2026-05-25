@@ -548,7 +548,7 @@ async function startServer() {
         countries_count: countriesSet.size,
         profile: {
           company: userDoc?.company || '',
-          jobTitle: userDoc?.jobTitle || '',
+          jobTitle: userDoc?.job_title || '',
           country: userDoc?.country || 'LK',
           timezone: userDoc?.timezone || 'Asia/Colombo'
         },
@@ -577,7 +577,7 @@ async function startServer() {
       dbg('Firestore updateDoc START', { collection: 'profiles', docId: uid });
       await updateDoc(userRef, {
         company: company || '',
-        jobTitle: jobTitle || '',
+        job_title: jobTitle || '',
         country: country || 'LK',
         timezone: timezone || 'Asia/Colombo',
         updated_at: serverTimestamp()
@@ -632,7 +632,7 @@ async function startServer() {
           email: profile.email,
           plan: profile.plan,
           company: profile.company,
-          jobTitle: profile.jobTitle,
+          jobTitle: profile.job_title,
           country: profile.country,
           timezone: profile.timezone
         },
@@ -1206,8 +1206,7 @@ async function startServer() {
         browsers: {},
         os: {},
         devices: { mobile: 0, desktop: 0, tablet: 0 },
-        monthly_scans: {},
-        last_scan_at: null
+        monthly_scans: {}
       };
 
       // 4. Firestore Commit
@@ -1469,12 +1468,11 @@ async function startServer() {
       const mobile_scans = data.devices?.mobile || 0;
       const mobile_pct = total_scans > 0 ? ((mobile_scans / total_scans) * 100).toFixed(1) : 0;
       
-      const last_scan = toDate(data.last_scan_at) || null;
-
-      // Derive first scan date from the days map (earliest key)
+      // Derive first and last scan dates from the days map
       const daysMap = data.days || {};
       const dayKeys = Object.keys(daysMap).sort(); // "2026-03-20", "2026-03-21", ...
       const first_scan = dayKeys.length > 0 ? dayKeys[0] : null;
+      const last_scan = dayKeys.length > 0 ? dayKeys[dayKeys.length - 1] : null;
 
       res.json({
         total_scans,
