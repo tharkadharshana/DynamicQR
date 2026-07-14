@@ -596,8 +596,8 @@ async function startServer() {
   app.post('/api/user/revoke-sessions', writeLimiter, authenticate, async (req, res) => {
     dbg('ROUTE START', { method: 'POST', path: '/api/user/revoke-sessions', uid: (req as any).user?.uid });
     try {
-      const uid = (req as any).user.uid;
-      const { error } = await supabase.auth.admin.signOut(uid, 'global');
+      const jwt = (req.headers.authorization as string).split('Bearer ')[1];
+      const { error } = await supabase.auth.admin.signOut(jwt, 'global');
       if (error) {
         logger.error('Session revocation failed', { uid, code: error.status, message: error.message });
         return res.status(500).json({ error: 'Failed to revoke sessions' });

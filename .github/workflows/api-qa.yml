@@ -1,0 +1,68 @@
+name: API QA
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+    branches: [main, development]
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      INTERNAL_SECRET: ${{ secrets.INTERNAL_SECRET }}
+      HASH_SALT: ${{ secrets.HASH_SALT }}
+      QA_EMAIL: ${{ secrets.QA_EMAIL }}
+      QA_PASSWORD: ${{ secrets.QA_PASSWORD }}
+      NODE_ENV: test
+      APP_URL: http://localhost:3000
+      PORT: 3000
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start API server
+        run: npm run dev &
+
+      - name: Wait for server to be ready
+        run: |
+          echo "Waiting for API server..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
+              echo "Server ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Server did not start within 30 seconds"
+          exit 1
+
+      - name: Run QA suite
+        run: npx tsx qa.ts
+        env:
+          QA_API_URL: http://localhost:3000
+
+      - name: Upload server logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-logs
+          path: |
+            *.log
+            logs/
+          if-no-files-found: ignore
