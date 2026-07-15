@@ -48,21 +48,6 @@ const getDoc = async (ref: SupabaseRef) => {
   };
 };
 
-async function testConnection() {
-  try {
-    dbg('Supabase connection test START');
-    const { data, error } = await supabase.from('test_connection').select('*').limit(1);
-    if (error && error.code !== '42P01') throw error; // Ignore table not found
-    logger.info("Supabase connection successful");
-    dbg('Supabase connection test SUCCESS');
-  } catch (error) {
-    logger.error("Supabase connection test error:", error);
-    logger.error('Supabase connection test failed', { error: String(error) });
-    dbg('Supabase connection test FAILURE', error);
-  }
-}
-// testConnection(); removed to prevent startup overhead on cold starts
-
 class SupabaseQuery {
   public table: string;
   public filters: any[] = [];
@@ -213,7 +198,6 @@ const query = (colRef: SupabaseRef, ...constraints: any[]) => {
 const where = (field: any, op: any, val: any) => (q: SupabaseQuery) => { q.filters.push({field, op, val}); return q; };
 const orderBy = (field: string, dir?: any) => (q: SupabaseQuery) => { q._order = {field, dir: dir || 'asc'}; return q; };
 const limit = (n: number) => (q: SupabaseQuery) => { q._limit = n; return q; };
-const documentId = () => 'slug'; // Or 'slug' based on table, but 'id' is standard in filters. Oh wait, where(documentId()) is used! We will fix that later if needed.
 
 export const app = express();
 
@@ -596,6 +580,7 @@ async function startServer() {
   app.post('/api/user/revoke-sessions', writeLimiter, authenticate, async (req, res) => {
     dbg('ROUTE START', { method: 'POST', path: '/api/user/revoke-sessions', uid: (req as any).user?.uid });
     try {
+      const uid = (req as any).user.uid;
       const jwt = (req.headers.authorization as string).split('Bearer ')[1];
       const { error } = await supabase.auth.admin.signOut(jwt, 'global');
       if (error) {
@@ -1570,9 +1555,9 @@ async function startServer() {
       if (!statsDoc.exists()) return res.json([]);
       
       const data = statsDoc.data()!;
-      const devices = data.devices || { mobile: 0, desktop: 0, tablet: 0 };
-      
-      const total = devices.mobile + devices.desktop + devices.tablet;
+      const devices: Record<string, number> = data.devices || { mobile: 0, desktop: 0, tablet: 0 };
+
+      const total = (devices.mobile || 0) + (devices.desktop || 0) + (devices.tablet || 0);
 
       const result = Object.entries(devices)
         .filter(([_, count]) => count > 0)
@@ -2701,12 +2686,6 @@ function escapeHtml(value: string) {
 
 function isBot(ua: string) {
   return /bot|crawler|spider|preview|facebookexternalhit|googlebot|twitterbot|slackbot|whatsapp|telegram/i.test(ua);
-}
-
-function classifyReferer(referer: string) {
-  if (!referer) return 'direct';
-  if (/android-app:|ios-app:/.test(referer)) return 'app';
-  return 'browser';
 }
 
 export default app;
