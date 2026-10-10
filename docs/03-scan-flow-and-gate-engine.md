@@ -4,7 +4,7 @@ A dynamic QR code encodes `${VITE_SHORT_DOMAIN}/<slug>`, which today is `https:/
 
 A static QR code encodes its final content directly (URL, vCard text, a `WIFI:` string, `mailto:`). **Scanning one never reaches the platform.** We cannot gate it, count it or change it.
 
-Only `url` codes can be dynamic for now. `POST /api/qr` stores every other type as static. The Worker learns to render them in Phase 2. See [Non-URL types](#non-url-types).
+Every type can be dynamic. URL codes redirect; the others are rendered at the edge. See [Non-URL types](#non-url-types).
 
 ## Step by step
 
@@ -63,11 +63,11 @@ Config shape, built by `/internal/slug` from the owner's **license** (`getLicens
 | 1b | Paused | `paused` | 410 page with the code's title: "paused by its owner". The code is kept. |
 | 2 | Expiry | `new Date(expiry_date) < now` | 410 page "has expired" |
 | 3 | Monthly quota | `quota_exceeded` | 429 page "Monthly limit reached", with an upgrade link to `{origin}/pricing` |
-| 4 | No destination | `!destination_url` (legacy dynamic non-URL rows) | 404 page "Nothing to open yet" |
+| 4 | No destination | URL code with an empty `destination_url` | 404 page "Nothing to open yet" |
 | 5 | Visitor Guard | KV `ratelimit:{slug}:{hash}` ≥ `visitor_rate_limit` (when > 0) | 429 page "Slow down!" |
 | 6 | PIN | `password_hash` set and KV `…:pw_ok` missing | PIN form (200). After **5 wrong PINs in 15 min** for this visitor: 429 "Too many attempts". |
 | 7 | Scan limit | `++scan_count > scan_limit` | 410 page "Scan limit reached". The Worker also PUTs `is_active:false` and deletes the KV key. |
-| — | Redirect | | `302 Location: destination_url` |
+| — | Result | | URL code: `302 Location: destination_url`. Other types: `renderGuestPage()` (below). |
 
 Every non-redirect outcome uses one `page()` helper, so the scanner always sees a branded HTML page and never a bare error.
 
@@ -144,11 +144,19 @@ It checks only `is_active` and records analytics. On Vercel this route never run
 
 ## Non-URL types
 
-For a dynamic code the Worker can only redirect. A dynamic vCard, Text or Email code has no URL to redirect to.
+After the gates pass, the Worker calls `renderGuestPage(config, lang, url)` from [src/lib/guestPage.ts](../src/lib/guestPage.ts). This is a pure function, and the dev server uses the same one.
 
-- New codes of those types are always stored as static (enforced by `POST /api/qr`, and the CreateQR toggle is disabled).
-- Legacy rows get the 404 "Nothing to open yet" page instead of a crash.
-- Phase 2 adds Worker rendering (guest pages plus vCard, Text, Email and Wi-Fi) and lifts the restriction.
+| `qr_type` | Scanner sees |
+|---|---|
+| `page` | Hosted guest page: name, subtitle, today's offer, link buttons, Wi-Fi box with copy, EN/සිං/தமி switch, brand colour. Free owners get a "Made with Scnr" footer (`config.branding`). |
+| `vcard` | `.vcf` download (`text/vcard`) |
+| `text` | HTML page with the text (escaped) |
+| `email` | `302` to `mailto:` |
+| `wifi` | Page with the network and a copyable password (a *static* Wi-Fi code joins directly, so the kit prints a static one next to the guest page) |
+
+- **Language** comes from `?lang=en|si|ta`, then `Accept-Language`, then English. Sinhala and Tamil text uses Noto Sans from Google Fonts. **A language switch (`?lang=` on a non-URL code) is not counted as a scan** and does not touch the scan or visitor counters.
+- **Safety.** All text is HTML-escaped. Link URLs must start with `http(s)://`, `tel:` or `mailto:`; anything else (`javascript:`, `data:`) is dropped.
+- **Size.** `content_data` is capped at 20 KB by the API and travels inside the cached config.
 
 ## Known limits
 

@@ -68,6 +68,9 @@ All foreign keys `on delete cascade`, so deleting the auth user removes everythi
 | text | `text` | raw text |
 | email | `email, subject, body` | `mailto:…?subject=…&body=…` |
 
+| page | `name, subtitle, color, offer:{title?, text}, links:[{kind, label, url}], wifi:{ssid, password}, i18n:{si|ta:{name?, subtitle?, offer?, labels[]}}, kit:{…wizard form}` | dynamic only: rendered by the Worker |
+| url (WhatsApp) | `wa_phone, wa_text` (the destination is `https://wa.me/<digits>?text=…`) | URL |
+
 Field values are not escaped in the vCard and WiFi strings. A `;` or `\` in an SSID or name breaks the payload.
 
 ### `qr_stats`, one per QR (pre-aggregated)
@@ -83,6 +86,10 @@ Field values are not escaped in the vCard and WiFi strings. A `;` or `\` in an S
 | `updated_at` | never updated by the app |
 
 Columns the code **reads but which do not exist**: `referrers`, `regions`, `isps`, `languages`, `hours`, `os_versions`, `tls_protocols`, `eu_scans`. Those endpoints always return empty results.
+
+### `events`, the activation funnel (migration 002)
+
+`id, uid → profiles, name, slug, created_at`. Names: `qr_created`, `print_opened`, `first_scan`, `offer_changed`, `paid`, `kit_started`. The API writes them (they never fail a request), and RLS denies direct access. Founder queries live in [migrations/queries.sql](../migrations/queries.sql): the per-account funnel, stuck accounts, funnel totals, and revenue by month.
 
 ### `scan_events`, one per scan (bots excluded)
 

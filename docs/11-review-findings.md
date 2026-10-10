@@ -27,7 +27,7 @@ Fix: add `{ "source": "/internal/(.*)", "destination": "/api/index.ts" }` before
 
 **C5. Webhook retries stack extra months (column confirmed missing).** ✅ Phase 0 (idempotent per payment_id) The `subscriptions` insert uses the column `timestamp`, which does not exist. The insert fails after the profile is already extended. The webhook returns 500, PayHere retries, and each retry adds another month. Invoices stay empty.
 
-**C6. Dynamic vCard, Text and Email codes crash the Worker.** 🟡 Phase 0 (forced static, legacy rows get a 404 page; rendering in Phase 2) `Response.redirect('')` throws, and the scanner sees a Cloudflare 1101 error. See [doc 03](03-scan-flow-and-gate-engine.md#non-url-types).
+**C6. Dynamic vCard, Text and Email codes crash the Worker.** ✅ Phase 2 (rendered at the edge by `renderGuestPage`) `Response.redirect('')` throws, and the scanner sees a Cloudflare 1101 error. See [doc 03](03-scan-flow-and-gate-engine.md#non-url-types).
 
 **C7. The URL printed on a code depends on the dashboard host.** ✅ Phase 0 (VITE_SHORT_DOMAIN) Codes made on `*.vercel.app` or localhost skip the Worker, and scanners land on `/login`. See [doc 06](06-frontend.md#qr-content-depends-on-the-origin).
 
@@ -75,7 +75,7 @@ This is a legal and trust risk with paying customers. Remove the claims, or labe
 | M6 | Expiry is a time-zone-less local string, compared as UTC at the edge | CreateQR / worker |
 | M7 | Date range filters only the time series. Breakdowns are all-time and are not labelled as such. Custom ranges skip the plan's `analytics_days` cap. | Analytics pages, server timeseries |
 | M8 | Webhook treats PayHere `-3` (chargeback) as a cancellation and ignores recurring `message_type` events | server.ts:916 |
-| M9 | `PUT /api/qr/:slug` cannot change `qr_type` or `content_data`, so a vCard cannot be edited | server.ts:1193 |
+| ✅ M9 | `PUT /api/qr/:slug` cannot change `qr_type` or `content_data`, so a vCard cannot be edited | server.ts:1193 |
 | M10 | Reactivating codes through PUT skips the QR-count limit | server.ts:1212 |
 | M11 | Rate limiters are in memory on serverless, so they are soft | server.ts:239-267 |
 | ✅ M12 | Billing "Next billing" always shows N/A (`_seconds`) | Billing.tsx:57-60 |

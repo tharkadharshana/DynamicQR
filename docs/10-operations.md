@@ -131,6 +131,7 @@ Phase 0 added these sections:
 - **21, Edit persistence.** A PUT with `options` persists `rate_limit` and the Visitor Guard settings. `/internal/slug` returns the policy fields.
 - **22, Billing.** A PayHere order plus signed notifies, testing tampered `custom_2`, replay, wrong amount or currency, unknown order, annual (+12 months), recurring stopped, and chargeback.
 - **23, USD billing.** PayHere USD fallback, Polar checkout disabled without a token, and Polar Standard-Webhooks events (bad signature, active, same-period replay, canceled, revoked, unknown product). CI uses a dummy `POLAR_WEBHOOK_SECRET` and product id.
+- **25, Restaurant Kit.** Guest page rendering through the in-process Worker: EN/SI/TA, escaping, unsafe links dropped, the WhatsApp link, branding for Free, language switch not counted. Dynamic vCard/Text/Email/Wi-Fi at the edge, `content_data` edits and the 20 KB cap, activation events (needs migration 002), `/api/events` allowlist, `waLink`.
 - **24, Plan limits and lapse.** Pro caps (100 codes, 365 days, timeseries capped), the Free dynamic pilot (`LIMIT_DYNAMIC_QR`), and the lapse rule end to end: `pause_on`, `/internal/slug` paused flags, and the Worker serving the holding page while the oldest code stays live.
 
 Not covered yet: the frontend (no browser tests) and real Cloudflare KV behaviour (eventual consistency, TTLs).
