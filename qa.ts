@@ -32,12 +32,15 @@
  *  22. Billing: PayHere order + signed notify (tamper, replay, amount, annual, stop, chargeback)
  *  23. Billing USD: PayHere fallback + Polar signed webhooks (active, replay, canceled, revoked)
  *  24. Plan limits (caps, 365-day history), free dynamic pilot, lapse grace → pause (API + Worker)
- *  25. Cleanup
+ *  25. Guest pages (EN/SI/TA, escaping, unsafe links, branding, lang switch not a scan), dynamic
+ *      vCard/Text/Email/Wi-Fi at the edge, content_data edits + size cap, activation events, waLink
+ *  26. Cleanup
  */
 import 'dotenv/config';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import worker from './worker/worker.js';
+import { waLink } from './src/lib/site.ts';
 
 // ─── config ──────────────────────────────────────────────────────────────────
 const API             = process.env.QA_API_URL || 'http://localhost:3000';
@@ -739,16 +742,12 @@ async function run() {
     // Legacy dynamic row with no destination (old vCard/Text/Email) → 404 page, not a crash
     const legacy = await mkQR({ destination_url: 'https://example.com/legacy', title: 'QA W legacy' });
     if (legacy) {
-      await admin.from('qr_codes').update({ destination_url: '', qr_type: 'vcard' }).eq('slug', legacy);
+      await admin.from('qr_codes').update({ destination_url: '' }).eq('slug', legacy);
       const r = await runWorker(`/${legacy}`);
-      check('Worker: dynamic row without destination → 404 page', r.status === 404 && r.body.includes('no destination'), `status=${r.status}`);
+      check('Worker: URL code without destination → 404 page', r.status === 404 && r.body.includes('no destination'), `status=${r.status}`);
     }
     await del(legacy);
 
-    // Non-URL types are forced static until the Worker renders them (Phase 2)
-    const vc = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'vcard', is_dynamic: true, title: 'QA W vcard', content_data: { first_name: 'A' } }) });
-    check('POST /api/qr vCard with is_dynamic=true → stored static', vc.status === 201 && vc.body?.is_dynamic === false, `status=${vc.status} is_dynamic=${vc.body?.is_dynamic}`);
-    await del(vc.body?.slug);
   }
 
   // ── 16. Token revocation ─────────────────────────────────────────────────────
@@ -1070,8 +1069,90 @@ async function run() {
     check('Free at allowance: no pause warning', atAllowance?.pause_on === null && atAllowance?.dynamic_over_allowance === 0, `pause_on=${atAllowance?.pause_on}`);
   }
 
-  // ── 25. Cleanup ──────────────────────────────────────────────────────────────
-  section('25. Cleanup');
+  // ── 25. Restaurant Kit: guest pages, non-URL types, events, WhatsApp ─────────
+  section('25. Guest pages (EN/SI/TA), dynamic vCard/Text/Email/Wi-Fi, offer edits, events');
+  if (testSlug) {
+    // Pro owner for room to create codes; free branding checked further down.
+    await admin.from('profiles').update({ plan: 'pro', plan_expires_at: new Date(Date.now() + 30 * 86400000).toISOString(), is_trial: false }).eq('id', uid);
+
+    const content = {
+      name: 'Café <Lagoon>', subtitle: 'Galle Road', color: '#2B4A3A',
+      offer: { text: 'Kottu night 20% off' },
+      links: [
+        { kind: 'menu', label: 'Menu', url: 'https://example.com/menu.pdf' },
+        { kind: 'whatsapp', label: 'WhatsApp us', url: waLink('+94 77 123 4567', 'Hi') },
+        { kind: 'evil', label: 'Evil', url: 'javascript:alert(1)' },
+      ],
+      wifi: { ssid: 'Lagoon-Guest', password: 'kottu2026' },
+      i18n: { si: { name: 'කැෆේ ලගූන්', labels: ['මෙනුව', 'WhatsApp කරන්න', 'x'] }, ta: { labels: ['மெனு', 'WhatsApp செய்யுங்கள்', 'x'] } },
+    };
+    const page = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ title: 'QA Kit', qr_type: 'page', is_dynamic: false, content_data: content }) });
+    check('POST page QR → 201, always dynamic', page.status === 201 && page.body?.is_dynamic === true, `status=${page.status} dyn=${page.body?.is_dynamic}`);
+    const pageSlug = page.body?.slug;
+
+    if (pageSlug) {
+      const en = await runWorker(`/${pageSlug}`, { ua: 'QA-kit-en' });
+      check('Guest page → 200 HTML with name (escaped) and links', en.status === 200 && en.body.includes('Café &lt;Lagoon&gt;') && en.body.includes('https://example.com/menu.pdf'), `status=${en.status}`);
+      check('Guest page: WhatsApp link is wa.me with digits', en.body.includes('https://wa.me/94771234567?text=Hi'));
+      check('Guest page: javascript: link dropped', !en.body.includes('javascript:'));
+      check('Guest page: offer + Wi-Fi shown', en.body.includes('Kottu night 20% off') && en.body.includes('Lagoon-Guest'));
+      check('Guest page: Pro owner has no "Made with Scnr"', !en.body.includes('Made with Scnr'));
+      const si = await runWorker(`/${pageSlug}?lang=si`, { ua: 'QA-kit-si' });
+      check('Guest page ?lang=si → Sinhala name + labels', si.body.includes('කැෆේ ලගූන්') && si.body.includes('මෙනුව'), `status=${si.status}`);
+      const before = (await api(`/api/analytics/${pageSlug}/summary`, { token })).body?.total_scans ?? 0;
+      await runWorker(`/${pageSlug}?lang=ta`, { ua: 'QA-kit-switch' });
+      await sleep(400);
+      const after = (await api(`/api/analytics/${pageSlug}/summary`, { token })).body?.total_scans ?? 0;
+      check('Language switch is not counted as a new scan', after === before, `before=${before} after=${after}`);
+
+      // Offer edit after printing: PUT content_data → live config, event recorded.
+      const upd = await api(`/api/qr/${pageSlug}`, { method: 'PUT', token, body: JSON.stringify({ content_data: { ...content, offer: { text: 'Weekend brunch LKR 2,200' } } }) });
+      const cfg = await api(`/internal/slug/${pageSlug}`, { internal: true });
+      check('PUT content_data → 200 and live in /internal/slug', upd.status === 200 && cfg.body?.content_data?.offer?.text === 'Weekend brunch LKR 2,200', `status=${upd.status}`);
+      const big = await api(`/api/qr/${pageSlug}`, { method: 'PUT', token, body: JSON.stringify({ content_data: { blob: 'x'.repeat(25000) } }) });
+      check('content_data over 20 KB → 400', big.status === 400, `got ${big.status}`);
+      await sleep(500);
+      const { data: evs } = await admin.from('events').select('name').eq('uid', uid);
+      const names = new Set((evs || []).map((e: any) => e.name));
+      check('Events: qr_created, first_scan, offer_changed recorded', names.has('qr_created') && names.has('first_scan') && names.has('offer_changed'), JSON.stringify([...names]));
+      const ev = await api('/api/events', { method: 'POST', token, body: JSON.stringify({ name: 'print_opened', slug: pageSlug }) });
+      const evBad = await api('/api/events', { method: 'POST', token, body: JSON.stringify({ name: 'hacked' }) });
+      check('POST /api/events print_opened → 200, unknown name → 400', ev.status === 200 && evBad.status === 400, `${ev.status}/${evBad.status}`);
+
+      // Free owner (not lapsed): "Made with Scnr" footer.
+      await admin.from('profiles').update({ plan: 'free', plan_expires_at: null, is_trial: false, trial_expires_at: new Date(Date.now() - 86400000).toISOString() }).eq('id', uid);
+      const free = await runWorker(`/${pageSlug}`, { ua: 'QA-kit-free' });
+      check('Free owner guest page shows "Made with Scnr"', free.status === 200 && free.body.includes('Made with Scnr'), `status=${free.status}`);
+      await admin.from('profiles').update({ plan: 'pro', plan_expires_at: new Date(Date.now() + 30 * 86400000).toISOString() }).eq('id', uid);
+      await del(pageSlug);
+    }
+
+    // Other types can now be dynamic and render at the edge.
+    const mk = async (body: any) => (await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ is_dynamic: true, ...body }) })).body;
+    const vc = await mk({ qr_type: 'vcard', title: 'QA dyn vCard', content_data: { first_name: 'QA', last_name: 'Tester', phone: '+94700000000' } });
+    check('Dynamic vCard stored as dynamic', vc?.is_dynamic === true, JSON.stringify(vc?.is_dynamic));
+    const rv = await runWorker(`/${vc?.slug}`, { ua: 'QA-vcard' });
+    check('Worker: dynamic vCard → .vcf download', rv.status === 200 && rv.body.includes('BEGIN:VCARD') && rv.body.includes('Tester'), `status=${rv.status}`);
+    await del(vc?.slug);
+    const tx = await mk({ qr_type: 'text', title: 'QA dyn text', content_data: { text: 'Hello <b>QA</b>' } });
+    const rt = await runWorker(`/${tx?.slug}`, { ua: 'QA-text' });
+    check('Worker: dynamic text → escaped HTML', rt.status === 200 && rt.body.includes('Hello &lt;b&gt;QA&lt;/b&gt;'), `status=${rt.status}`);
+    await del(tx?.slug);
+    const em = await mk({ qr_type: 'email', title: 'QA dyn email', content_data: { email: 'qa@example.com', subject: 'Hi' } });
+    const re = await runWorker(`/${em?.slug}`, { ua: 'QA-email' });
+    check('Worker: dynamic email → 302 mailto:', re.status === 302 && (re.location || '').startsWith('mailto:qa@example.com'), `status=${re.status} loc=${re.location}`);
+    await del(em?.slug);
+    const wf = await mk({ qr_type: 'wifi', title: 'QA dyn wifi', content_data: { ssid: 'QA-Net', password: 'p@ss' } });
+    const rw = await runWorker(`/${wf?.slug}`, { ua: 'QA-wifi' });
+    check('Worker: dynamic Wi-Fi → page with SSID', rw.status === 200 && rw.body.includes('QA-Net'), `status=${rw.status}`);
+    await del(wf?.slug);
+    const badType = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'sms', title: 'QA bad type' }) });
+    check('Unknown qr_type → 400', badType.status === 400, `got ${badType.status}`);
+    check('waLink builds wa.me/<digits>?text=', waLink('+94 (77) 123-4567', 'Hi there') === 'https://wa.me/94771234567?text=Hi%20there');
+  }
+
+  // ── 26. Cleanup ──────────────────────────────────────────────────────────────
+  section('26. Cleanup');
   {
     const del = await api('/api/user/account', { method: 'DELETE', token });
     check('DELETE /api/user/account → 200', del.status === 200, `status=${del.status} ${JSON.stringify(del.body)}`);
