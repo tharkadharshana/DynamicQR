@@ -86,19 +86,11 @@ The SPA calls `POST /api/billing/checkout`. The server returns signed PayHere fo
 | Production, not on Vercel | Serves `dist/` statically, with an SPA fallback, and listens |
 | Vercel | No listen. `api/index.ts` re-exports `app` and Vercel runs it per request. In-memory state (rate limiters) is per instance and resets on cold start. |
 
-## The Firestore-compat shim
+## Database access
 
-The app started on Firebase, and git history shows the move to Supabase. To avoid rewriting about 40 routes, [server.ts:23-196](../server.ts#L23-L196) puts a fake Firestore API on top of supabase-js: `doc()`, `collection()`, `query()`, `where()`, `getDoc()`, `getDocs()`, `setDoc()`, `updateDoc()`, `addDoc()`, `deleteDoc()`, `writeBatch()`, `increment()`, `serverTimestamp()`.
+`server.ts` calls supabase-js directly through three small helpers: `row(table, col, val)`, `rows(table, col, val)` and `statsFor(slugs)`. The Firestore-compat shim that used to sit here was removed in Phase 3. It had hidden fake batches, read-modify-write increments, dotted-key updates and 30-item `in` chunking.
 
-What it hides:
-
-- **No transactions.** `batch.commit()` runs the operations one after another. A failure halfway leaves partial writes.
-- **`increment()` is read-modify-write.** It is not atomic, so concurrent scans lose counts.
-- **Dotted keys** like `'rate_limit.enabled'` or `'addons.extra_scans'` are Firestore field paths. Postgres has no column with that name, so these updates fail.
-- **30-item `in` chunking** is a Firestore limit that Postgres does not have.
-- **Primary key guessing.** `slug` for `qr_codes`, `qr_stats` and `scan_events`, otherwise `id`.
-
-Removing the shim and calling Supabase directly is the main pending refactor (memory notes, PR #6 follow-up). `qa.ts` is the safety net for it.
+Writes that must be atomic happen in Postgres: `record_scan()` (migration 003) records one scan in one transaction. Deletes rely on `on delete cascade`: deleting a code removes its stats and events, and deleting the auth user removes everything the account owns.
 
 ## Key design decisions (and their costs)
 
@@ -106,6 +98,6 @@ Removing the shim and calling Supabase directly is the main pending refactor (me
 |---|---|---|
 | Gates at the edge with a KV cache (TTL 300 s) | Fast decisions on a cache hit | Edits call `purgeEdge(slug)`, so they apply on the next scan. KV is eventually consistent, so scan counts are approximate. |
 | Quota decided in `/internal/slug`, analytics sent with `waitUntil` | The redirect never waits for the DB write | The quota can overshoot by up to 300 s of traffic |
-| Pre-aggregated jsonb counters in `qr_stats` | Dashboard reads one row per QR | Read-modify-write races. Unbounded growth of the `days` map. No per-day uniques. |
-| Express as a single file | Simple to deploy | 2,400 lines, 9 nearly identical account-analytics handlers |
+| Pre-aggregated jsonb counters in `qr_stats` | Dashboard reads one row per QR | The `days` map grows by one key per active day. Counters are atomic through `record_scan()`. |
+| Express as a single file | Simple to deploy | About 1,600 lines. Analytics is one set of views served for both a code and the account. |
 | Client-side QR rendering | No server image work | None. Dynamic content comes from `VITE_SHORT_DOMAIN` through `getQRContent()` ([doc 06](06-frontend.md#qr-content-and-the-short-domain)). |

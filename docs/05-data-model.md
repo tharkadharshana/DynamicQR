@@ -34,7 +34,8 @@ All foreign keys `on delete cascade`, so deleting the auth user removes everythi
 | `trial_expires_at` | timestamptz | first call: now + 14 d | |
 | `addons` | jsonb `{extra_scans, extra_qr_codes, custom_domain, api_access}` | notify (add-ons, currently broken) | Added on top of plan limits |
 | `company`, `job_title`, `country` (`LK`), `timezone` (`Asia/Colombo`) | text | `PUT /api/user/profile` | |
-| `monthly_scans` | jsonb `{ "2026-10": 123 }` | every scan (RMW) | Billing usage display |
+| `monthly_scans` | jsonb `{ "2026-10": 123 }` | every scan (`record_scan`) | Account-wide quota and the Billing usage display |
+| `digest_opt_out` | bool, default false | Settings toggle | Weekly digest opt-out (migration 003) |
 | `payhere_order_id` | text | notify | last order |
 | `created_at`, `updated_at` | timestamptz | | `updated_at` is set by the app; there is no trigger |
 
@@ -79,7 +80,9 @@ Field values are not escaped in the vCard and WiFi strings. A `;` or `\` in an S
 |---|---|
 | `slug` | PK → qr_codes |
 | `total_scans`, `unique_scans` | int |
-| `days` | `{ "2026-10-10": 14 }`: total per UTC day, **no per-day uniques** |
+| `days` | `{ "2026-10-10": 14 }`: total per UTC day |
+| `days_unique` | `{ "2026-10-10": 9 }`: real uniques per day (migration 003) |
+| `hours` | `{ "19": 40 }`: scans per UTC hour, all time (migration 003) |
 | `countries` | `{ "LK": 10, "US": 2 }` (ISO-2 from `cf.country`) |
 | `browsers`, `os`, `devices` | `{ name: count }` |
 | `monthly_scans` | `{ "2026-10": 140 }`, used for the quota check |
@@ -102,7 +105,7 @@ Columns the code **reads but which do not exist**: `referrers`, `regions`, `isps
 
 `failed_password` attempts are inserted here too. The table has no `status` column, so they look like normal scans in "recent".
 
-This table grows without limit. There is no retention job.
+Retention: the daily cron deletes events older than 400 days. Aggregates in `qr_stats` are kept.
 
 ### `subscriptions`, orders and payments
 
@@ -123,6 +126,13 @@ This table grows without limit. There is no retention job.
 ### `addon_purchases`
 
 `id, uid, addon_id, order_id, amount, created_at`. **Unused.** The add-on checkout and its webhook branch were removed in Phase 0.
+
+## Database functions (migration 003)
+
+| Function | Purpose | Who may call |
+|---|---|---|
+| `record_scan(slug, owner, country, device, browser, os, referer, is_unique, failed)` | One scan in one transaction: the event plus every counter, and `first_scan` | `service_role` only (revoked from `anon` and `authenticated`) |
+| `jsonb_inc(j, k)` | `{k: n}` → `{k: n+1}` | `service_role` only |
 
 ## Row-level security
 
