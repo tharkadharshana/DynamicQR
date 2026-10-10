@@ -30,6 +30,7 @@ export default function Analytics() {
   const [browsers, setBrowsers] = useState<any[]>([]);
   const [osData, setOsData] = useState<any[]>([]);
   const [recentScans, setRecentScans] = useState<any[]>([]);
+  const [hours, setHours] = useState<any[]>([]);
   const [qrDetails, setQrDetails] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
@@ -116,6 +117,7 @@ export default function Analytics() {
           apiFetch(`${baseUrl}/browsers${queryParams}`),
           apiFetch(`${baseUrl}/os${queryParams}`),
           apiFetch(`${baseUrl}/recent${queryParams}`),
+          apiFetch(`${baseUrl}/hours${queryParams}`),
         ];
 
         if (selectedSlugs.length === 1) {
@@ -130,7 +132,8 @@ export default function Analytics() {
         setBrowsers(Array.isArray(results[3]) ? results[3] : []);
         setOsData(Array.isArray(results[4]) ? results[4] : []);
         setRecentScans(Array.isArray(results[5]) ? results[5] : []);
-        setQrDetails(selectedSlugs.length === 1 ? results[6] : null);
+        setHours(Array.isArray(results[6]) ? results[6] : []);
+        setQrDetails(selectedSlugs.length === 1 ? results[7] : null);
       } catch (error) {
         console.error("Error fetching analytics:", error);
       } finally {
@@ -153,9 +156,33 @@ export default function Analytics() {
 
   if (loading && !summary) return <div className="flex justify-center items-center h-64">Loading analytics...</div>;
 
+  // One code: raw scans as CSV from the API. Several codes: the daily series built here.
+  const downloadCsv = async () => {
+    let blob: Blob;
+    if (selectedSlugs.length === 1) {
+      const { data: { session } } = await supabase.auth.getSession();
+      const r = await fetch(`/api/analytics/${selectedSlugs[0]}/events.csv`, { headers: { Authorization: `Bearer ${session?.access_token}` } });
+      if (!r.ok) return;
+      blob = await r.blob();
+    } else {
+      const lines = ['date,total_scans,unique_scans', ...timeseries.map(d => `${d.date},${d.total_scans},${d.unique_scans}`)];
+      blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = selectedSlugs.length === 1 ? `scans-${selectedSlugs[0]}.csv` : 'scans-daily.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  const peak = hours.length ? hours.reduce((m, h) => (h.scans > m.scans ? h : m), hours[0]) : null;
+
   return (
     <div className="content" style={{ padding: '28px', overflow: 'auto', height: '100%' }}>
       <div className="page active">
+        <div className="no-print" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginBottom: '8px' }}>
+          <button className="btn btn-ghost btn-sm" onClick={downloadCsv}>Download CSV</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => window.print()}>Print report</button>
+        </div>
         <div className="analytics-header-row" style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', position: 'relative', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)}>← Back</button>
@@ -366,6 +393,23 @@ export default function Analytics() {
                     <Line type="monotone" dataKey="total_scans" name="Total" stroke="var(--coral)" strokeWidth={2} dot={false} />
                     <Line type="monotone" dataKey="unique_scans" name="Unique" stroke="var(--blue)" strokeWidth={2} dot={false} />
                   </LineChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+          <div className="card mb16">
+            <div className="card-title">Busiest hours <span style={{ fontSize: '11px', color: 'var(--text3)', fontWeight: 400 }}>· all time, UTC{peak && peak.scans > 0 ? ` · peak ${String(peak.hour).padStart(2, '0')}:00` : ''}</span></div>
+            <div style={{ height: '160px', marginTop: '12px' }}>
+              {hours.every(h => !h.scans) ? (
+                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: '12px', background: 'var(--surface2)', borderRadius: '4px' }}>Hour-of-day data starts with new scans</div>
+              ) : (
+                <ResponsiveContainer width="100%" height={160}>
+                  <BarChart data={hours}>
+                    <XAxis dataKey="hour" tick={{ fontSize: 10, fill: 'var(--text3)' }} interval={2} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: 'var(--text3)' }} width={28} />
+                    <Tooltip formatter={(v: any) => [v, 'scans']} labelFormatter={(h: any) => `${String(h).padStart(2, '0')}:00`} />
+                    <Bar dataKey="scans" fill="#E85D3A" radius={[3, 3, 0, 0]} />
+                  </BarChart>
                 </ResponsiveContainer>
               )}
             </div>
