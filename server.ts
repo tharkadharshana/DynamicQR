@@ -16,186 +16,36 @@ export const supabase = createClient(supabaseUrl, supabaseKey);
 
 import crypto from 'crypto';
 import { customAlphabet } from 'nanoid';
-import QRCode from 'qrcode';
 import logger from "./logger.js";
-import fs from 'fs';
 import { renderGuestPage, pickLang } from './src/lib/guestPage.js';
+import { buildDigest } from './src/lib/digest.js';
 import { PLANS, TRIAL_LIMITS, GRACE_DAYS, DEFAULT_ADDONS, PRICES, PlanId, UserAddons, Currency, BillingInterval } from './src/lib/plans.js';
 
-// Shim to keep existing call patterns working backed by Supabase
-class SupabaseRef {
-  constructor(public table: string, public id?: string) {}
-  get() { return getDoc(this); }
-  set(data: any, opts?: any) { return setDoc(this, data, opts); }
-  update(data: any) { return updateDoc(this, data); }
-}
-
-const getDoc = async (ref: SupabaseRef) => {
-  if (!ref.id) throw new Error("doc() id required");
-  const idCol = (ref.table === 'profiles' || ref.table === 'profiles') ? 'id' : (ref.table === 'qr_codes' || ref.table === 'qr_stats' || ref.table === 'scan_events' ? 'slug' : 'id');
-  const { data, error } = await supabase.from(ref.table).select('*').eq(idCol, ref.id).maybeSingle();
+// Direct table helpers (replaced the Firestore-compat shim in Phase 3).
+async function row(table: string, col: string, val: string): Promise<any | null> {
+  const { data, error } = await supabase.from(table).select('*').eq(col, val).maybeSingle();
   if (error) {
-    logger.error('DB read failed', { table: ref.table, id: ref.id, code: error.code, detail: error.message });
+    logger.error('DB read failed', { table, code: error.code, detail: error.message });
     throw new Error(`Database error: ${error.message}`);
   }
-  return {
-    exists: () => !!data,
-    data: () => data || {},
-    id: ref.id,
-    ref: ref
-  };
-};
-
-class SupabaseQuery {
-  public table: string;
-  public filters: any[] = [];
-  public _order: { field: string, dir: string } | null = null;
-  public _limit: number | null = null;
-  constructor(table: string) { this.table = table; }
+  return data;
 }
-
-const getDocs = async (query: SupabaseQuery) => {
-  let builder: any = supabase.from(query.table).select('*');
-  for (const f of query.filters) {
-    if (f.op === '==') builder = builder.eq(f.field, f.val);
-    else if (f.op === '>') builder = builder.gt(f.field, f.val);
-    else if (f.op === '<') builder = builder.lt(f.field, f.val);
-    else if (f.op === '>=') builder = builder.gte(f.field, f.val);
-    else if (f.op === '<=') builder = builder.lte(f.field, f.val);
-    else if (f.op === 'in') builder = builder.in(f.field, f.val);
-  }
-  if (query._order) builder = builder.order(query._order.field, { ascending: query._order.dir === 'asc' });
-  if (query._limit) builder = builder.limit(query._limit);
-
-  const { data, error } = await builder;
+async function rows(table: string, col: string, val: string): Promise<any[]> {
+  const { data, error } = await supabase.from(table).select('*').eq(col, val);
   if (error) {
-    logger.error('DB query failed', { table: query.table, code: error.code, detail: error.message });
+    logger.error('DB query failed', { table, code: error.code, detail: error.message });
     throw new Error(`Database query error: ${error.message}`);
   }
-  const rows = data || [];
-  return {
-    empty: rows.length === 0,
-    size: rows.length,
-    docs: rows.map((row: any) => ({
-      exists: () => true,
-      data: () => row,
-      id: row.slug || row.id,
-      ref: new SupabaseRef(query.table, row.slug || row.id)
-    })),
-    forEach: (cb: any) => {
-      rows.forEach((row: any, i: number) => {
-        cb({ exists: () => true, data: () => row, id: row.slug || row.id, ref: new SupabaseRef(query.table, row.slug || row.id) });
-      });
-    }
-  };
-};
-
-const setDoc = async (ref: SupabaseRef, data: any, opts?: any) => {
-  if (!ref.id) throw new Error("doc() id required");
-  const idCol = (ref.table === 'profiles' || ref.table === 'profiles') ? 'id' : (ref.table === 'qr_codes' || ref.table === 'qr_stats' || ref.table === 'scan_events' ? 'slug' : 'id');
-  const payload = { ...data, [idCol]: ref.id };
-  const { error } = await supabase.from(ref.table).upsert(payload);
-  if (error) {
-    logger.error('DB upsert failed', { table: ref.table, id: ref.id, code: error.code, detail: error.message });
-    throw new Error(`Database insert error: ${error.message}`);
-  }
-};
-
-const updateDoc = async (ref: SupabaseRef, data: any) => {
-  if (!ref.id) throw new Error("doc() id required");
-  const idCol = (ref.table === 'profiles' || ref.table === 'profiles') ? 'id' : (ref.table === 'qr_codes' || ref.table === 'qr_stats' || ref.table === 'scan_events' ? 'slug' : 'id');
-  // Handle increment
-  const plainData = { ...data };
-  for (const k in plainData) {
-    if (plainData[k]?._increment) {
-       // Supabase doesn't easily support dynamic field increment in update() via JS client
-       // we will call to an RPC or do a read-modify-write as fallback
-       // Best way is to use an rpc 'increment_field' but for now read-modify-write
-       const docSnap = await getDoc(ref);
-       if(docSnap.exists()) {
-           plainData[k] = (docSnap.data()[k] || 0) + plainData[k]._increment;
-       } else {
-           plainData[k] = plainData[k]._increment;
-       }
-    }
-    if (plainData[k] === '__SERVER_TIMESTAMP__') {
-       plainData[k] = new Date().toISOString();
-    }
-  }
-  const { error } = await supabase.from(ref.table).update(plainData).eq(idCol, ref.id);
-  if (error) {
-    logger.error('DB update failed', { table: ref.table, id: ref.id, code: error.code, detail: error.message });
-    throw new Error(`Database update error: ${error.message}`);
-  }
-};
-
-const addDoc = async (col: SupabaseRef, data: any) => {
-  const plainData = { ...data };
-  for (const k in plainData) {
-    if (plainData[k] === '__SERVER_TIMESTAMP__') {
-       plainData[k] = new Date().toISOString();
-    }
-  }
-  const { data: result, error } = await supabase.from(col.table).insert(plainData).select().single();
-  if (error) {
-    logger.error('DB insert failed', { table: col.table, code: error.code, detail: error.message });
-    throw new Error(`Database create error: ${error.message}`);
-  }
-  const generatedId = result?.id || result?.slug;
-  return new SupabaseRef(col.table, generatedId);
-};
-
-const deleteDoc = async (ref: SupabaseRef) => {
-  if (!ref.id) throw new Error("doc() id required");
-  const idCol = (ref.table === 'profiles' || ref.table === 'profiles') ? 'id' : (ref.table === 'qr_codes' || ref.table === 'qr_stats' || ref.table === 'scan_events' ? 'slug' : 'id');
-  const { error } = await supabase.from(ref.table).delete().eq(idCol, ref.id);
-  if (error) {
-    logger.error('DB delete failed', { table: ref.table, id: ref.id, code: error.code, detail: error.message });
-    throw new Error(`Database delete error: ${error.message}`);
-  }
-};
-
-class SupabaseBatch {
-  private ops: any[] = [];
-  set(ref: SupabaseRef, data: any, opts?: any) {
-    this.ops.push(async () => await setDoc(ref, data, opts));
-  }
-  update(ref: SupabaseRef, data: any) {
-    this.ops.push(async () => await updateDoc(ref, data));
-  }
-  delete(ref: SupabaseRef) {
-    this.ops.push(async () => await deleteDoc(ref));
-  }
-  async commit() {
-    for (const op of this.ops) {
-      await op();
-    }
-  }
+  return data || [];
 }
-const writeBatch = (_db: any) => new SupabaseBatch();
-const toDate = (val: any): Date | null => {
-  if (!val) return null;
-  if (typeof val === 'string') return new Date(val);
-  if (typeof val?.toDate === 'function') return val.toDate(); // Firestore compat
-  if (val instanceof Date) return val;
-  return null;
-};
-const serverTimestamp = () => new Date().toISOString();
-const increment = (n: number) => ({ _increment: n });
-
-const db = {
-  batch: () => new SupabaseBatch()
-};
-const collection = (_db: any, name: string) => new SupabaseRef(name);
-const doc = (_db: any, col: string, id: string) => new SupabaseRef(col, id);
-const query = (colRef: SupabaseRef, ...constraints: any[]) => {
-  const q = new SupabaseQuery(colRef.table);
-  for (const c of constraints) c(q);
-  return q;
-};
-const where = (field: any, op: any, val: any) => (q: SupabaseQuery) => { q.filters.push({field, op, val}); return q; };
-const orderBy = (field: string, dir?: any) => (q: SupabaseQuery) => { q._order = {field, dir: dir || 'asc'}; return q; };
-const limit = (n: number) => (q: SupabaseQuery) => { q._limit = n; return q; };
+async function statsFor(slugs: string[], columns = '*'): Promise<any[]> {
+  if (!slugs.length) return [];
+  const { data, error } = await supabase.from('qr_stats').select(columns).in('slug', slugs);
+  if (error) throw new Error(`Database query error: ${error.message}`);
+  return (data || []) as any[];
+}
+const toDate = (val: any): Date | null => (val ? new Date(val) : null);
+const nowIso = () => new Date().toISOString();
 
 export const app = express();
 
@@ -325,13 +175,12 @@ async function startServer() {
       const user = (req as any).user;
       if (!user) return res.status(401).send('Unauthorized');
 
-      const qrDoc = await getDoc(doc(db, 'qr_codes', slug));
-      if (!qrDoc.exists()) return res.status(404).send('Not found');
-      
-      if (qrDoc.data().user_uid !== user.uid) {
+      const qr = await row('qr_codes', 'slug', slug);
+      if (!qr) return res.status(404).send('Not found');
+      if (qr.user_uid !== user.uid) {
         return res.status(403).send('Forbidden');
       }
-      
+      (req as any).qr = qr;
       next();
     } catch (error) {
       logger.error('Ownership check error:', error);
@@ -395,13 +244,12 @@ async function startServer() {
     monthlyUsed: number;
     graceEndsAt: Date | null;  // set when on Free after a trial/plan ended; excess dynamic codes pause after it
   }> {
-    const userSnap = await getDoc(doc(db, 'profiles', uid));
+    const user = await row('profiles', 'id', uid);
 
-    if (!userSnap.exists()) {
+    if (!user) {
       return { effectivePlan: 'free', limits: PLANS.free, isTrial: false, isExpired: false, addons: DEFAULT_ADDONS, monthlyUsed: 0, graceEndsAt: null };
     }
 
-    const user = userSnap.data()!;
     const now = new Date();
 
     const trialExpiry = toDate(user.trial_expires_at);
@@ -446,79 +294,52 @@ async function startServer() {
     logger.info(`Plan fetch started for user ${uid}`);
     
     try {
-      const userRef = doc(db, 'profiles', uid);
-      const userSnap = await getDoc(userRef);
-      logger.info(`User document fetch: exists=${userSnap.exists()}`);
+      let userDoc = await row('profiles', 'id', uid);
 
-      if (!userSnap.exists()) {
-        logger.info(`Creating new user document for ${uid}`);
-        // First time - create with 14-day trial
+      if (!userDoc) {
+        // First sign-in: 14-day trial.
         const trialEnd = new Date();
         trialEnd.setDate(trialEnd.getDate() + 14);
-        
-        await setDoc(userRef, {
-          plan: 'free',
-          plan_expires_at: null,
-          trial_expires_at: trialEnd.toISOString(),
-          is_trial: true,
-          addons: DEFAULT_ADDONS,
-          created_at: serverTimestamp(),
-          email: (req as any).user.email || '',
+        const { error } = await supabase.from('profiles').upsert({
+          id: uid, plan: 'free', plan_expires_at: null, trial_expires_at: trialEnd.toISOString(),
+          is_trial: true, addons: DEFAULT_ADDONS, created_at: nowIso(), email: (req as any).user.email || '',
         });
-        logger.info(`New user document created for ${uid}`);
+        if (error) throw error;
+        logger.info(`New profile created for ${uid}`);
+        userDoc = {};
       }
 
       const license = await getLicense(uid);
-      logger.info(`License calculated for ${uid}: plan=${license.effectivePlan}, trial=${license.isTrial}`);
-      
-      // Fetch ALL QR codes (active + inactive) for accurate totals
-      const allQrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      const allSlugs: string[] = allQrSnapshot.docs.map((d: any) => d.data().slug);
-      logger.info(`Stats aggregation for user ${uid}: found ${allSlugs.length} slugs`);
-      const activeQrs = allQrSnapshot.docs.filter((d: any) => d.data().is_active !== false).length;
-      const remaining_qr = license.limits.qr_codes === -1 ? -1 : Math.max(0, license.limits.qr_codes - activeQrs);
-      const activeDynamic = allQrSnapshot.docs.filter((d: any) => d.data().is_active !== false && d.data().is_dynamic !== false).length;
+
+      const allQrs = await rows('qr_codes', 'user_uid', uid);
+      const allSlugs: string[] = allQrs.map(q => q.slug);
+      const activeQrs = allQrs.filter(q => q.is_active !== false).length;
+      const remaining_qr = Math.max(0, license.limits.qr_codes - activeQrs);
+      const activeDynamic = allQrs.filter(q => q.is_active !== false && q.is_dynamic !== false).length;
       // Lapse rule: dynamic codes above the allowance pause when the grace period ends.
       const dynamicOverAllowance = Math.max(0, activeDynamic - license.limits.dynamic_qr_codes);
       const pause_on = license.graceEndsAt && dynamicOverAllowance > 0 ? license.graceEndsAt.toISOString() : null;
 
-      // Aggregate stats across all QRs in 30-slug chunks (Firestore 'in' limit)
-      let totalScans = 0;
-      const countriesSet = new Set<string>();
-      let earliestDay: string | null = null;
-      const chunks: string[][] = [];
-      for (let i = 0; i < allSlugs.length; i += 30) chunks.push(allSlugs.slice(i, i + 30));
-
-      let monthlyScansFromStats = 0;
       const currentMonth = new Date().toISOString().slice(0, 7);
-
-      for (const chunk of chunks) {
-        try {
-          const statsSnaps = await getDocs(query(collection(db, 'qr_stats'), where('slug', 'in', chunk)));
-          logger.info(`Plan fetch: chunk stats count: ${statsSnaps.size} for chunk ${chunk.join(',')}`);
-          statsSnaps.forEach((s: any) => {
-            const d = s.data();
-            totalScans += d.total_scans || 0;
-            Object.keys(d.countries || {}).forEach((c: string) => countriesSet.add(c));
-            const dayKeys = Object.keys(d.days || {}).sort();
-            if (dayKeys.length && (!earliestDay || dayKeys[0] < earliestDay)) earliestDay = dayKeys[0];
-            // Sum monthly scans from qr_stats as a reliable fallback
-            monthlyScansFromStats += d.monthly_scans?.[currentMonth] || 0;
-          });
-        } catch (e: any) {
-          logger.error('Plan fetch error in stats chunk query', { error: e.message, chunk, uid });
-        }
+      let totalScans = 0, monthlyScansFromStats = 0;
+      let earliestDay: string | null = null;
+      const countriesSet = new Set<string>();
+      for (const d of await statsFor(allSlugs, 'total_scans, countries, days, monthly_scans')) {
+        totalScans += d.total_scans || 0;
+        Object.keys(d.countries || {}).forEach(c => countriesSet.add(c));
+        const first = Object.keys(d.days || {}).sort()[0];
+        if (first && (!earliestDay || first < earliestDay)) earliestDay = first;
+        monthlyScansFromStats += d.monthly_scans?.[currentMonth] || 0;
       }
 
       const daysActive = earliestDay
         ? Math.ceil((Date.now() - new Date(earliestDay + 'T00:00:00').getTime()) / 86400000)
         : 0;
 
-      // Use user-level monthly counter if it exists; otherwise fall back to qr_stats aggregation
-      const userLevelMonthly = userSnap.data()?.monthly_scans?.[currentMonth] || 0;
+      // The account-wide counter on the profile; qr_stats sum as a fallback for older data.
+      const userLevelMonthly = userDoc?.monthly_scans?.[currentMonth] || 0;
       const monthlyScansUsed = userLevelMonthly > 0 ? userLevelMonthly : monthlyScansFromStats;
 
-      const userDoc = userSnap.data();
       logger.info(`Plan fetch completed for ${uid}: totalScans=${totalScans}, monthlyScans=${monthlyScansUsed}`);
       
       // Prevent browser/CDN caching of plan data — always needs to be fresh
@@ -544,7 +365,8 @@ async function startServer() {
           company: userDoc?.company || '',
           jobTitle: userDoc?.job_title || '',
           country: userDoc?.country || 'LK',
-          timezone: userDoc?.timezone || 'Asia/Colombo'
+          timezone: userDoc?.timezone || 'Asia/Colombo',
+          digestOptOut: !!userDoc?.digest_opt_out,
         },
         active_dynamic: activeDynamic,
         dynamic_over_allowance: dynamicOverAllowance,
@@ -569,15 +391,15 @@ async function startServer() {
     try {
       const uid = (req as any).user.uid;
       const { company, jobTitle, country, timezone } = req.body;
-      const userRef = doc(db, 'profiles', uid);
-      
-      await updateDoc(userRef, {
+      const { error } = await supabase.from('profiles').update({
         company: company || '',
         job_title: jobTitle || '',
         country: country || 'LK',
         timezone: timezone || 'Asia/Colombo',
-        updated_at: serverTimestamp()
-      });
+        ...(typeof req.body.digestOptOut === 'boolean' ? { digest_opt_out: req.body.digestOptOut } : {}),
+        updated_at: nowIso(),
+      }).eq('id', uid);
+      if (error) throw error;
       
       res.json({ success: true });
     } catch (error) {
@@ -617,11 +439,8 @@ async function startServer() {
   app.get('/api/user/export', authenticate, async (req, res) => {
     try {
       const uid = (req as any).user.uid;
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      const qrs = qrSnapshot.docs.map(d => ({ id: d.id, ...publicQr(d.data()) }));
-      
-      const userSnap = await getDoc(doc(db, 'profiles', uid));
-      const profile = userSnap.exists() ? userSnap.data() : {};
+      const qrs = (await rows('qr_codes', 'user_uid', uid)).map(q => ({ id: q.slug, ...publicQr(q) }));
+      const profile = (await row('profiles', 'id', uid)) || {};
       
       const exportData = {
         exported_at: new Date().toISOString(),
@@ -667,51 +486,12 @@ async function startServer() {
     try {
       const uid = (req as any).user.uid;
       
-      // 1. Delete all QR codes and stats
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      const batch = db.batch();
-      
-      for (const d of qrSnapshot.docs) {
-        batch.delete(d.ref); // Delete QR code
-        batch.delete(doc(db, 'qr_stats', d.id)); // Delete stats
-        
-        // Deleting scan_events in a loop might be too slow for a single request 
-        // if the user has a lot. We'll start a background cleanup for scan_events
-        // but for account deletion, we MUST try to be thorough.
-      }
-      
-      // 2. Delete user document
-      batch.delete(doc(db, 'profiles', uid));
-      
-      // 3. Delete subscriptions log
-      const subsSnapshot = await getDocs(query(collection(db, 'subscriptions'), where('uid', '==', uid)));
-      subsSnapshot.forEach(d => batch.delete(d.ref));
-      
-      await batch.commit();
-      
-      // 4. Delete Supabase Auth user
-      await supabase.auth.admin.deleteUser(uid);
-      
+      // Deleting the auth user cascades: profiles → qr_codes → qr_stats/scan_events, subscriptions, events.
+      const slugs = (await rows('qr_codes', 'user_uid', uid)).map(q => q.slug);
+      const { error } = await supabase.auth.admin.deleteUser(uid);
+      if (error) throw error;
       res.json({ success: true });
-      
-      // Background cleanup for scan_events
-      (async () => {
-        for (const qrDoc of qrSnapshot.docs) {
-          const slug = qrDoc.id;
-          let hasMore = true;
-          while (hasMore) {
-            const eventsSnap = await getDocs(query(collection(db, 'scan_events'), where('slug', '==', slug), limit(500)));
-            if (eventsSnap.empty) { hasMore = false; break; }
-            const cleanupBatch = db.batch();
-            eventsSnap.forEach((e: any) => cleanupBatch.delete(e.ref));
-            await cleanupBatch.commit();
-            if (eventsSnap.size < 500) hasMore = false;
-          }
-        }
-      })().catch(err => {
-        logger.error('Account cleanup background error', { error: err.message });
-      });
-      
+      Promise.all(slugs.map(purgeEdge)).catch(() => {});
     } catch (error) {
       logger.error('Account deletion error:', error);
       res.status(500).json({ error: 'Failed to delete account' });
@@ -1054,8 +834,7 @@ async function startServer() {
     let slug: string, exists: boolean, attempts = 0;
     do {
       slug = generateSlug();
-      const docSnap = await getDoc(doc(db, "qr_codes", slug));
-      exists = docSnap.exists();
+      exists = !!(await row('qr_codes', 'slug', slug));
       if (++attempts > 10) {
         throw new Error("Slug gen failed");
       }
@@ -1120,15 +899,8 @@ async function startServer() {
       logger.info(`Checking limits for plan: ${license.effectivePlan}`, { limits: license.limits });
 
 
-      let qrSnapshot;
-      try {
-        qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      } catch (err: any) {
-        logger.error('Failed to fetch user QRs for limit check', { error: err.message });
-        throw new Error(`QR lookup failed: ${err.message}`);
-      }
-      
-      const activeCount = qrSnapshot.docs.filter((doc: any) => doc.data().is_active !== false).length;
+      const myQrs = await rows('qr_codes', 'user_uid', uid);
+      const activeCount = myQrs.filter(q => q.is_active !== false).length;
       
       // Sentinel -1 check for unlimited
       if (license.limits.qr_codes !== -1 && activeCount >= license.limits.qr_codes) {
@@ -1141,7 +913,7 @@ async function startServer() {
         });
       }
 
-      const activeDynamic = qrSnapshot.docs.filter((d: any) => d.data().is_active !== false && d.data().is_dynamic !== false).length;
+      const activeDynamic = myQrs.filter(q => q.is_active !== false && q.is_dynamic !== false).length;
       if (is_dynamic && activeDynamic >= license.limits.dynamic_qr_codes) {
         return res.status(403).json({
           error: 'Dynamic QR limit reached. Upgrade for more dynamic codes.',
@@ -1198,7 +970,7 @@ async function startServer() {
         password_hash: passwordHash,
         visitor_rate_limit,
         visitor_rate_period,
-        created_at: serverTimestamp()
+        created_at: nowIso()
       };
 
       const statsDoc = {
@@ -1212,18 +984,10 @@ async function startServer() {
         monthly_scans: {}
       };
 
-      // 4. Firestore Commit
-      try {
-        const batch = writeBatch(db);
-        batch.set(doc(db, 'qr_codes', slug), qrDoc);
-        batch.set(doc(db, 'qr_stats', slug), statsDoc);
-        
-        await batch.commit();
-        logger.info(`Successfully saved QR and stats for ${slug}`);
-      } catch (err: any) {
-        logger.error('Firestore batch commit failed', { error: err.message });
-        throw new Error(`Database save failed: ${err.message}`);
-      }
+      const { error: qrErr } = await supabase.from('qr_codes').insert(qrDoc);
+      if (qrErr) throw new Error(`Database save failed: ${qrErr.message}`);
+      const { error: statsErr } = await supabase.from('qr_stats').insert({ slug, ...statsDoc });
+      if (statsErr) throw new Error(`Database save failed: ${statsErr.message}`);
 
       logEvent(uid, 'qr_created', slug);
       res.status(201).json(qrDoc);
@@ -1241,32 +1005,10 @@ async function startServer() {
   app.get('/api/qr', authenticate, async (req, res) => {
     try {
       const uid = (req as any).user.uid;
-      // Single field query to avoid index issues
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      
-      const slugs = qrSnapshot.docs.map((d: any) => d.data().slug);
-      
-      // BATCH fetch stats instead of N individual getDoc calls
+      const mine = await rows('qr_codes', 'user_uid', uid);
       const statsMap: Record<string, any> = {};
-      const chunks: string[][] = [];
-      for (let i = 0; i < slugs.length; i += 30) chunks.push(slugs.slice(i, i + 30));
-      
-      for (const chunk of chunks) {
-        if (chunk.length === 0) continue;
-        const statsSnaps = await getDocs(
-          query(collection(db, 'qr_stats'), where('slug', 'in', chunk))
-        );
-        statsSnaps.forEach((s: any) => { statsMap[s.id] = s.data(); });
-      }
-
-      const qrs = qrSnapshot.docs.map((docSnap: any) => {
-        const data = docSnap.data();
-        return {
-          id: docSnap.id,
-          ...data,
-          stats: statsMap[data.slug] || null
-        };
-      });
+      for (const st of await statsFor(mine.map(q => q.slug))) statsMap[st.slug] = st;
+      const qrs = mine.map(q => ({ id: q.slug, ...publicQr(q), stats: statsMap[q.slug] || null }));
 
       res.json(qrs);
     } catch (error: any) {
@@ -1278,9 +1020,7 @@ async function startServer() {
   // Get single QR code
   app.get('/api/qr/:slug', authenticate, requireOwnership, async (req, res) => {
     try {
-      const { slug } = req.params;
-      const qrDoc = await getDoc(doc(db, 'qr_codes', slug));
-      res.json(publicQr(qrDoc.data()));
+      res.json(publicQr((req as any).qr));
     } catch (error: any) {
       logger.error('QR fetch error:', error);
       res.status(500).json({ error: 'Failed to fetch QR code' });
@@ -1379,7 +1119,8 @@ async function startServer() {
           logEvent((req as any).user.uid, 'offer_changed', slug);
         }
       }
-      await updateDoc(doc(db, 'qr_codes', slug), updateData);
+      const { error: updErr } = await supabase.from('qr_codes').update(updateData).eq('slug', slug);
+      if (updErr) throw updErr;
       await purgeEdge(slug);
       res.json({ success: true, slug });
     } catch (error: any) {
@@ -1393,39 +1134,11 @@ async function startServer() {
     try {
       const { slug } = req.params;
       
-      // Batch delete code, stats, and (optionally) some events
-      // For now, keep it simple with codes and stats
-      const batch = db.batch();
-      batch.delete(doc(db, 'qr_codes', slug));
-      batch.delete(doc(db, 'qr_stats', slug));
-      
-      await batch.commit();
-
+      // qr_stats and scan_events rows go with it (on delete cascade).
+      const { error } = await supabase.from('qr_codes').delete().eq('slug', slug);
+      if (error) throw error;
       res.json({ message: 'QR code deleted successfully' });
-
       purgeEdge(slug);
-
-      // Phase 12: Background orphan scan_events cleanup
-      (async () => {
-        let deletedTotal = 0;
-        let hasMore = true;
-        while (hasMore) {
-          const eventsSnap = await getDocs(query(collection(db, 'scan_events'), where('slug', '==', slug), limit(500)));
-          if (eventsSnap.empty) {
-            hasMore = false;
-            break;
-          }
-          const cleanupBatch = db.batch();
-          eventsSnap.forEach((d: any) => cleanupBatch.delete(d.ref));
-          await cleanupBatch.commit();
-          deletedTotal += eventsSnap.size;
-          if (eventsSnap.size < 500) hasMore = false;
-        }
-        logger.info(`Cleaned up ${deletedTotal} scan events for deleted QR ${slug}`);
-      })().catch(err => {
-        logger.error('scan_events cleanup background error', { error: err.message });
-      });
-
     } catch (error: any) {
       logger.error('QR delete error:', error);
       res.status(500).json({ error: 'Failed to delete QR code' });
@@ -1433,688 +1146,220 @@ async function startServer() {
   });
 
   // Analytics API
-  app.get('/api/analytics/:slug/summary', authenticate, requireOwnership, async (req, res) => {
-    try {
-      const { slug } = req.params;
-      const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
-      
-      if (!statsDoc.exists()) {
-        return res.json({
-          total_scans: 0,
-          unique_visitors: 0,
-          mobile_pct: 0,
-          first_scan: null,
-          last_scan: null
-        });
-      }
+  // One set of views, served for a single owned code (/api/analytics/:slug/<view>) and for the
+  // account (/api/analytics/account/:uid/<view>, optional ?slugs=a,b). Every view reads the
+  // pre-aggregated qr_stats rows; only `recent` reads scan_events.
+  type Scope = { uid: string; qrs: any[]; stats: any[]; slugs: string[] };
 
-      const data = statsDoc.data()!;
-      const total_scans = data.total_scans || 0;
-      const unique_visitors = data.unique_scans || 0;
-      const mobile_scans = data.devices?.mobile || 0;
-      const mobile_pct = total_scans > 0 ? ((mobile_scans / total_scans) * 100).toFixed(1) : 0;
-      
-      // Derive first and last scan dates from the days map
-      const daysMap = data.days || {};
-      const dayKeys = Object.keys(daysMap).sort(); // "2026-03-20", "2026-03-21", ...
-      const first_scan = dayKeys.length > 0 ? dayKeys[0] : null;
-      const last_scan = dayKeys.length > 0 ? dayKeys[dayKeys.length - 1] : null;
-
-      res.json({
-        total_scans,
-        unique_visitors,
-        mobile_pct,
-        first_scan,
-        last_scan
-      });
-    } catch (error: any) {
-      logger.error('Analytics error:', error);
-      res.status(500).json({ error: 'Failed to fetch analytics' });
+  async function loadScope(req: express.Request, res: express.Response): Promise<Scope | null> {
+    const uid = (req as any).user.uid;
+    let qrs: any[];
+    if (req.params.slug) {
+      const { data, error } = await supabase.from('qr_codes').select('slug, title, is_active, created_at').eq('slug', req.params.slug);
+      if (error) throw error;
+      qrs = data || [];
+    } else {
+      if (req.params.uid !== uid) { res.status(403).send('Forbidden'); return null; }
+      const { data, error } = await supabase.from('qr_codes').select('slug, title, is_active, created_at').eq('user_uid', uid);
+      if (error) throw error;
+      const only = typeof req.query.slugs === 'string' ? req.query.slugs.split(',') : null;
+      qrs = (data || []).filter(q => !only || only.includes(q.slug));
     }
-  });
-
-  app.get('/api/analytics/:slug/timeseries', authenticate, requireOwnership, async (req, res) => {
-    try {
-      const { slug } = req.params;
-      const userUid = (req as any).user.uid;
-      const license = await getLicense(userUid);
-      
-      const startParam = req.query.start as string;
-      const endParam = req.query.end as string;
-      let days = parseInt(req.query.days as string) || 30;
-      
-      const dailyStats: Record<string, any> = {};
-      
-      if (startParam && endParam) {
-        const start = new Date(startParam);
-        const end = new Date(endParam);
-        const diffTime = Math.abs(end.getTime() - start.getTime());
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-        
-        // Enforcement: cap by plan limit if needed (optional, usually range is fine)
-        
-        for (let i = 0; i < diffDays; i++) {
-          const d = new Date(start);
-          d.setDate(d.getDate() + i);
-          const dateStr = d.toISOString().split('T')[0];
-          dailyStats[dateStr] = { date: dateStr, total_scans: 0, unique_scans: 0 };
-        }
-      } else {
-        // Backend enforcement: cap days by plan limit
-        if (days > license.limits.analytics_days) {
-          days = license.limits.analytics_days;
-        }
-        
-        // Initialize all days
-        for (let i = days - 1; i >= 0; i--) {
-          const d = new Date();
-          d.setDate(d.getDate() - i);
-          const dateStr = d.toISOString().split('T')[0];
-          dailyStats[dateStr] = { date: dateStr, total_scans: 0, unique_scans: 0 };
-        }
-      }
-      
-      const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
-
-      if (statsDoc.exists()) {
-        const data = statsDoc.data()!;
-        const daysData = data.days || {};
-        const totalScans = data.total_scans || 1; // avoid div by zero
-        const totalUnique = data.unique_scans || 0;
-        
-        for (const [dateStr, count] of Object.entries(daysData)) {
-          if (dailyStats[dateStr]) {
-            const dayCount = count as number;
-            dailyStats[dateStr].total_scans = dayCount;
-            // Approximate unique per day proportionally from the overall ratio
-            dailyStats[dateStr].unique_scans = Math.round(dayCount * (totalUnique / totalScans));
-          }
-        }
-      }
-
-      res.json(Object.values(dailyStats));
-    } catch (error: any) {
-      logger.error('Analytics error:', error);
-      res.status(500).json({ error: 'Failed to fetch analytics' });
+    const slugs = qrs.map(q => q.slug);
+    let stats: any[] = [];
+    if (slugs.length) {
+      const { data, error } = await supabase.from('qr_stats').select('*').in('slug', slugs);
+      if (error) throw error;
+      stats = data || [];
     }
-  });
+    return { uid, qrs, stats, slugs };
+  }
 
-  app.get('/api/analytics/:slug/devices', authenticate, requireOwnership, async (req, res) => {
-    try {
-      const { slug } = req.params;
-      const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
-      
-      if (!statsDoc.exists()) return res.json([]);
-      
-      const data = statsDoc.data()!;
-      const devices: Record<string, number> = data.devices || { mobile: 0, desktop: 0, tablet: 0 };
+  const sumMap = (stats: any[], key: string): Record<string, number> =>
+    stats.reduce((acc, s) => {
+      for (const [k, v] of Object.entries(s[key] || {})) acc[k] = (acc[k] || 0) + Number(v);
+      return acc;
+    }, {} as Record<string, number>);
+  const total = (stats: any[], key: string) => stats.reduce((n, s) => n + (s[key] || 0), 0);
+  const pctRows = (map: Record<string, number>, nameKey: string, countKey = 'count') => {
+    const sum = Object.values(map).reduce((a, b) => a + b, 0);
+    return Object.entries(map).filter(([, n]) => n > 0)
+      .map(([name, n]) => ({ [nameKey]: name, [countKey]: n, pct: sum > 0 ? ((n / sum) * 100).toFixed(1) : 0 }))
+      .sort((a: any, b: any) => b[countKey] - a[countKey]);
+  };
+  const dayKey = (d: Date) => d.toISOString().slice(0, 10);
 
-      const total = (devices.mobile || 0) + (devices.desktop || 0) + (devices.tablet || 0);
-
-      const result = Object.entries(devices)
-        .filter(([_, count]) => count > 0)
-        .map(([device_type, count]) => ({
-          device_type,
-          count,
-          pct: total > 0 ? ((count / total) * 100).toFixed(1) : 0
-        })).sort((a, b) => b.count - a.count);
-
-      res.json(result);
-    } catch (error: any) {
-      logger.error('Analytics error:', error);
-      res.status(500).json({ error: 'Failed to fetch analytics' });
-    }
-  });
-
-  app.get('/api/analytics/:slug/countries', authenticate, requireOwnership, async (req, res) => {
-    try {
-      const { slug } = req.params;
-      const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
-      
-      if (!statsDoc.exists()) return res.json([]);
-      
-      const data = statsDoc.data()!;
-      const countries = data.countries || {};
-      
-      const result = Object.entries(countries).map(([country, scans]) => ({
-        country,
-        scans: scans as number,
-        unique_visitors: 0 // Not tracked per country in new schema
-      })).sort((a, b) => b.scans - a.scans).slice(0, 10);
-
-      res.json(result);
-    } catch (error: any) {
-      logger.error('Analytics error:', error);
-      res.status(500).json({ error: 'Failed to fetch analytics' });
-    }
-  });
-
-  app.get('/api/analytics/:slug/os', authenticate, requireOwnership, async (req, res) => {
-    try {
-      const { slug } = req.params;
-      const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
-      
-      if (!statsDoc.exists()) return res.json([]);
-      
-      const data = statsDoc.data()!;
-      const osData = data.os || {};
-      let total = 0;
-      Object.values(osData).forEach(v => total += (v as number));
-
-      const result = Object.entries(osData).map(([os, count]) => ({
-        os,
-        count: count as number,
-        pct: total > 0 ? (((count as number) / total) * 100).toFixed(1) : 0
-      })).sort((a, b) => b.count - a.count);
-
-      res.json(result);
-    } catch (error: any) {
-      logger.error('Analytics error:', error);
-      res.status(500).json({ error: 'Failed to fetch analytics' });
-    }
-  });
-
-  app.get('/api/analytics/:slug/browsers', authenticate, requireOwnership, async (req, res) => {
-    try {
-      const { slug } = req.params;
-      const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
-      
-      if (!statsDoc.exists()) return res.json([]);
-      
-      const data = statsDoc.data()!;
-      const browsersData = data.browsers || {};
-      let total = 0;
-      Object.values(browsersData).forEach(v => total += (v as number));
-
-      const result = Object.entries(browsersData).map(([browser, count]) => ({
-        browser,
-        count: count as number,
-        pct: total > 0 ? (((count as number) / total) * 100).toFixed(1) : 0
-      })).sort((a, b) => b.count - a.count);
-
-      res.json(result);
-    } catch (error: any) {
-      logger.error('Analytics error:', error);
-      res.status(500).json({ error: 'Failed to fetch analytics' });
-    }
-  });
-
-  app.get('/api/analytics/:slug/recent', authenticate, requireOwnership, async (req, res) => {
-    try {
-      const { slug } = req.params;
-      // For recent, we still query scan_events but limit it to 10
-      const snapshot = await getDocs(query(collection(db, 'scan_events'), where('slug', '==', slug), orderBy('scanned_at', 'desc'), limit(10)));
-      
-      const recent = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          scanned_at: toDate(data.scanned_at)?.toISOString(),
-          country: data.country || 'Unknown',
-          city: data.city || 'Unknown',
-          device_type: data.device || 'Unknown',
-          os: data.os || 'Unknown',
-          browser: data.browser || 'Unknown',
-          referrer: data.referer || 'Direct',
-          is_unique: data.is_unique
-        };
-      });
-
-      res.json(recent);
-    } catch (error: any) {
-      logger.error('Analytics error:', error);
-      res.status(500).json({ error: 'Failed to fetch recent scans' });
-    }
-  });
-
-  app.get('/api/analytics/account/:uid', authenticate, async (req, res) => {
-    try {
-      const { uid } = req.params;
-      const decodedUser = (req as any).user;
-      
-      if (decodedUser.uid !== uid) {
-        return res.status(403).send('Forbidden');
-      }
-      
-      const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
-      
-      if (requestedSlugs) {
-        slugs = slugs.filter(s => requestedSlugs.includes(s));
-      }
-
-      if (slugs.length === 0) {
-        return res.json({ total_scans: 0, unique_visitors: 0, total_qrs: 0, active_qrs: 0 });
-      }
-
-      let total_scans = 0;
-      let unique_visitors = 0;
-      
-      const chunks = [];
-      for (let i = 0; i < slugs.length; i += 30) {
-        chunks.push(slugs.slice(i, i + 30));
-      }
-
-      // Find earliest scan date across all QRs
-      let earliest_day: string | null = null;
-
-      for (const chunk of chunks) {
-        const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where('slug', 'in', chunk)));
-        statsSnapshot.forEach(doc => {
-          const data = doc.data();
-          total_scans += (data.total_scans || 0);
-          unique_visitors += (data.unique_scans || 0);
-          
-          const days = Object.keys(data.days || {}).sort();
-          if (days.length > 0) {
-            if (!earliest_day || days[0] < earliest_day) {
-              earliest_day = days[0];
-            }
-          }
-        });
-      }
-
-      const active_qrs = qrSnapshot.docs.filter(doc => doc.data().is_active).length;
-
-      res.json({
-        total_scans,
-        unique_visitors,
-        total_qrs: slugs.length,
-        active_qrs,
-        first_scan: earliest_day
-      });
-    } catch (error: any) {
-      logger.error('Account analytics error:', error);
-      res.status(500).json({ error: 'Failed to fetch account analytics' });
-    }
-  });
-
-  app.get('/api/analytics/account/:uid/timeseries', authenticate, async (req, res) => {
-    try {
-      const { uid } = req.params;
-      const decodedUser = (req as any).user;
-      
-      if (decodedUser.uid !== uid) {
-        return res.status(403).send('Forbidden');
-      }
-
+  const views: Record<string, (s: Scope, req: express.Request) => Promise<any> | any> = {
+    summary: ({ qrs, stats }) => {
+      const days = Object.keys(sumMap(stats, 'days')).sort();
+      const scans = total(stats, 'total_scans');
+      return {
+        total_scans: scans,
+        unique_visitors: total(stats, 'unique_scans'),
+        mobile_pct: scans > 0 ? ((sumMap(stats, 'devices').mobile || 0) / scans * 100).toFixed(1) : 0,
+        total_qrs: qrs.length,
+        active_qrs: qrs.filter(q => q.is_active).length,
+        first_scan: days[0] || null,
+        last_scan: days[days.length - 1] || null,
+      };
+    },
+    // Plan history cap applies to both `days=N` and a custom start/end range.
+    timeseries: async ({ uid, stats }, req) => {
       const license = await getLicense(uid);
-      const startParam = req.query.start as string;
-      const endParam = req.query.end as string;
-      let days = parseInt(req.query.days as string) || 30;
-      
-      const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
-
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
-      
-      if (requestedSlugs) {
-        slugs = slugs.filter(s => requestedSlugs.includes(s));
-      }
-
-      const dailyStats: Record<string, any> = {};
-      
-      if (startParam && endParam) {
-        const start = new Date(startParam);
-        const end = new Date(endParam);
-        const diffTime = Math.abs(end.getTime() - start.getTime());
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-        
-        for (let i = 0; i < diffDays; i++) {
-          const d = new Date(start);
-          d.setDate(d.getDate() + i);
-          const dateStr = d.toISOString().split('T')[0];
-          dailyStats[dateStr] = { date: dateStr, total_scans: 0, unique_scans: 0 };
-        }
+      const maxDays = license.limits.analytics_days;
+      const today = new Date();
+      const earliest = new Date(today.getTime() - (maxDays - 1) * 86400000);
+      let start: Date, end: Date;
+      if (req.query.start && req.query.end) {
+        start = new Date(String(req.query.start));
+        end = new Date(String(req.query.end));
+        if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) return [];
+        if (start < earliest) start = earliest;
+        if (end > today) end = today;
       } else {
-        // Backend enforcement: cap days by plan limit
-        if (days > license.limits.analytics_days) {
-          days = license.limits.analytics_days;
+        const n = Math.min(parseInt(String(req.query.days)) || 30, maxDays);
+        start = new Date(today.getTime() - (n - 1) * 86400000);
+        end = today;
+      }
+      const rows: any[] = [];
+      for (let t = new Date(dayKey(start)).getTime(); t <= new Date(dayKey(end)).getTime(); t += 86400000) {
+        const date = dayKey(new Date(t));
+        let scans = 0, unique = 0;
+        for (const s of stats) {
+          const n = Number(s.days?.[date] || 0);
+          scans += n;
+          // Real per-day uniques since migration 003; older days estimated from the code's overall ratio.
+          unique += s.days_unique?.[date] != null
+            ? Number(s.days_unique[date])
+            : Math.round(n * ((s.unique_scans || 0) / (s.total_scans || 1)));
         }
-        
-        for (let i = days - 1; i >= 0; i--) {
-          const d = new Date();
-          d.setDate(d.getDate() - i);
-          const dateStr = d.toISOString().split('T')[0];
-          dailyStats[dateStr] = { date: dateStr, total_scans: 0, unique_scans: 0 };
-        }
+        rows.push({ date, total_scans: scans, unique_scans: unique });
       }
-
-      if (slugs.length > 0) {
-        const chunks = [];
-        for (let i = 0; i < slugs.length; i += 30) {
-          chunks.push(slugs.slice(i, i + 30));
-        }
-
-        for (const chunk of chunks) {
-          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where('slug', 'in', chunk)));
-          logger.info(`Timeseries aggregation: chunk found ${statsSnapshot.size} stats docs`);
-          statsSnapshot.forEach(doc => {
-            const data = doc.data();
-            const daysData = data.days || {};
-            const totalScans = (data.total_scans || 1) as number;
-            const totalUnique = (data.unique_scans || 0) as number;
-            
-            for (const [dateStr, count] of Object.entries(daysData)) {
-              if (dailyStats[dateStr]) {
-                const dayCount = count as number;
-                dailyStats[dateStr].total_scans += dayCount;
-                // Heuristic for unique scans per day based on historical ratio
-                dailyStats[dateStr].unique_scans += Math.round(dayCount * (totalUnique / totalScans));
-              }
-            }
-          });
-        }
-      }
-
-      res.json(Object.values(dailyStats));
-    } catch (error: any) {
-      logger.error('Account timeseries error:', error);
-      res.status(500).json({ error: 'Failed to fetch account timeseries' });
-    }
-  });
-
-  app.get('/api/analytics/account/:uid/devices', authenticate, async (req, res) => {
-    try {
-      const { uid } = req.params;
-      const decodedUser = (req as any).user;
-      
-      if (decodedUser.uid !== uid) {
-        return res.status(403).send('Forbidden');
-      }
-      
-      const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
-      
-      if (requestedSlugs) {
-        slugs = slugs.filter(s => requestedSlugs.includes(s));
-      }
-
-      let mobile = 0, desktop = 0, tablet = 0;
-      
-      if (slugs.length > 0) {
-        const chunks = [];
-        for (let i = 0; i < slugs.length; i += 30) {
-          chunks.push(slugs.slice(i, i + 30));
-        }
-
-        for (const chunk of chunks) {
-          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where('slug', 'in', chunk)));
-          statsSnapshot.forEach(doc => {
-            const data = doc.data();
-            const d = data.devices || {};
-            mobile += (d.mobile || 0);
-            desktop += (d.desktop || 0);
-            tablet += (d.tablet || 0);
-          });
-        }
-      }
-
-      const total = mobile + desktop + tablet;
-
-      const result = [
-        { device_type: 'mobile', count: mobile, pct: total > 0 ? ((mobile / total) * 100).toFixed(1) : 0 },
-        { device_type: 'desktop', count: desktop, pct: total > 0 ? ((desktop / total) * 100).toFixed(1) : 0 },
-        { device_type: 'tablet', count: tablet, pct: total > 0 ? ((tablet / total) * 100).toFixed(1) : 0 }
-      ].filter(d => d.count > 0).sort((a, b) => b.count - a.count);
-
-      res.json(result);
-    } catch (error: any) {
-      logger.error('Account devices error:', error);
-      res.status(500).json({ error: 'Failed to fetch account devices' });
-    }
-  });
-
-  app.get('/api/analytics/account/:uid/countries', authenticate, async (req, res) => {
-    try {
-      const { uid } = req.params;
-      const decodedUser = (req as any).user;
-      
-      if (decodedUser.uid !== uid) {
-        return res.status(403).send('Forbidden');
-      }
-      
-      const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
-      
-      if (requestedSlugs) {
-        slugs = slugs.filter(s => requestedSlugs.includes(s));
-      }
-
-      const countries: Record<string, number> = {};
-      
-      if (slugs.length > 0) {
-        const chunks = [];
-        for (let i = 0; i < slugs.length; i += 30) {
-          chunks.push(slugs.slice(i, i + 30));
-        }
-
-        for (const chunk of chunks) {
-          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where('slug', 'in', chunk)));
-          statsSnapshot.forEach(doc => {
-            const data = doc.data();
-            const c = data.countries || {};
-            for (const [country, count] of Object.entries(c)) {
-              countries[country] = (countries[country] || 0) + (count as number);
-            }
-          });
-        }
-      }
-
-      const result = Object.entries(countries).map(([country, scans]) => ({
-        country,
-        scans,
-        unique_visitors: 0
-      })).sort((a, b) => b.scans - a.scans).slice(0, 10);
-
-      res.json(result);
-    } catch (error: any) {
-      logger.error('Account countries error:', error);
-      res.status(500).json({ error: 'Failed to fetch account countries' });
-    }
-  });
-
-  app.get('/api/analytics/account/:uid/browsers', authenticate, async (req, res) => {
-    try {
-      const { uid } = req.params;
-      const decodedUser = (req as any).user;
-      if (decodedUser.uid !== uid) return res.status(403).send('Forbidden');
-      
-      const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
-      
-      if (requestedSlugs) {
-        slugs = slugs.filter(s => requestedSlugs.includes(s));
-      }
-
-      const browsers: Record<string, number> = {};
-      if (slugs.length > 0) {
-        const chunks = [];
-        for (let i = 0; i < slugs.length; i += 30) chunks.push(slugs.slice(i, i + 30));
-        for (const chunk of chunks) {
-          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where('slug', 'in', chunk)));
-          statsSnapshot.forEach(doc => {
-            const data = doc.data();
-            const b = data.browsers || {};
-            for (const [browser, count] of Object.entries(b)) {
-              browsers[browser] = (browsers[browser] || 0) + (count as number);
-            }
-          });
-        }
-      }
-      const result = Object.entries(browsers).map(([browser, count]) => ({ browser, count })).sort((a, b) => b.count - a.count);
-      res.json(result);
-    } catch (error: any) {
-      logger.error('Account browsers error:', error);
-      res.status(500).json({ error: 'Failed to fetch account browsers' });
-    }
-  });
-
-  app.get('/api/analytics/account/:uid/os', authenticate, async (req, res) => {
-    try {
-      const { uid } = req.params;
-      const decodedUser = (req as any).user;
-      if (decodedUser.uid !== uid) return res.status(403).send('Forbidden');
-      
-      const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
-      
-      if (requestedSlugs) {
-        slugs = slugs.filter(s => requestedSlugs.includes(s));
-      }
-
-      const os: Record<string, number> = {};
-      if (slugs.length > 0) {
-        const chunks = [];
-        for (let i = 0; i < slugs.length; i += 30) chunks.push(slugs.slice(i, i + 30));
-        for (const chunk of chunks) {
-          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where('slug', 'in', chunk)));
-          statsSnapshot.forEach(doc => {
-            const data = doc.data();
-            const o = data.os || {};
-            for (const [name, count] of Object.entries(o)) {
-              os[name] = (os[name] || 0) + (count as number);
-            }
-          });
-        }
-      }
-      const result = Object.entries(os).map(([os, count]) => ({ os, count })).sort((a, b) => b.count - a.count);
-      res.json(result);
-    } catch (error: any) {
-      logger.error('Account OS error:', error);
-      res.status(500).json({ error: 'Failed to fetch account OS' });
-    }
-  });
-
-  app.get('/api/analytics/account/:uid/summary', authenticate, async (req, res) => {
-    try {
-      const { uid } = req.params;
-      const decodedUser = (req as any).user;
-      if (decodedUser.uid !== uid) return res.status(403).send('Forbidden');
-      
-      const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
-      
-      if (requestedSlugs) {
-        slugs = slugs.filter(s => requestedSlugs.includes(s));
-      }
-
-      let total_scans = 0, unique_visitors = 0;
-      if (slugs.length > 0) {
-        const chunks = [];
-        for (let i = 0; i < slugs.length; i += 30) chunks.push(slugs.slice(i, i + 30));
-        for (const chunk of chunks) {
-          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where('slug', 'in', chunk)));
-          statsSnapshot.forEach(doc => {
-            const data = doc.data();
-            total_scans += (data.total_scans || 0);
-            unique_visitors += (data.unique_scans || 0);
-          });
-        }
-      }
-      res.json({ total_scans, unique_visitors, total_qrs: slugs.length });
-    } catch (error: any) {
-      logger.error('Account summary error:', error);
-      res.status(500).json({ error: 'Failed to fetch account summary' });
-    }
-  });
-
-  app.get('/api/analytics/account/:uid/recent', authenticate, async (req, res) => {
-    try {
-      const { uid } = req.params;
-      const decodedUser = (req as any).user;
-      
-      if (decodedUser.uid !== uid) {
-        return res.status(403).send('Forbidden');
-      }
-      
-      const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
-      
-      if (requestedSlugs) {
-        slugs = slugs.filter(s => requestedSlugs.includes(s));
-      }
-
-      if (slugs.length === 0) return res.json([]);
-      
-      const recentScans: any[] = [];
-      
-      const chunks = [];
-      for (let i = 0; i < slugs.length; i += 30) {
-        chunks.push(slugs.slice(i, i + 30));
-      }
-
-      for (const chunk of chunks) {
-        const scansSnapshot = await getDocs(query(collection(db, 'scan_events'), where('slug', 'in', chunk), orderBy('scanned_at', 'desc'), limit(20)));
-        scansSnapshot.forEach(doc => {
-          const data = doc.data();
-          recentScans.push({
-            id: doc.id,
-            slug: data.slug,
-            scanned_at: toDate(data.scanned_at)?.toISOString(),
-            country: data.country || 'Unknown',
-            city: data.city || 'Unknown',
-            device_type: data.device || 'Unknown',
-            os: data.os || 'Unknown',
-            browser: data.browser || 'Unknown',
-            referrer: data.referer || 'Direct',
-            is_unique: data.is_unique,
-            _timestamp: toDate(data.scanned_at)?.getTime() || 0
-          });
-        });
-      }
-
-      recentScans.sort((a, b) => b._timestamp - a._timestamp);
-
-      res.json(recentScans.slice(0, 20).map(s => {
-        const { _timestamp, ...rest } = s;
-        return rest;
+      return rows;
+    },
+    devices: ({ stats }) => pctRows(sumMap(stats, 'devices'), 'device_type'),
+    countries: ({ stats }) => Object.entries(sumMap(stats, 'countries'))
+      .map(([country, scans]) => ({ country, scans, unique_visitors: 0 }))
+      .sort((a, b) => b.scans - a.scans).slice(0, 10),
+    os: ({ stats }) => pctRows(sumMap(stats, 'os'), 'os'),
+    browsers: ({ stats }) => pctRows(sumMap(stats, 'browsers'), 'browser'),
+    // Hour of day (UTC), 0–23, all time. Recorded since migration 003.
+    hours: ({ stats }) => {
+      const m = sumMap(stats, 'hours');
+      return Array.from({ length: 24 }, (_, h) => ({ hour: h, scans: m[String(h)] || 0 }));
+    },
+    performance: ({ qrs, stats }) => qrs.map(q => {
+      const s = stats.find(x => x.slug === q.slug) || {};
+      return { id: q.slug, slug: q.slug, title: q.title, total_scans: s.total_scans || 0, unique_scans: s.unique_scans || 0 };
+    }).sort((a, b) => b.total_scans - a.total_scans),
+    recent: async ({ slugs }) => {
+      if (!slugs.length) return [];
+      const { data, error } = await supabase.from('scan_events')
+        .select('id, slug, scanned_at, country, city, device, os, browser, referer, is_unique')
+        .in('slug', slugs).order('scanned_at', { ascending: false }).limit(20);
+      if (error) throw error;
+      return (data || []).map(e => ({
+        id: e.id, slug: e.slug, scanned_at: e.scanned_at,
+        country: e.country || 'Unknown', city: e.city || 'Unknown', device_type: e.device || 'Unknown',
+        os: e.os || 'Unknown', browser: e.browser || 'Unknown', referrer: e.referer || 'Direct', is_unique: e.is_unique,
       }));
+    },
+  };
+
+  const analyticsHandler = (view: (s: Scope, req: express.Request) => any) =>
+    async (req: express.Request, res: express.Response) => {
+      try {
+        const scope = await loadScope(req, res);
+        if (!scope) return;
+        res.json(await view(scope, req));
+      } catch (error: any) {
+        logger.error('Analytics error', { path: req.path, message: error.message });
+        res.status(500).json({ error: 'Failed to fetch analytics' });
+      }
+    };
+
+  for (const [name, view] of Object.entries(views)) {
+    app.get(`/api/analytics/account/:uid/${name}`, authenticate, analyticsHandler(view));
+    app.get(`/api/analytics/:slug/${name}`, authenticate, requireOwnership, analyticsHandler(view));
+  }
+  app.get('/api/analytics/account/:uid', authenticate, analyticsHandler(views.summary));
+
+  // CSV of raw scans (newest first, up to 10,000) for one owned code.
+  app.get('/api/analytics/:slug/events.csv', authenticate, requireOwnership, async (req, res) => {
+    try {
+      const { data, error } = await supabase.from('scan_events')
+        .select('scanned_at, country, device, os, browser, referer, is_unique')
+        .eq('slug', req.params.slug).order('scanned_at', { ascending: false }).limit(10000);
+      if (error) throw error;
+      const cell = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const lines = ['scanned_at,country,device,os,browser,referer,is_unique',
+        ...(data || []).map(e => [e.scanned_at, e.country, e.device, e.os, e.browser, e.referer, e.is_unique].map(cell).join(','))];
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="scans-${req.params.slug}.csv"`);
+      res.send(lines.join('\n'));
     } catch (error: any) {
-      logger.error('Account recent scans error:', error);
-      res.status(500).json({ error: 'Failed to fetch account recent scans' });
+      logger.error('CSV export error', { message: error.message });
+      res.status(500).json({ error: 'Failed to export scans' });
     }
   });
 
-  app.get('/api/analytics/account/:uid/performance', authenticate, async (req, res) => {
+  // ── Cron (vercel.json "crons"; Vercel sends Authorization: Bearer $CRON_SECRET) ──
+  const cronAuth = (req: express.Request, res: express.Response, next: express.NextFunction) =>
+    process.env.CRON_SECRET && req.headers.authorization === `Bearer ${process.env.CRON_SECRET}`
+      ? next() : res.status(401).send('Unauthorized');
+
+  // Daily: drop raw scan events older than 400 days (aggregates in qr_stats are kept).
+  app.get('/api/cron/cleanup', cronAuth, async (_req, res) => {
     try {
-      const { uid } = req.params;
-      const decodedUser = (req as any).user;
-      
-      if (decodedUser.uid !== uid) {
-        return res.status(403).send('Forbidden');
-      }
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      
-      const performanceData = [];
-      
-      for (const docSnap of qrSnapshot.docs) {
-        const qrData = docSnap.data();
-        const statsDoc = await getDoc(doc(db, 'qr_stats', qrData.slug));
-        const statsData = statsDoc.exists() ? statsDoc.data() : { total_scans: 0, unique_scans: 0 };
-        
-        performanceData.push({
-          id: docSnap.id,
-          slug: qrData.slug,
-          title: qrData.title,
-          total_scans: statsData.total_scans || 0,
-          unique_scans: statsData.unique_scans || 0
-        });
-      }
-      
-      performanceData.sort((a, b) => b.total_scans - a.total_scans);
-      
-      res.json(performanceData);
+      const cutoff = new Date(Date.now() - 400 * 86400000).toISOString();
+      const { error, count } = await supabase.from('scan_events').delete({ count: 'exact' }).lt('scanned_at', cutoff);
+      if (error) throw error;
+      logger.info('Retention cleanup', { deleted: count });
+      res.json({ deleted: count || 0 });
     } catch (error: any) {
-      logger.error('Account performance error:', error);
-      res.status(500).json({ error: 'Failed to fetch account performance' });
+      logger.error('Cleanup cron error', { message: error.message });
+      res.status(500).json({ error: 'Cleanup failed' });
+    }
+  });
+
+  // Weekly (Mondays): email each owner their last-7-days scans, busiest hour and top code.
+  // ?dry=1 builds the digests without sending (used by QA). ?uid= limits to one account.
+  // ponytail: sends serially inside one function call; fine for hundreds of owners, move to a queue beyond that.
+  app.get('/api/cron/digest', cronAuth, async (req, res) => {
+    try {
+      const dry = req.query.dry === '1';
+      const key = process.env.RESEND_API_KEY;
+      if (!dry && !key) return res.json({ sent: 0, skipped: 'RESEND_API_KEY not set' });
+      let q = supabase.from('profiles').select('id, email, company, timezone, digest_opt_out').eq('digest_opt_out', false);
+      if (typeof req.query.uid === 'string') q = q.eq('id', req.query.uid);
+      const { data: owners, error } = await q;
+      if (error) throw error;
+
+      const since = new Date(Date.now() - 7 * 86400000).toISOString();
+      const appUrl = process.env.APP_URL || '';
+      const out: any[] = [];
+      for (const o of owners || []) {
+        if (!o.email) continue;
+        const qrs = (await rows('qr_codes', 'user_uid', o.id)).map(x => ({ slug: x.slug, title: x.title }));
+        if (!qrs.length) continue;
+        const { data: scans, error: sErr } = await supabase.from('scan_events').select('slug, scanned_at')
+          .in('slug', qrs.map(x => x.slug)).gte('scanned_at', since).limit(50000);
+        if (sErr) throw sErr;
+        const d = buildDigest({ businessName: o.company || '', timezone: o.timezone || 'Asia/Colombo', qrs, scans: scans || [], appUrl });
+        if (!dry) {
+          const r = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from: process.env.DIGEST_FROM || 'Scnr <digest@scnr.app>', to: o.email, subject: d.subject, html: d.html }),
+          });
+          if (!r.ok) logger.warn('Digest send failed', { uid: o.id, status: r.status });
+        }
+        out.push({ uid: o.id, total: d.total, busiestHour: d.busiestHour, top: d.top, subject: d.subject });
+      }
+      res.json({ sent: dry ? 0 : out.length, digests: dry ? out : undefined });
+    } catch (error: any) {
+      logger.error('Digest cron error', { message: error.message });
+      res.status(500).json({ error: 'Digest failed' });
     }
   });
 
@@ -2157,18 +1402,12 @@ async function startServer() {
       }
 
       const { slug } = req.params;
-      const [qrDoc, statsDoc] = await Promise.all([
-        getDoc(doc(db, 'qr_codes', slug)),
-        getDoc(doc(db, 'qr_stats', slug))
-      ]);
-
-      if (!qrDoc.exists()) {
+      const [qr, statsRow] = await Promise.all([row('qr_codes', 'slug', slug), row('qr_stats', 'slug', slug)]);
+      if (!qr) {
         return res.status(404).send('Not Found');
       }
-
-      const qr = qrDoc.data();
       const license = await getLicense(qr.user_uid);
-      const stats = statsDoc.exists() ? statsDoc.data() : { total_scans: 0 };
+      const stats = statsRow || { total_scans: 0 };
 
       // Lapse rule: after the grace period, the owner's oldest dynamic codes stay live up to the
       // allowance; the rest pause behind a holding page. Never deleted.
@@ -2221,13 +1460,10 @@ async function startServer() {
 
     try {
       // 1. Look up destination
-      const qrDoc = await getDoc(doc(db, 'qr_codes', slug));
-      
-      if (!qrDoc.exists()) {
+      const qrData = await row('qr_codes', 'slug', slug);
+      if (!qrData) {
         return next(); // Let Vite handle it (might be a frontend route)
       }
-
-      const qrData = qrDoc.data()!;
 
       if (!qrData.is_active) {
         return res.status(410).send('QR code inactive');
@@ -2325,71 +1561,46 @@ await startServer().catch((err) => {
 
 // Analytics Capture Logic
 async function captureAnalyticsFromPayload(payload: any, qrOwnerUid?: string) {
-  const { slug, ua, country, referer, is_unique: payloadIsUnique, status } = payload;
+  const { slug, ua, country, referer, status } = payload;
   if (isBot(ua)) return;
-
-  let isUnique = payloadIsUnique;
-  if (isUnique === undefined) {
-    isUnique = true;
-    logger.debug(`Uniqueness flag missing for slug ${slug}, defaulting to true`);
-  }
-
-  const parsed = parseUA(ua);
-  const now = new Date();
-  const dateStr = now.toISOString().split('T')[0];
-  const currentMonth = dateStr.slice(0, 7);
-
-  const isFailed = status === 'failed_password';
-
-  // 1. Insert into scan_events — only columns that exist in the schema
-  await addDoc(collection(db, 'scan_events'), {
-    slug,
-    scanned_at: serverTimestamp(),
-    country: country || 'Unknown',
-    device: parsed.device,
-    browser: parsed.browser,
-    os: parsed.os,
-    referer: referer || null,
-    is_unique: isUnique,
-  });
-
-  // Failed password scans are logged but don't increment stats
-  if (isFailed) return;
-
-  // 2. Update qr_stats via read-modify-write
-  // Only writes columns that exist in the schema: total_scans, unique_scans,
-  // days, countries, browsers, os, devices, monthly_scans
-  const { data: currentStats } = await supabase.from('qr_stats').select('*').eq('slug', slug).maybeSingle();
-
-  const statsUpdate: Record<string, any> = {
-    total_scans: (currentStats?.total_scans || 0) + 1,
-    days:         { ...(currentStats?.days || {}),         [dateStr]:             ((currentStats?.days?.[dateStr])                             || 0) + 1 },
-    countries:    { ...(currentStats?.countries || {}),    [country || 'Unknown']: ((currentStats?.countries?.[country || 'Unknown'])           || 0) + 1 },
-    browsers:     { ...(currentStats?.browsers || {}),     [parsed.browser]:       ((currentStats?.browsers?.[parsed.browser])                  || 0) + 1 },
-    os:           { ...(currentStats?.os || {}),           [parsed.os]:            ((currentStats?.os?.[parsed.os])                            || 0) + 1 },
-    devices:      { ...(currentStats?.devices || {}),      [parsed.device]:        ((currentStats?.devices?.[parsed.device])                   || 0) + 1 },
-    monthly_scans:{ ...(currentStats?.monthly_scans || {}), [currentMonth]:        ((currentStats?.monthly_scans?.[currentMonth])              || 0) + 1 },
+  const isUnique = payload.is_unique !== false;
+  const parsed = parseUA(ua || '');
+  const args = {
+    p_slug: slug, p_owner: qrOwnerUid || null, p_country: country || 'Unknown',
+    p_device: parsed.device, p_browser: parsed.browser, p_os: parsed.os,
+    p_referer: referer || '', p_is_unique: isUnique, p_failed: status === 'failed_password',
   };
+  const { error } = await supabase.rpc('record_scan', args);
+  if (!error) return;
+  // PGRST202 = function not found: migration 003 not applied yet.
+  if (error.code !== 'PGRST202') throw new Error(`record_scan failed: ${error.message}`);
+  await recordScanLegacy(args);
+}
 
-  if (isUnique) {
-    statsUpdate.unique_scans = (currentStats?.unique_scans || 0) + 1;
-  }
-
-  if (!currentStats?.total_scans && qrOwnerUid) {
-    supabase.from('events').insert({ uid: qrOwnerUid, name: 'first_scan', slug }).then(() => {});
-  }
-
-  await setDoc(doc(db, 'qr_stats', slug), statsUpdate, { merge: true });
-
-  // 3. Maintain per-user monthly scan counter on the profile (for quota enforcement on billing page)
-  if (qrOwnerUid) {
-    const { data: profileData } = await supabase.from('profiles').select('monthly_scans').eq('id', qrOwnerUid).maybeSingle();
-    const profileMonthly = profileData?.monthly_scans || {};
-    await updateDoc(doc(db, 'profiles', qrOwnerUid), {
-      monthly_scans: { ...profileMonthly, [currentMonth]: (profileMonthly[currentMonth] || 0) + 1 }
-    }).catch((err: any) => {
-      logger.error('User monthly_scans update background error', { error: err.message });
-    });
+// ponytail: pre-migration-003 fallback (read-modify-write, can lose counts under concurrency).
+// Delete once migrations/003_phase3.sql is applied in every environment.
+async function recordScanLegacy(a: any) {
+  const now = new Date();
+  const day = now.toISOString().slice(0, 10), month = day.slice(0, 7);
+  await supabase.from('scan_events').insert({
+    slug: a.p_slug, country: a.p_country, device: a.p_device, browser: a.p_browser, os: a.p_os,
+    referer: a.p_referer || null, is_unique: a.p_is_unique,
+  });
+  if (a.p_failed) return;
+  const inc = (m: any, k: string) => ({ ...(m || {}), [k]: ((m || {})[k] || 0) + 1 });
+  const { data: cur } = await supabase.from('qr_stats').select('*').eq('slug', a.p_slug).maybeSingle();
+  await supabase.from('qr_stats').upsert({
+    slug: a.p_slug,
+    total_scans: (cur?.total_scans || 0) + 1,
+    unique_scans: (cur?.unique_scans || 0) + (a.p_is_unique ? 1 : 0),
+    days: inc(cur?.days, day), countries: inc(cur?.countries, a.p_country),
+    browsers: inc(cur?.browsers, a.p_browser), os: inc(cur?.os, a.p_os),
+    devices: inc(cur?.devices, a.p_device), monthly_scans: inc(cur?.monthly_scans, month),
+  });
+  if (a.p_owner) {
+    if (!cur?.total_scans) await supabase.from('events').insert({ uid: a.p_owner, name: 'first_scan', slug: a.p_slug });
+    const { data: p } = await supabase.from('profiles').select('monthly_scans').eq('id', a.p_owner).maybeSingle();
+    await supabase.from('profiles').update({ monthly_scans: inc(p?.monthly_scans, month) }).eq('id', a.p_owner);
   }
 }
 
@@ -2406,8 +1617,8 @@ async function captureAnalytics(req: express.Request, slug: string) {
   };
 
   // For internal dev redirects, find the owner too
-  const qrSnap = await getDoc(doc(db, 'qr_codes', slug));
-  const ownerUid = qrSnap.exists() ? qrSnap.data()?.user_uid : undefined;
+  const { data: qr } = await supabase.from('qr_codes').select('user_uid').eq('slug', slug).maybeSingle();
+  const ownerUid = qr?.user_uid;
 
   await captureAnalyticsFromPayload(payload, ownerUid);
 }
@@ -2438,15 +1649,6 @@ function parseUA(ua: string) {
   const osVersion = androidMatch?.[1] || iosMatch?.[1]?.replace(/_/g, '.') || null;
 
   return { device, os, osVersion, browser };
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }
 
 function isBot(ua: string) {
