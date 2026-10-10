@@ -5,6 +5,7 @@ import QRCodeStyling from 'qr-code-styling';
 import { apiFetch } from '../lib/api';
 import { useUI } from '../shared/UIContext';
 import { getQRContent, stylingOptions, resizeLogo, SHORT_DOMAIN, SHORT_HOST } from '../lib/qrContent';
+import { waLink } from '../lib/site';
 
 const PREVIEW_SIZE = 180;
 
@@ -71,8 +72,10 @@ export default function CreateQR() {
       const fetchQR = async () => {
         try {
           const data = await apiFetch(`/api/qr/${id}`);
-          
-          setQrType(data.qr_type || 'url');
+          // Guest pages are edited in the Restaurant Kit.
+          if (data.qr_type === 'page') { navigate(`/kit?edit=${id}`, { replace: true }); return; }
+
+          setQrType(data.content_data?.wa_phone ? 'whatsapp' : data.qr_type || 'url');
           setIsDynamic(data.is_dynamic !== false);
           setFormData({
             title: data.title || '',
@@ -126,10 +129,8 @@ export default function CreateQR() {
   };
 
   useEffect(() => {
-    if (qrType !== 'url') {
-      // Only URL codes can be dynamic until guest pages ship (Phase 2).
-      setIsDynamic(false);
-    }
+    // Static Wi-Fi codes let phones join directly; dynamic ones show a page with the password.
+    if (qrType === 'wifi') setIsDynamic(false);
   }, [qrType]);
 
   useEffect(() => {
@@ -137,7 +138,7 @@ export default function CreateQR() {
       const content = getQRContent({
         is_dynamic: isDynamic,
         slug: formData.slug || 'preview',
-        qr_type: qrType,
+        qr_type: qrType === 'whatsapp' ? 'url' : qrType,
         content_data: formData.content_data,
         destination_url: formData.destination_url,
       }) || SHORT_DOMAIN;
@@ -164,6 +165,10 @@ export default function CreateQR() {
   };
 
   const handleSubmit = async () => {
+    if (qrType === 'whatsapp' && !(formData.content_data?.wa_phone || '').replace(/\D/g, '')) {
+      showToast('error', 'Enter a WhatsApp number with country code, e.g. +94 77 123 4567');
+      return;
+    }
     if (qrType === 'url' && (!formData.destination_url || !formData.destination_url.startsWith('http'))) {
       setUrlError(true);
       return;
@@ -245,7 +250,7 @@ export default function CreateQR() {
   };
 
   const getShortUrl = () => {
-    if (qrType === 'url') {
+    if (qrType === 'url' || qrType === 'whatsapp') {
       if (!formData.destination_url) return 'Enter content to generate QR';
       let full = formData.destination_url;
       return '→ ' + (full.length > 55 ? full.slice(0, 55) + '…' : full);
@@ -288,6 +293,8 @@ export default function CreateQR() {
                   <button className={`qr-type-tab ${qrType === 'wifi' ? 'active' : ''}`} onClick={() => { setQrType('wifi'); setFormData({...formData, qr_type: 'wifi'}); }}>WiFi</button>
                   <button className={`qr-type-tab ${qrType === 'text' ? 'active' : ''}`} onClick={() => { setQrType('text'); setFormData({...formData, qr_type: 'text'}); }}>Text</button>
                   <button className={`qr-type-tab ${qrType === 'email' ? 'active' : ''}`} onClick={() => { setQrType('email'); setFormData({...formData, qr_type: 'email'}); }}>Email</button>
+                  <button className={`qr-type-tab ${qrType === 'whatsapp' ? 'active' : ''}`} onClick={() => { setQrType('whatsapp'); setFormData({...formData, qr_type: 'url'}); }}>WhatsApp</button>
+                  <button className="qr-type-tab" onClick={() => navigate('/kit')}>Restaurant Kit →</button>
                 </div>
 
                 {/* URL fields */}
@@ -303,6 +310,22 @@ export default function CreateQR() {
                         onChange={(e) => setFormData({...formData, destination_url: e.target.value})}
                       />
                       {urlError && <div className="error-msg" style={{ display: 'block' }}>Please enter a valid URL starting with https://</div>}
+                    </div>
+                  </div>
+                )}
+
+                {/* WhatsApp: a URL code pointing at wa.me with a ready message */}
+                {qrType === 'whatsapp' && (
+                  <div id="fields-whatsapp">
+                    <div className="form-section">
+                      <label className="form-label" htmlFor="wa-phone">WhatsApp number *</label>
+                      <input id="wa-phone" type="tel" className="form-input" placeholder="+94 77 123 4567" value={formData.content_data?.wa_phone || ''}
+                        onChange={(e) => { const cd = { ...formData.content_data, wa_phone: e.target.value }; setFormData({ ...formData, qr_type: 'url', content_data: cd, destination_url: waLink(cd.wa_phone, cd.wa_text || '') }); }} />
+                    </div>
+                    <div className="form-section">
+                      <label className="form-label" htmlFor="wa-text">Message the customer starts with</label>
+                      <input id="wa-text" type="text" className="form-input" placeholder="Hi! I'd like to order…" value={formData.content_data?.wa_text || ''}
+                        onChange={(e) => { const cd = { ...formData.content_data, wa_text: e.target.value }; setFormData({ ...formData, qr_type: 'url', content_data: cd, destination_url: waLink(cd.wa_phone || '', cd.wa_text) }); }} />
                     </div>
                   </div>
                 )}
@@ -539,7 +562,7 @@ export default function CreateQR() {
                 </div>
                 <button 
                   className={`toggle ${isDynamic ? 'on' : ''}`} 
-                  onClick={() => qrType === 'url' && setIsDynamic(!isDynamic)}
+                  onClick={() => setIsDynamic(!isDynamic)}
                 ></button>
               </div>
 
