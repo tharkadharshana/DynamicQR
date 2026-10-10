@@ -21,15 +21,21 @@
  *  13. Gate config storage (expiry, scan limit, password)
  *  14. QR type redirects (vCard, text, WiFi)
  *  15. Analytics detail (mobile UA, iOS UA, referrer, multi-country)
+ *  15b. Worker gate engine, run in-process with a fake KV (redirect, cache, 404/503 pages,
+ *       expiry, Visitor Guard, scan limit, PIN lockout, monthly quota, legacy rows)
  *  16. Token revocation
  *  17. Plan limit enforcement
  *  18. Deactivate all + data export
  *  19. Redirect engine
- *  20. Cleanup
+ *  20. Security: RLS (anon + signed-in), no password_hash in responses
+ *  21. Edit persistence (rate_limit) + /internal/slug policy fields
+ *  22. Billing: PayHere order + signed notify (tamper, replay, amount, annual, stop, chargeback)
+ *  23. Cleanup
  */
 import 'dotenv/config';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import worker from './worker/worker.js';
 
 // ─── config ──────────────────────────────────────────────────────────────────
 const API             = process.env.QA_API_URL || 'http://localhost:3000';
@@ -364,12 +370,6 @@ async function run() {
     check('POST /api/billing/checkout: not 401', co.status !== 401, `got ${co.status}`);
     check('POST /api/billing/checkout: not 403', co.status !== 403, `got ${co.status}`);
 
-    const addon = await api('/api/billing/addon/checkout', {
-      method: 'POST', token,
-      body: JSON.stringify({ addonId: 'extra_qr_5' }),
-    });
-    check('POST /api/billing/addon/checkout: not 401', addon.status !== 401, `got ${addon.status}`);
-
     // Webhook bad signature → 401
     const wh = await api('/api/billing/notify', {
       method: 'POST',
@@ -621,6 +621,134 @@ async function run() {
     check('Unique visitors = 4',                       sum.body?.unique_visitors === 4, `got ${sum.body?.unique_visitors}`);
   }
 
+  // ── 15b. Worker gate engine (in-process) ─────────────────────────────────────
+  // Runs worker/worker.js directly in Node against this API, with an in-memory KV.
+  section('15b. Worker gate engine (in-process, fake KV)');
+  {
+    const runWorker = async (path: string, opts: { kv?: Map<string, string>; ua?: string; method?: string; form?: Record<string, string>; apiUrl?: string } = {}) => {
+      const kv = opts.kv || new Map<string, string>();
+      const env = {
+        API_URL: opts.apiUrl || API,
+        INTERNAL_SECRET,
+        HASH_SALT: process.env.HASH_SALT || 'qa-salt',
+        QR_CACHE: {
+          get: async (k: string, o?: { type?: string }) => {
+            const v = kv.get(k);
+            return v == null ? null : o?.type === 'json' ? JSON.parse(v) : v;
+          },
+          put: async (k: string, v: string) => { kv.set(k, v); },
+          delete: async (k: string) => { kv.delete(k); },
+        },
+      };
+      const pending: Promise<any>[] = [];
+      const ctx = { waitUntil: (p: Promise<any>) => { pending.push(p); } };
+      const req = new Request(`https://qa.scnr.test${path}`, {
+        method: opts.method || 'GET',
+        headers: { 'User-Agent': opts.ua || 'QA-Worker/1.0', 'CF-Connecting-IP': '198.51.100.7' },
+        body: opts.form ? new URLSearchParams(opts.form) : undefined,
+        redirect: 'manual',
+      });
+      const res: Response = await (worker as any).fetch(req, env, ctx);
+      await Promise.allSettled(pending);
+      return { status: res.status, location: res.headers.get('location'), body: await res.text(), kv };
+    };
+    const mkQR = async (body: any) => {
+      const r = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'url', is_dynamic: true, ...body }) });
+      return r.body?.slug as string | undefined;
+    };
+    const del = (slug?: string) => slug && api(`/api/qr/${slug}`, { method: 'DELETE', token });
+
+    // Active URL code: origin lookup → 302, config cached, analytics recorded
+    if (testSlug) {
+      const before = (await api(`/api/analytics/${testSlug}/summary`, { token })).body?.total_scans ?? 0;
+      const kv = new Map<string, string>();
+      const r1 = await runWorker(`/${testSlug}`, { kv, ua: 'QA-active-1' });
+      check('Worker: active code → 302', r1.status === 302, `status=${r1.status} ${r1.body.slice(0, 80)}`);
+      check('Worker: Location = destination', r1.location === 'https://updated.example.com/', `got ${r1.location}`);
+      check('Worker: config cached in KV', kv.has(testSlug));
+      check('Worker: cached config has quota_exceeded=false', JSON.parse(kv.get(testSlug) || '{}').quota_exceeded === false);
+      const r2 = await runWorker(`/${testSlug}`, { kv, ua: 'QA-active-2' });
+      check('Worker: second scan served from cache → 302', r2.status === 302, `status=${r2.status}`);
+      await sleep(600);
+      const after = (await api(`/api/analytics/${testSlug}/summary`, { token })).body?.total_scans ?? 0;
+      check('Worker: scans recorded via waitUntil (+2)', after === before + 2, `before=${before} after=${after}`);
+    }
+
+    // Unknown slug → branded 404; unreachable origin → 503 page, never a crash
+    const unknown = await runWorker('/zzzzzzz');
+    check('Worker: unknown slug → 404 page', unknown.status === 404 && unknown.body.includes('not found'), `status=${unknown.status}`);
+    const down = await runWorker(`/${testSlug || 'zzzzzzz'}`, { apiUrl: 'http://127.0.0.1:9' });
+    check('Worker: origin unreachable → 503 page (no throw)', down.status === 503 && down.body.includes('unavailable'), `status=${down.status}`);
+
+    // Expired → 410
+    const expired = await mkQR({ destination_url: 'https://example.com/old', title: 'QA W expired', options: { expiry_date_enabled: true, expiry_date: '2020-01-01' } });
+    const rExp = await runWorker(`/${expired}`);
+    check('Worker: expired code → 410', rExp.status === 410, `status=${rExp.status}`);
+    await del(expired);
+
+    // Visitor Guard: limit 2 per visitor → 3rd scan 429
+    const guarded = await mkQR({ destination_url: 'https://example.com/g', title: 'QA W guard', options: { visitor_rate_limit: 2, visitor_rate_period: 3600 } });
+    {
+      const kv = new Map<string, string>();
+      const g = [];
+      for (let i = 0; i < 3; i++) g.push((await runWorker(`/${guarded}`, { kv, ua: 'QA-same-visitor' })).status);
+      check('Worker: Visitor Guard allows 2 then 429', g[0] === 302 && g[1] === 302 && g[2] === 429, `got ${g.join(',')}`);
+    }
+    await del(guarded);
+
+    // Scan limit 1 → 2nd scan 410 and code deactivated
+    const limited = await mkQR({ destination_url: 'https://example.com/l', title: 'QA W limit', options: { scan_limit_enabled: true, scan_limit: 1 } });
+    {
+      const kv = new Map<string, string>();
+      const a = await runWorker(`/${limited}`, { kv, ua: 'QA-limit-1' });
+      const b = await runWorker(`/${limited}`, { kv, ua: 'QA-limit-2' });
+      check('Worker: scan limit 1 → 302 then 410', a.status === 302 && b.status === 410, `got ${a.status},${b.status}`);
+      const after = await api(`/api/qr/${limited}`, { token });
+      check('Worker: scan limit deactivates the code', after.body?.is_active === false, `is_active=${after.body?.is_active}`);
+    }
+    await del(limited);
+
+    // PIN: form → 5 wrong → locked (429); right PIN from another visitor → 302
+    const PIN = '4821';
+    const pinned = await mkQR({ destination_url: 'https://example.com/pin', title: 'QA W pin', options: { password_protect: true, password: PIN } });
+    {
+      const kv = new Map<string, string>();
+      const form = await runWorker(`/${pinned}`, { kv, ua: 'QA-pin-attacker' });
+      check('Worker: PIN code shows form', form.status === 200 && form.body.includes('Enter the PIN'), `status=${form.status}`);
+      let lastWrong = 0;
+      for (let i = 0; i < 5; i++) lastWrong = (await runWorker(`/${pinned}`, { kv, ua: 'QA-pin-attacker', method: 'POST', form: { password: `000${i}` } })).status;
+      const locked = await runWorker(`/${pinned}`, { kv, ua: 'QA-pin-attacker', method: 'POST', form: { password: PIN } });
+      check('Worker: 5 wrong PINs then locked → 429', lastWrong === 200 && locked.status === 429, `last wrong=${lastWrong} locked=${locked.status}`);
+      const ok = await runWorker(`/${pinned}`, { kv, ua: 'QA-pin-owner', method: 'POST', form: { password: PIN } });
+      check('Worker: correct PIN (other visitor) → 302', ok.status === 302, `status=${ok.status}`);
+    }
+    await del(pinned);
+
+    // Monthly quota exceeded (decided by /internal/slug from the account-wide counter) → 429 page
+    if (testSlug) {
+      const month = new Date().toISOString().slice(0, 7);
+      const { data: prof } = await admin.from('profiles').select('monthly_scans').eq('id', uid).single();
+      await admin.from('profiles').update({ monthly_scans: { ...(prof?.monthly_scans || {}), [month]: 10_000_000 } }).eq('id', uid);
+      const q = await runWorker(`/${testSlug}`, { ua: 'QA-quota' });
+      check('Worker: account over monthly quota → 429 page', q.status === 429 && q.body.includes('Monthly limit'), `status=${q.status}`);
+      await admin.from('profiles').update({ monthly_scans: prof?.monthly_scans || {} }).eq('id', uid);
+    }
+
+    // Legacy dynamic row with no destination (old vCard/Text/Email) → 404 page, not a crash
+    const legacy = await mkQR({ destination_url: 'https://example.com/legacy', title: 'QA W legacy' });
+    if (legacy) {
+      await admin.from('qr_codes').update({ destination_url: '', qr_type: 'vcard' }).eq('slug', legacy);
+      const r = await runWorker(`/${legacy}`);
+      check('Worker: dynamic row without destination → 404 page', r.status === 404 && r.body.includes('no destination'), `status=${r.status}`);
+    }
+    await del(legacy);
+
+    // Non-URL types are forced static until the Worker renders them (Phase 2)
+    const vc = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'vcard', is_dynamic: true, title: 'QA W vcard', content_data: { first_name: 'A' } }) });
+    check('POST /api/qr vCard with is_dynamic=true → stored static', vc.status === 201 && vc.body?.is_dynamic === false, `status=${vc.status} is_dynamic=${vc.body?.is_dynamic}`);
+    await del(vc.body?.slug);
+  }
+
   // ── 16. Token revocation ─────────────────────────────────────────────────────
   section('16. Token revocation');
   {
@@ -699,8 +827,146 @@ async function run() {
     check('GET /:unknown-slug → not 500', unknown.status !== 500, `got ${unknown.status}`);
   }
 
-  // ── 20. Cleanup ──────────────────────────────────────────────────────────────
-  section('20. Cleanup');
+  // ── 20. Security — RLS + response hygiene ────────────────────────────────────
+  section('20. Security — RLS and response hygiene');
+  if (testSlug) {
+    const pub = createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false } });
+    const { data: anonRows, error: anonErr } = await pub.from('qr_codes').select('slug, password_hash').limit(5);
+    check('RLS: public anon key reads 0 qr_codes rows', !anonErr && (anonRows || []).length === 0,
+      anonErr ? anonErr.message : `read ${(anonRows || []).length} rows`);
+
+    const { data: before } = await admin.from('qr_codes').select('title').eq('slug', testSlug).single();
+    await pub.from('qr_codes').update({ title: 'pwned' }).eq('slug', testSlug);
+    const { data: afterWrite } = await admin.from('qr_codes').select('title').eq('slug', testSlug).single();
+    check('RLS: public anon key cannot update qr_codes', afterWrite?.title === before?.title, `title=${afterWrite?.title}`);
+
+    // `anon` holds the signed-in test user's session (section 16 re-sign-in).
+    const { data: ownRows } = await anon.from('qr_codes').select('slug').limit(5);
+    check('RLS: signed-in user reads 0 qr_codes rows directly (API only)', (ownRows || []).length === 0, `read ${(ownRows || []).length}`);
+    await anon.from('profiles').update({ plan: 'team', plan_expires_at: '2099-01-01T00:00:00Z' }).eq('id', uid);
+    const { data: prof } = await admin.from('profiles').select('plan').eq('id', uid).single();
+    check('RLS: signed-in user cannot set own plan', prof?.plan !== 'team', `plan=${prof?.plan}`);
+    // If RLS is open the write above landed: restore so later sections test from a clean state.
+    await admin.from('profiles').update({ plan: 'free', plan_expires_at: null }).eq('id', uid);
+    await admin.from('qr_codes').update({ title: before?.title }).eq('slug', testSlug);
+
+    const get = await api(`/api/qr/${testSlug}`, { token });
+    check('GET /api/qr/:slug: no password_hash in response', get.body && !('password_hash' in get.body), Object.keys(get.body || {}).join(','));
+    check('GET /api/qr/:slug: has_password boolean', typeof get.body?.has_password === 'boolean');
+    const exp = await api('/api/user/export', { token });
+    check('Export: no password_hash in qr_codes', Array.isArray(exp.body?.qr_codes) && exp.body.qr_codes.every((q: any) => !('password_hash' in q)));
+  }
+
+  // ── 21. Edit persistence + Worker policy config ──────────────────────────────
+  section('21. Edit persistence (rate_limit) + /internal/slug policy fields');
+  if (testSlug) {
+    const upd = await api(`/api/qr/${testSlug}`, {
+      method: 'PUT', token,
+      body: JSON.stringify({
+        is_active: true,
+        options: {
+          scan_limit_enabled: true, scan_limit: 7,
+          expiry_date_enabled: false, password_protect: false,
+          visitor_rate_limit: 3, visitor_rate_period: 60,
+        },
+      }),
+    });
+    check('PUT /api/qr/:slug with options → 200', upd.status === 200, `status=${upd.status} ${JSON.stringify(upd.body)}`);
+    const got = await api(`/api/qr/${testSlug}`, { token });
+    check('PUT persisted rate_limit.enabled=true', got.body?.rate_limit?.enabled === true, JSON.stringify(got.body?.rate_limit));
+    check('PUT persisted rate_limit.max_scans=7', got.body?.rate_limit?.max_scans === 7, JSON.stringify(got.body?.rate_limit));
+    check('PUT persisted visitor_rate_limit=3', got.body?.visitor_rate_limit === 3, `got ${got.body?.visitor_rate_limit}`);
+
+    const cfg = await api(`/internal/slug/${testSlug}`, { internal: true });
+    check('/internal/slug: scan_limit=7', cfg.body?.scan_limit === 7, `got ${cfg.body?.scan_limit}`);
+    check('/internal/slug: quota_exceeded=false', cfg.body?.quota_exceeded === false, `got ${cfg.body?.quota_exceeded}`);
+    check('/internal/slug: visitor_guard=true (trial)', cfg.body?.visitor_guard === true, `got ${cfg.body?.visitor_guard}`);
+    check('/internal/slug: visitor_rate_limit=3 (trial honours setting)', cfg.body?.visitor_rate_limit === 3, `got ${cfg.body?.visitor_rate_limit}`);
+  }
+
+  // ── 22. Billing — PayHere notify end to end ──────────────────────────────────
+  section('22. Billing — PayHere order + signed notify (idempotent, tamper-proof)');
+  {
+    const MID = process.env.PAYHERE_MERCHANT_ID || '';
+    const SECRET = process.env.PAYHERE_SECRET || '';
+    check('PayHere env set for billing QA', !!MID && !!SECRET, 'set PAYHERE_MERCHANT_ID and PAYHERE_SECRET');
+    const md5 = (x: string) => crypto.createHash('md5').update(x).digest('hex').toUpperCase();
+    // PayHere posts application/x-www-form-urlencoded, so the QA does too.
+    const notify = async (f: { order_id: string; amount: string; currency: string; status_code: string; payment_id?: string; message_type?: string; custom_2?: string }) => {
+      const md5sig = md5(`${MID}${f.order_id}${f.amount}${f.currency}${f.status_code}${md5(SECRET)}`);
+      const body = new URLSearchParams({
+        merchant_id: MID, order_id: f.order_id, payhere_amount: f.amount, payhere_currency: f.currency,
+        status_code: f.status_code, md5sig, custom_1: uid, custom_2: f.custom_2 || 'pro',
+        ...(f.payment_id ? { payment_id: f.payment_id } : {}),
+        ...(f.message_type ? { message_type: f.message_type } : {}),
+      });
+      const res = await fetch(`${API}/api/billing/notify`, { method: 'POST', body });
+      return { status: res.status, body: await res.text() };
+    };
+    const planNow = async () => (await api('/api/user/plan', { token })).body;
+    const days = (iso: string) => (new Date(iso).getTime() - Date.now()) / 86400000;
+
+    if (MID && SECRET) {
+      const co = await api('/api/billing/checkout', { method: 'POST', token, body: JSON.stringify({ plan: 'pro', interval: 'monthly' }) });
+      check('Checkout → 200 with order_id', co.status === 200 && !!co.body?.order_id, `status=${co.status}`);
+      check('Checkout: charged in LKR at Pro price', co.body?.currency === 'LKR' && co.body?.amount === '2290.00', `${co.body?.currency} ${co.body?.amount}`);
+      const order = co.body?.order_id as string;
+
+      const p1 = await notify({ order_id: order, amount: '2290.00', currency: 'LKR', status_code: '2', payment_id: `QA-P1-${Date.now()}`, custom_2: 'team' });
+      check('Notify (custom_2 tampered to team) → 200', p1.status === 200, `status=${p1.status} ${p1.body}`);
+      const after1 = await planNow();
+      check('Plan from server order, not custom_2 → pro', after1?.plan === 'pro', `plan=${after1?.plan}`);
+      check('Payment ends trial', after1?.is_trial === false, `is_trial=${after1?.is_trial}`);
+      const d1 = days(after1?.plan_expires_at);
+      check('Monthly payment → expiry ≈ +1 month', d1 > 26 && d1 < 33, `days=${d1.toFixed(1)}`);
+
+      // A renewal payment extends once; replaying that same payment_id must not extend again.
+      const replayId = `QA-REPLAY-${Date.now()}`;
+      await notify({ order_id: order, amount: '2290.00', currency: 'LKR', status_code: '2', payment_id: replayId });
+      const afterA = await planNow();
+      const rp = await notify({ order_id: order, amount: '2290.00', currency: 'LKR', status_code: '2', payment_id: replayId });
+      const afterB = await planNow();
+      check('Replayed notify → 200', rp.status === 200, `status=${rp.status}`);
+      check('Replayed notify does not extend expiry', afterA?.plan_expires_at === afterB?.plan_expires_at,
+        `${afterA?.plan_expires_at} vs ${afterB?.plan_expires_at}`);
+
+      const wrongAmt = await notify({ order_id: order, amount: '1.00', currency: 'LKR', status_code: '2', payment_id: `QA-AMT-${Date.now()}` });
+      check('Notify with wrong amount → 400', wrongAmt.status === 400, `status=${wrongAmt.status}`);
+      const wrongCur = await notify({ order_id: order, amount: '2290.00', currency: 'USD', status_code: '2', payment_id: `QA-CUR-${Date.now()}` });
+      check('Notify with wrong currency → 400', wrongCur.status === 400, `status=${wrongCur.status}`);
+      const unknown = await notify({ order_id: 'ORDER_unknown_1', amount: '2290.00', currency: 'LKR', status_code: '2', payment_id: `QA-UNK-${Date.now()}` });
+      check('Notify for unknown order → 400', unknown.status === 400, `status=${unknown.status}`);
+      const noPid = await notify({ order_id: order, amount: '2290.00', currency: 'LKR', status_code: '2' });
+      check('Notify success without payment_id → 400', noPid.status === 400, `status=${noPid.status}`);
+
+      const inv = await api('/api/billing/invoices', { token });
+      check('Invoices: paid rows listed in LKR', Array.isArray(inv.body) && inv.body.length >= 1 && inv.body.every((r: any) => r.currency === 'LKR' && r.status === 'active'),
+        JSON.stringify(inv.body?.map((r: any) => `${r.currency}:${r.status}`)));
+
+      // Annual adds 12 months on top of the current expiry.
+      const before = (await planNow())?.plan_expires_at;
+      const coY = await api('/api/billing/checkout', { method: 'POST', token, body: JSON.stringify({ plan: 'pro', interval: 'annual' }) });
+      check('Annual checkout amount = LKR 22,900', coY.body?.amount === '22900.00', `got ${coY.body?.amount}`);
+      const pY = await notify({ order_id: coY.body?.order_id, amount: '22900.00', currency: 'LKR', status_code: '2', payment_id: `QA-PY-${Date.now()}` });
+      const afterY = await planNow();
+      const gain = (new Date(afterY?.plan_expires_at).getTime() - new Date(before).getTime()) / 86400000;
+      check('Annual payment → +12 months on top of current expiry', pY.status === 200 && gain > 360 && gain < 370, `status=${pY.status} gain=${gain.toFixed(1)}d`);
+
+      // Recurring stopped: plan kept until expiry.
+      const stop = await notify({ order_id: coY.body?.order_id, amount: '22900.00', currency: 'LKR', status_code: '2', payment_id: `QA-STOP-${Date.now()}`, message_type: 'RECURRING_STOPPED' });
+      const afterStop = await planNow();
+      check('RECURRING_STOPPED → 200, plan kept, expiry unchanged', stop.status === 200 && afterStop?.plan === 'pro' && afterStop?.plan_expires_at === afterY?.plan_expires_at,
+        `status=${stop.status} plan=${afterStop?.plan}`);
+
+      // Chargeback removes access now.
+      const cb = await notify({ order_id: order, amount: '2290.00', currency: 'LKR', status_code: '-3' });
+      const afterCb = await planNow();
+      check('Chargeback (-3) → plan free', cb.status === 200 && afterCb?.plan === 'free', `status=${cb.status} plan=${afterCb?.plan}`);
+    }
+  }
+
+  // ── 23. Cleanup ──────────────────────────────────────────────────────────────
+  section('23. Cleanup');
   {
     const del = await api('/api/user/account', { method: 'DELETE', token });
     check('DELETE /api/user/account → 200', del.status === 200, `status=${del.status} ${JSON.stringify(del.body)}`);
