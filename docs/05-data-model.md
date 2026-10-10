@@ -1,0 +1,149 @@
+# 05 — Data Model
+
+Source of truth: [supabase_schema.sql](../supabase_schema.sql) (the end state). Changes after the first version are applied with the incremental files in [migrations/](../migrations), run in order in the Supabase SQL editor. Phase 0 added [001_phase0.sql](../migrations/001_phase0.sql).
+
+[firestore.rules](../firestore.rules) is a leftover from the Firebase era and is not used.
+
+## Entity diagram
+
+```
+auth.users (Supabase)
+   │ 1:1  (on delete cascade)
+   ▼
+profiles ──1:N──▶ qr_codes ──1:1──▶ qr_stats
+   │                 │
+   │                 └──1:N──▶ scan_events
+   ├──1:N──▶ subscriptions
+   └──1:N──▶ addon_purchases
+```
+
+All foreign keys `on delete cascade`, so deleting the auth user removes everything. The app also deletes rows manually before that.
+
+## Tables
+
+### `profiles`, one per user
+
+| Column | Type | Written by | Notes |
+|---|---|---|---|
+| `id` | uuid PK → auth.users | `/api/user/plan` (first call) | |
+| `email` | text | first call | |
+| `plan` | text, default `'free'` | PayHere notify | `free`, `pro` or `team`. This is the *stored* plan. The *effective* plan comes from `getLicense()`. |
+| `plan_expires_at` | timestamptz | notify | Past date means the effective plan drops to free |
+| `plan_since` | text | notify (first payment) | ISO string |
+| `is_trial` | bool, default true | first call: true. Notify: false. | |
+| `trial_expires_at` | timestamptz | first call: now + 14 d | |
+| `addons` | jsonb `{extra_scans, extra_qr_codes, custom_domain, api_access}` | notify (add-ons, currently broken) | Added on top of plan limits |
+| `company`, `job_title`, `country` (`LK`), `timezone` (`Asia/Colombo`) | text | `PUT /api/user/profile` | |
+| `monthly_scans` | jsonb `{ "2026-10": 123 }` | every scan (RMW) | Billing usage display |
+| `payhere_order_id` | text | notify | last order |
+| `created_at`, `updated_at` | timestamptz | | `updated_at` is set by the app; there is no trigger |
+
+### `qr_codes`, one per QR
+
+| Column | Type | Notes |
+|---|---|---|
+| `slug` | text PK | 7 chars from `23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ`. Never changes (it is printed). |
+| `user_uid` | uuid → profiles | indexed |
+| `title` | text | default `My QR` |
+| `destination_url` | text | `''` for non-URL types |
+| `qr_type` | text | `url`, `vcard`, `wifi`, `text` or `email` |
+| `is_dynamic` | bool | |
+| `is_active` | bool | |
+| `content_data` | jsonb | type-specific, see below |
+| `style` | jsonb | `{dot_color, bg_color, dot_style, corner_style, error_correction, output_size, logo_url}`. `logo_url` is a **base64 data URL**. |
+| `password_hash` | text | `sha256(password + slug)` hex |
+| `expiry_date` | text | `datetime-local` string, no time zone |
+| `rate_limit` | jsonb `{enabled, max_scans, period:'total'}` | the scan-limit gate |
+| `visitor_rate_limit` | int, default 5 | 0 means unlimited (paid plans) |
+| `visitor_rate_period` | int seconds, default 3600 | |
+| `qr_image_url` | text | unused |
+| `created_at`, `updated_at` | timestamptz | `updated_at` is never set by PUT |
+
+`content_data` by type:
+
+| Type | Fields | Encoded as (static) |
+|---|---|---|
+| vcard | `first_name, last_name, phone, email, company, website` | vCard 3.0 text |
+| wifi | `ssid, password, encryption ('WPA'/'WEP'/'')` | `WIFI:S:…;T:…;P:…;;` |
+| text | `text` | raw text |
+| email | `email, subject, body` | `mailto:…?subject=…&body=…` |
+
+Field values are not escaped in the vCard and WiFi strings. A `;` or `\` in an SSID or name breaks the payload.
+
+### `qr_stats`, one per QR (pre-aggregated)
+
+| Column | Shape |
+|---|---|
+| `slug` | PK → qr_codes |
+| `total_scans`, `unique_scans` | int |
+| `days` | `{ "2026-10-10": 14 }`: total per UTC day, **no per-day uniques** |
+| `countries` | `{ "LK": 10, "US": 2 }` (ISO-2 from `cf.country`) |
+| `browsers`, `os`, `devices` | `{ name: count }` |
+| `monthly_scans` | `{ "2026-10": 140 }`, used for the quota check |
+| `updated_at` | never updated by the app |
+
+Columns the code **reads but which do not exist**: `referrers`, `regions`, `isps`, `languages`, `hours`, `os_versions`, `tls_protocols`, `eu_scans`. Those endpoints always return empty results.
+
+### `scan_events`, one per scan (bots excluded)
+
+| Column | Written | Notes |
+|---|---|---|
+| `id` uuid, `slug`, `scanned_at` | ✅ | indexed on `slug` and `scanned_at desc` |
+| `country`, `device`, `os`, `browser`, `referer`, `is_unique` | ✅ | |
+| `city` | ❌ | always null, shown as "Unknown" |
+| `ip_hash` | ❌ | never written |
+
+`failed_password` attempts are inserted here too. The table has no `status` column, so they look like normal scans in "recent".
+
+This table grows without limit. There is no retention job.
+
+### `subscriptions`, orders and payments
+
+| Column | Notes |
+|---|---|
+| `id` uuid, `uid` → profiles | |
+| `plan` | `pro` or `team` |
+| `interval` | `monthly` or `annual` |
+| `order_id` | `ORDER_{uid}_{ms}`, indexed. One order can have several rows: the first payment plus renewals. |
+| `amount` (text), `currency` | for example `2290.00` and `LKR`. These are checked against the provider's notify. |
+| `provider` | `payhere` (Polar arrives in Phase 1) |
+| `payment_id` | the provider's payment id. **Unique per provider**, which makes notify idempotent. |
+| `status` | `pending` (written at checkout), `active`, `failed`, `cancelled` (recurring stopped; plan kept until expiry) or `chargeback` |
+| `expires_at`, `created_at`, `updated_at` | |
+
+`POST /api/billing/checkout` writes the pending row. `applyPayment()` claims it, or inserts a renewal row. Invoices show every row except `pending` and `failed`.
+
+### `addon_purchases`
+
+`id, uid, addon_id, order_id, amount, created_at`. **Unused.** The add-on checkout and its webhook branch were removed in Phase 0.
+
+## Row-level security
+
+RLS is enabled on every table. The API uses the service-role key, which **bypasses** RLS. Browsers hold only the public anon key.
+
+| Table | Policies (after 001_phase0.sql) | Effect |
+|---|---|---|
+| `profiles` | select where `auth.uid() = id` | Users can read their own row and cannot write it. All writes go through the API. |
+| `qr_codes`, `qr_stats`, `scan_events`, `subscriptions`, `addon_purchases` | none | Deny-all for anon and authenticated users |
+
+Before Phase 0 the "Service role full access … using (true)" policies (with no `to service_role`) let **anyone** with the anon key read and write these tables, and the profile update policy let users set their own plan. The QA run on 2026-10-10 proved both: a QR title was overwritten through the anon key, and a user set `plan='team'`. QA section 20 now checks that both are blocked.
+
+## Workers KV (`QR_CACHE`)
+
+See [doc 03](03-scan-flow-and-gate-engine.md#5-counters-written-to-kv-after-the-gates-pass). Keys: `{slug}`, `ratelimit:{slug}:{hash}`, `uniq:{slug}:{hash}`, `uniq:{slug}:{hash}:pw_ok`.
+
+## Write-path summary
+
+| Event | Writes |
+|---|---|
+| First login | `profiles` upsert |
+| Create QR | `qr_codes` upsert, `qr_stats` upsert (empty maps) |
+| Edit QR | `qr_codes` update, then a KV purge |
+| Scan (success) | `scan_events` insert, `qr_stats` RMW upsert, `profiles.monthly_scans` RMW update, KV puts |
+| Scan (wrong PIN) | `scan_events` insert |
+| Scan limit hit | `qr_codes.is_active=false` (via PUT), KV delete |
+| Checkout | `subscriptions` insert (`pending`) |
+| Payment success | `subscriptions` claim or insert (`active`, unique `payment_id`), `profiles` update |
+| Recurring stopped / chargeback | `subscriptions.status` `cancelled` / `chargeback`; a chargeback also sets `profiles.plan='free'` |
+| Delete QR | delete `qr_codes`, `qr_stats`, then background `scan_events` |
+| Delete account | the above for each QR, plus `profiles`, `subscriptions`, auth user |

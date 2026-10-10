@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../supabase';
 import { apiFetch } from '../lib/api';
+import { SHORT_HOST } from '../lib/qrContent';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -266,7 +267,7 @@ export default function AccountAnalytics() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           <div>
                             <div className="qr-row-name">{qr.title || 'Untitled'}</div>
-                            <div className="qr-row-slug">{window.location.host}/{qr.slug}</div>
+                            <div className="qr-row-slug">{SHORT_HOST}/{qr.slug}</div>
                           </div>
                         </div>
                       </td>

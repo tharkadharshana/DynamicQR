@@ -17,15 +17,7 @@
       "destination": "/api/index.ts"
     },
     {
-      "source": "/qr/(.*)",
-      "destination": "/api/index.ts"
-    },
-    {
-      "source": "/sitemap.xml",
-      "destination": "/api/index.ts"
-    },
-    {
-      "source": "/robots.txt",
+      "source": "/internal/(.*)",
       "destination": "/api/index.ts"
     },
     {

@@ -17,8 +17,9 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       INTERNAL_SECRET: ${{ secrets.INTERNAL_SECRET }}
       HASH_SALT: ${{ secrets.HASH_SALT }}
-      QA_EMAIL: ${{ secrets.QA_EMAIL }}
-      QA_PASSWORD: ${{ secrets.QA_PASSWORD }}
+      # Dummy PayHere merchant: the QA signs notify payloads with the same secret the server checks.
+      PAYHERE_MERCHANT_ID: qa-merchant
+      PAYHERE_SECRET: qa-secret
       NODE_ENV: test
       APP_URL: http://localhost:3000
       PORT: 3000
@@ -36,6 +37,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Typecheck
+        run: npm run lint
+
       - name: Start API server
         run: npm run dev &
 
@@ -52,6 +56,7 @@ jobs:
           echo "Server did not start within 30 seconds"
           exit 1
 
+      # Includes the Worker gate engine (section 15b), run in-process with a fake KV.
       - name: Run QA suite
         run: npx tsx qa.ts
         env:
