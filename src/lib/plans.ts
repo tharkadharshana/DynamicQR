@@ -12,6 +12,8 @@ export interface PlanLimits {
   analytics_days: number;
   custom_domain: boolean;
   api_access: boolean;
+  seats: number;          // users including the owner
+  bulk_create: boolean;   // CSV import + print sheet
 }
 
 export type Currency = 'USD' | 'LKR';
@@ -43,6 +45,8 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     analytics_days: 7,
     custom_domain: false,
     api_access: false,
+    seats: 1,
+    bulk_create: false,
   },
   pro: {
     qr_codes: 100,
@@ -56,6 +60,8 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     analytics_days: 365,  // 12 months on the mid tier
     custom_domain: false,
     api_access: false,
+    seats: 1,
+    bulk_create: false,
   },
   team: {
     qr_codes: 600,
@@ -69,6 +75,8 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     analytics_days: 730,
     custom_domain: true,
     api_access: true,
+    seats: 5,
+    bulk_create: true,
   },
 };
 

@@ -52,6 +52,13 @@ export default {
       return new Response('Purged', { status: 200 });
     }
 
+    // Our nanoid alphabet, 5-12 chars.
+    const isSlug = !FRONTEND_ROUTES.has(slug) && /^[23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ]{5,12}$/.test(slug);
+    // A customer's custom short domain (Team) only serves codes; anything else goes to the main site.
+    if (!isSlug && env.MAIN_HOST && url.host !== env.MAIN_HOST) {
+      return Response.redirect(`https://${env.MAIN_HOST}${url.pathname}${url.search}`, 302);
+    }
+
     // 2. Pass through: empty path, known frontend routes, static files, api calls
     if (
       FRONTEND_ROUTES.has(slug) ||
@@ -65,7 +72,7 @@ export default {
     }
 
     // Validate it looks like a QR slug (our nanoid alphabet, 5-12 chars)
-    if (!/^[23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ]{5,12}$/.test(slug)) {
+    if (!isSlug) {
       return fetch(request);
     }
 
