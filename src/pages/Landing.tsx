@@ -2,16 +2,22 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { loginWithGoogle } from '../supabase';
 import QRCode from 'qrcode';
+import { formatPrice, Currency } from '../lib/plans';
+import { SHORT_DOMAIN, SHORT_HOST } from '../lib/qrContent';
+import { SITE, waLink } from '../lib/site';
 import './Landing.css';
 
+const defaultCurrency = (): Currency => {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone === 'Asia/Colombo' ? 'LKR' : 'USD'; } catch { return 'LKR'; }
+};
+
 export default function Landing() {
-  const [heroUrl, setHeroUrl] = useState('https://yoursite.com');
-  const [cardUrl, setCardUrl] = useState('https://yoursite.com');
-  const [qrSlug, setQrSlug] = useState('x9Km4p');
-  const [scanCount, setScanCount] = useState(1284);
+  const [cardUrl, setCardUrl] = useState('https://yourcafe.lk/menu');
+  const [currency, setCurrency] = useState<Currency>(defaultCurrency);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginLoading, setLoginLoading] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const demoRef = useRef<HTMLCanvasElement>(null);
 
   const handleLogin = async () => {
     setLoginError(null);
@@ -25,77 +31,42 @@ export default function Landing() {
     }
   };
 
-  const slugs = ['x9Km4p','bR3nVq','mZ7wYt','kP2sLf','dN8jXc','hQ5eWr'];
-
   useEffect(() => {
-    // Scroll reveal
+    // Scroll reveal (sections start visible in CSS when reduced motion is on)
     const ro = new IntersectionObserver(entries => {
       entries.forEach((e, i) => {
-        if (e.isIntersecting) {
-          setTimeout(() => e.target.classList.add('on'), i * 70);
-        }
+        if (e.isIntersecting) setTimeout(() => e.target.classList.add('on'), i * 70);
       });
     }, { threshold: 0.1 });
     document.querySelectorAll('.reveal').forEach(el => ro.observe(el));
-
-    // Live scan counter animation
-    const interval = setInterval(() => {
-      if (Math.random() > 0.55) {
-        setScanCount(prev => prev + Math.floor(Math.random() * 4) + 1);
-      }
-    }, 3200);
-
-    return () => {
-      ro.disconnect();
-      clearInterval(interval);
-    };
+    return () => ro.disconnect();
   }, []);
 
+  // Live preview of a real (static) QR for whatever URL the visitor types.
   useEffect(() => {
-    const renderQR = async () => {
-      if (!canvasRef.current) return;
-      try {
-        await QRCode.toCanvas(canvasRef.current, cardUrl || 'https://dynamicqr.app', {
-          width: 120,
-          margin: 1,
-          color: {
-            dark: '#1A1916',
-            light: '#FFFFFF'
-          }
-        });
-      } catch (err) {
-        console.error(err);
-      }
-    };
-    const timer = setTimeout(() => {
-      renderQR();
-      setQrSlug(slugs[Math.floor(Math.random() * slugs.length)]);
-    }, 300);
-    return () => clearTimeout(timer);
+    if (!canvasRef.current) return;
+    QRCode.toCanvas(canvasRef.current, cardUrl || SHORT_DOMAIN, { width: 120, margin: 1, color: { dark: '#1A1916', light: '#FFFFFF' } })
+      .catch(console.error);
   }, [cardUrl]);
 
-  const handleHeroGenerate = () => {
-    setCardUrl(heroUrl);
-    handleLogin();
-  };
+  // A real dynamic code owned by Scnr, so visitors can test a scan end to end.
+  useEffect(() => {
+    if (!demoRef.current || !SITE.demoSlug) return;
+    QRCode.toCanvas(demoRef.current, `${SHORT_DOMAIN}/${SITE.demoSlug}`, { width: 132, margin: 1, color: { dark: '#1A1916', light: '#FFFFFF' } })
+      .catch(console.error);
+  }, []);
 
   const downloadQR = () => {
     if (!canvasRef.current) return;
     const a = document.createElement('a');
-    a.download = 'dynamicqr-qr.png';
+    a.download = 'scnr-qr.png';
     a.href = canvasRef.current.toDataURL('image/png');
     a.click();
   };
 
-  const handleUrlInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setHeroUrl(e.target.value);
-    setCardUrl(e.target.value);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      handleHeroGenerate();
-    }
+  const price = (plan: 'pro' | 'team') => {
+    const p = formatPrice(plan, currency, 'monthly');
+    return currency === 'USD' ? p.replace('$', '') : p.replace('LKR ', '');
   };
 
   return (
@@ -120,12 +91,11 @@ export default function Landing() {
                 <rect x="12" y="12" width="2" height="2" fill="white"/>
               </svg>
             </div>
-            Scnr
+            {SITE.name}
           </a>
           <ul className="nav-links">
             <li><a href="#features">Features</a></li>
             <li><a href="#how">How it works</a></li>
-            <li><a href="#analytics">Analytics</a></li>
             <li><a href="#pricing">Pricing</a></li>
           </ul>
           <div className="nav-right">
@@ -138,26 +108,26 @@ export default function Landing() {
       {/* HERO */}
       <div className="hero">
         <div>
-          <div className="hero-eyebrow"><span className="eyebrow-line"></span> Scnr Platform</div>
-          <h1 className="hero-h1">QR codes that<br/><em>think ahead.</em></h1>
-          <p className="hero-p">Create, customise, and track QR codes in real time with Scnr. Change destinations without reprinting. Know exactly who scans, when, and where.</p>
+          <div className="hero-eyebrow"><span className="eyebrow-line"></span> Built in Colombo</div>
+          <h1 className="hero-h1">Menu, review and offer QR codes<br/><em>for Sri Lankan businesses.</em></h1>
+          <p className="hero-p">Print once. Change your menu, today's offer or Wi-Fi any time, and see when guests scan. Pay in rupees, get help on WhatsApp.</p>
           <div className="hero-form">
-            <input 
-              type="url" 
-              className="hero-input" 
-              placeholder="Paste your URL here…" 
-              value={heroUrl}
-              onChange={handleUrlInput}
-              onKeyDown={handleKeyDown}
+            <input
+              type="url"
+              className="hero-input"
+              placeholder="Paste your menu or website link…"
+              value={cardUrl}
+              onChange={e => setCardUrl(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleLogin(); }}
             />
-            <button className="btn-hero" onClick={handleHeroGenerate}>Start free trial →</button>
+            <button className="btn-hero" onClick={handleLogin}>Start free trial →</button>
           </div>
           <div className="hero-fine">
-            <span>No credit card required</span>
+            <span>No card needed</span>
             <span className="fine-dot"></span>
-            <span>14-day free trial</span>
+            <span>14-day trial</span>
             <span className="fine-dot"></span>
-            <span>Static QRs free forever</span>
+            <span>Free forever: 3 codes, 1 dynamic</span>
           </div>
         </div>
 
@@ -165,8 +135,8 @@ export default function Landing() {
           <div className="card-tabs">
             <button className="tab active">URL</button>
             <button className="tab">vCard</button>
-            <button className="tab">WiFi</button>
-            <button className="tab">PDF</button>
+            <button className="tab">Wi-Fi</button>
+            <button className="tab">Text</button>
           </div>
 
           <div className="qr-live-wrap">
@@ -174,79 +144,36 @@ export default function Landing() {
               <canvas ref={canvasRef} width="100" height="100" style={{ display: 'block', borderRadius: '8px' }}></canvas>
             </div>
             <div className="qr-live-meta">
-              <div className="meta-label">Short link</div>
-              <div className="meta-slug">scnr.tharkak.com/{qrSlug}</div>
+              <div className="meta-label">Preview</div>
+              <div className="meta-slug">Static QR for your link</div>
               <div className="meta-dest">
-                → {cardUrl.replace(/^https?:\/\/(www\.)?/, '').split('/')[0].slice(0, 28) + (cardUrl.replace(/^https?:\/\/(www\.)?/, '').split('/')[0].length > 28 ? '…' : '')}
+                → {cardUrl.replace(/^https?:\/\/(www\.)?/, '').slice(0, 28)}{cardUrl.replace(/^https?:\/\/(www\.)?/, '').length > 28 ? '…' : ''}
               </div>
               <div className="meta-badges">
-                <span className="badge badge-live"><span className="badge-dot"></span>Live</span>
-                <span className="badge badge-type">Dynamic</span>
-                <span className="badge badge-type">Trackable</span>
+                <span className="badge badge-type">Sign in for a dynamic {SHORT_HOST} link</span>
               </div>
             </div>
           </div>
 
           <div className="card-input-group">
             <label className="input-label">Destination URL</label>
-            <input 
-              type="url" 
-              className="card-input" 
-              placeholder="https://yoursite.com" 
-              value={cardUrl} 
-              onChange={handleUrlInput}
-            />
+            <input type="url" className="card-input" placeholder="https://yourcafe.lk/menu" value={cardUrl} onChange={e => setCardUrl(e.target.value)} />
           </div>
 
           <div className="card-downloads">
             <button className="btn-dl" onClick={downloadQR}>↓ PNG</button>
-            <button className="btn-dl">↓ SVG</button>
-            <button className="btn-dl-primary" onClick={handleLogin}>Edit style →</button>
-          </div>
-
-          <div className="card-stats">
-            <div className="cstat">
-              <div className="cstat-val" key={scanCount} style={{ animation: 'countTick 0.25s ease' }}>
-                {scanCount.toLocaleString()}
-              </div>
-              <div className="cstat-key">Total scans</div>
-            </div>
-            <div className="cstat">
-              <div className="cstat-val">73%</div>
-              <div className="cstat-key">Mobile</div>
-            </div>
-            <div className="cstat">
-              <div className="cstat-val">🌏 12</div>
-              <div className="cstat-key">Countries</div>
-            </div>
+            <button className="btn-dl-primary" onClick={handleLogin}>Style &amp; track it →</button>
           </div>
         </div>
       </div>
 
-      {/* LOGOS MARQUEE */}
+      {/* TRUST STRIP — real facts only */}
       <div className="logos-wrap">
-        <div className="logos-label">Trusted by teams at</div>
-        <div className="marquee-track">
-          <span className="m-logo">Shopify</span>
-          <span className="m-logo">Marriott Hotels</span>
-          <span className="m-logo">Eventbrite</span>
-          <span className="m-logo">Starbucks</span>
-          <span className="m-logo">Notion</span>
-          <span className="m-logo">Stripe</span>
-          <span className="m-logo">Airbnb</span>
-          <span className="m-logo">HubSpot</span>
-          <span className="m-logo">Figma</span>
-          <span className="m-logo">Linear</span>
-          <span className="m-logo">Shopify</span>
-          <span className="m-logo">Marriott Hotels</span>
-          <span className="m-logo">Eventbrite</span>
-          <span className="m-logo">Starbucks</span>
-          <span className="m-logo">Notion</span>
-          <span className="m-logo">Stripe</span>
-          <span className="m-logo">Airbnb</span>
-          <span className="m-logo">HubSpot</span>
-          <span className="m-logo">Figma</span>
-          <span className="m-logo">Linear</span>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px', justifyContent: 'center', alignItems: 'center', padding: '0 24px', fontSize: '14px', color: 'var(--ink3)' }}>
+          <span>🇱🇰 Built in {SITE.location}{SITE.founder ? ` by ${SITE.founder}` : ''}</span>
+          {SITE.whatsapp && <a href={waLink(SITE.whatsapp, 'Hi, I have a question about Scnr')} target="_blank" rel="noreferrer">WhatsApp support · {SITE.supportHours}</a>}
+          {SITE.statusUrl && <a href={SITE.statusUrl} target="_blank" rel="noreferrer">● Live status</a>}
+          <span>Marketing and menu QR codes · not a LANKAQR payment replacement</span>
         </div>
       </div>
 
@@ -256,51 +183,51 @@ export default function Landing() {
           <div className="features-header">
             <div>
               <div className="eyebrow reveal">Features</div>
-              <h2 className="section-h2 reveal">Built for businesses<br/>that <em>move fast.</em></h2>
+              <h2 className="section-h2 reveal">One printed code,<br/><em>changed whenever you like.</em></h2>
             </div>
-            <p className="section-p reveal" style={{ maxWidth: '360px' }}>Everything from creation to analytics. Professional QR tools without the enterprise price tag.</p>
+            <p className="section-p reveal" style={{ maxWidth: '360px' }}>For menus, table tents, shop windows, flyers and packaging. Change the destination without reprinting.</p>
           </div>
           <div className="features-grid reveal">
             <div className="feat">
               <div className="feat-num">01</div>
               <div className="feat-icon" style={{ background: 'var(--coral-l)' }}>🔄</div>
-              <div className="feat-name">Dynamic destinations</div>
-              <p className="feat-desc">Change where your QR points anytime — no reprinting. Update menus, campaign URLs, or event pages on the fly.</p>
+              <div className="feat-name">Change it after printing</div>
+              <p className="feat-desc">Update a menu, a promotion or an event page any time. The printed code stays the same; the change is live on the next scan.</p>
               <div className="feat-arrow">↗</div>
             </div>
             <div className="feat">
               <div className="feat-num">02</div>
               <div className="feat-icon" style={{ background: '#E8F5EC' }}>📊</div>
-              <div className="feat-name">Real-time analytics</div>
-              <p className="feat-desc">Every scan logged. Country, city, device, browser, time of day. Understand your audience with precision.</p>
+              <div className="feat-name">Scan statistics</div>
+              <p className="feat-desc">Scans per day, unique visitors, country, device, operating system and browser for every code.</p>
               <div className="feat-arrow">↗</div>
             </div>
             <div className="feat">
               <div className="feat-num">03</div>
               <div className="feat-icon" style={{ background: '#EEF0FF' }}>🎨</div>
-              <div className="feat-name">Style Studio</div>
-              <p className="feat-desc">Custom dot shapes, corner styles, colors, and logo embedding. Branded QR codes in under a minute.</p>
+              <div className="feat-name">Your brand on the code</div>
+              <p className="feat-desc">Colours, dot and corner shapes, and your logo in the centre. Download PNG or SVG up to 1200 px.</p>
               <div className="feat-arrow">↗</div>
             </div>
             <div className="feat">
               <div className="feat-num">04</div>
-              <div className="feat-icon" style={{ background: '#FFF8E8' }}>📱</div>
-              <div className="feat-name">Smart device routing</div>
-              <p className="feat-desc">iOS to the App Store, Android to Google Play — automatically. One QR, two destinations, zero friction.</p>
+              <div className="feat-icon" style={{ background: '#FFF8E8' }}>🛡️</div>
+              <div className="feat-name">Rules on every code</div>
+              <p className="feat-desc">PIN protection, an expiry date, a total scan limit, and limits on repeat scans from the same phone.</p>
               <div className="feat-arrow">↗</div>
             </div>
             <div className="feat">
               <div className="feat-num">05</div>
               <div className="feat-icon" style={{ background: 'var(--coral-l)' }}>🔒</div>
-              <div className="feat-name">Privacy-safe tracking</div>
-              <p className="feat-desc">IP hashing, no personal data retained. Full analytics without compromising your users. GDPR ready.</p>
+              <div className="feat-name">Privacy-respecting</div>
+              <p className="feat-desc">We never store raw IP addresses. No cookies or tracking pixels on scan pages. <Link to="/legal/privacy-policy">Read how scans are counted</Link>.</p>
               <div className="feat-arrow">↗</div>
             </div>
             <div className="feat">
               <div className="feat-num">06</div>
-              <div className="feat-icon" style={{ background: '#E8F5EC' }}>⬇️</div>
-              <div className="feat-name">Export everywhere</div>
-              <p className="feat-desc">PNG, SVG, or print-ready PDF. Every format, every size. Pixel-perfect at any dimension.</p>
+              <div className="feat-icon" style={{ background: '#E8F5EC' }}>⏸️</div>
+              <div className="feat-name">Never deleted on downgrade</div>
+              <p className="feat-desc">If a plan ends, your codes keep working for 30 days. After that, codes above your plan pause — they are never deleted.</p>
               <div className="feat-arrow">↗</div>
             </div>
           </div>
@@ -313,179 +240,54 @@ export default function Landing() {
           <div className="how-inner">
             <div>
               <div className="eyebrow reveal">How it works</div>
-              <h2 className="section-h2 reveal">From link to live QR<br/><em>in 30 seconds.</em></h2>
+              <h2 className="section-h2 reveal">From link to printed code<br/><em>in a few minutes.</em></h2>
               <div className="steps-list reveal">
                 <div className="step-item">
                   <div className="step-n">01</div>
                   <div className="step-content">
-                    <div className="step-title">Paste your destination</div>
-                    <p className="step-desc">Any URL, PDF, contact card, WiFi password, or payment link. Scnr handles every format.</p>
+                    <div className="step-title">Add your destination</div>
+                    <p className="step-desc">A website or menu link, a contact card, a Wi-Fi network, text, or an email.</p>
                   </div>
                 </div>
                 <div className="step-item">
                   <div className="step-n">02</div>
                   <div className="step-content">
-                    <div className="step-title">Customise the style</div>
-                    <p className="step-desc">Add your brand colours, logo, and choose from dot styles. Takes under a minute.</p>
+                    <div className="step-title">Style it</div>
+                    <p className="step-desc">Your colours and logo. Takes under a minute.</p>
                   </div>
                 </div>
                 <div className="step-item">
                   <div className="step-n">03</div>
                   <div className="step-content">
-                    <div className="step-title">Download and deploy</div>
-                    <p className="step-desc">PNG, SVG, or PDF. Print on menus, packaging, signage, cards — anywhere it fits.</p>
+                    <div className="step-title">Download and print</div>
+                    <p className="step-desc">PNG or SVG. Scan a test print on your own phone before a large print run.</p>
                   </div>
                 </div>
                 <div className="step-item">
                   <div className="step-n">04</div>
                   <div className="step-content">
-                    <div className="step-title">Track every scan</div>
-                    <p className="step-desc">Watch the dashboard fill up in real time. Update the destination whenever you need — the QR never changes.</p>
+                    <div className="step-title">Change and track</div>
+                    <p className="step-desc">See scans in your dashboard. Change the destination whenever you need — the printed code never changes.</p>
                   </div>
                 </div>
               </div>
             </div>
-            <div className="how-visual reveal">
-              <div className="hv-header">
-                <span className="hv-title">Scan activity — last 14 days</span>
-                <span className="hv-badge">+31% this week</span>
-              </div>
-              <div className="mini-chart">
-                <div className="mc-bar" style={{ height: '35%' }}></div>
-                <div className="mc-bar" style={{ height: '50%' }}></div>
-                <div className="mc-bar" style={{ height: '42%' }}></div>
-                <div className="mc-bar hi2" style={{ height: '68%' }}></div>
-                <div className="mc-bar" style={{ height: '55%' }}></div>
-                <div className="mc-bar" style={{ height: '60%' }}></div>
-                <div className="mc-bar hi2" style={{ height: '74%' }}></div>
-                <div className="mc-bar" style={{ height: '65%' }}></div>
-                <div className="mc-bar" style={{ height: '70%' }}></div>
-                <div className="mc-bar hi2" style={{ height: '82%' }}></div>
-                <div className="mc-bar" style={{ height: '75%' }}></div>
-                <div className="mc-bar hi2" style={{ height: '88%' }}></div>
-                <div className="mc-bar" style={{ height: '80%' }}></div>
-                <div className="mc-bar hi" style={{ height: '100%' }}></div>
-              </div>
-              <div className="country-row">
-                <span className="country-flag">🇱🇰</span>
-                <span className="country-name">Sri Lanka</span>
-                <div className="country-track"><div className="country-fill" style={{ width: '88%' }}></div></div>
-                <span className="country-count">2,841</span>
-              </div>
-              <div className="country-row">
-                <span className="country-flag">🇺🇸</span>
-                <span className="country-name">United States</span>
-                <div className="country-track"><div className="country-fill" style={{ width: '64%' }}></div></div>
-                <span className="country-count">1,920</span>
-              </div>
-              <div className="country-row">
-                <span className="country-flag">🇬🇧</span>
-                <span className="country-name">United Kingdom</span>
-                <div className="country-track"><div className="country-fill" style={{ width: '42%' }}></div></div>
-                <span className="country-count">1,244</span>
-              </div>
-              <div className="country-row">
-                <span className="country-flag">🇩🇪</span>
-                <span className="country-name">Germany</span>
-                <div className="country-track"><div className="country-fill" style={{ width: '28%' }}></div></div>
-                <span className="country-count">820</span>
-              </div>
-              <div className="country-row">
-                <span className="country-flag">🇸🇬</span>
-                <span className="country-name">Singapore</span>
-                <div className="country-track"><div className="country-fill" style={{ width: '18%' }}></div></div>
-                <span className="country-count">541</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ANALYTICS */}
-      <section className="analytics-section" id="analytics">
-        <div className="section-wrap">
-          <div className="analytics-inner">
-            <div className="analytics-cards reveal">
-              <div className="acard span2">
-                <div className="acard-label">Total scans this month</div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px' }}>
-                  <div className="acard-val">48,291</div>
-                  <div className="acard-change up">↑ 23.4%</div>
-                </div>
-                <div className="sparkline">
-                  <div className="sp-bar" style={{ height: '28%' }}></div>
-                  <div className="sp-bar" style={{ height: '40%' }}></div>
-                  <div className="sp-bar" style={{ height: '33%' }}></div>
-                  <div className="sp-bar" style={{ height: '55%' }}></div>
-                  <div className="sp-bar" style={{ height: '48%' }}></div>
-                  <div className="sp-bar active" style={{ height: '62%' }}></div>
-                  <div className="sp-bar" style={{ height: '70%' }}></div>
-                  <div className="sp-bar" style={{ height: '58%' }}></div>
-                  <div className="sp-bar active" style={{ height: '75%' }}></div>
-                  <div className="sp-bar" style={{ height: '82%' }}></div>
-                  <div className="sp-bar active" style={{ height: '88%' }}></div>
-                  <div className="sp-bar" style={{ height: '78%' }}></div>
-                  <div className="sp-bar active" style={{ height: '95%' }}></div>
-                  <div className="sp-bar active" style={{ height: '100%' }}></div>
-                </div>
-              </div>
-              <div className="acard">
-                <div className="acard-label">Unique visitors</div>
-                <div className="acard-val" style={{ fontSize: '28px' }}>12,040</div>
-                <div className="acard-change up" style={{ marginTop: '6px' }}>↑ 18%</div>
-              </div>
-              <div className="acard">
-                <div className="acard-label">Avg scans/day</div>
-                <div className="acard-val" style={{ fontSize: '28px' }}>1,609</div>
-                <div className="acard-change up" style={{ marginTop: '6px' }}>↑ 9%</div>
-              </div>
-              <div className="acard span2">
-                <div className="acard-label">Device breakdown</div>
-                <div className="donut-wrap" style={{ marginTop: '10px' }}>
-                  <svg className="donut-svg" width="72" height="72" viewBox="0 0 72 72">
-                    <circle cx="36" cy="36" r="28" fill="none" stroke="#F4F3EF" strokeWidth="10"/>
-                    <circle cx="36" cy="36" r="28" fill="none" stroke="#E85D3A" strokeWidth="10"
-                      strokeDasharray="125 51" strokeDashoffset="0" strokeLinecap="round"/>
-                    <circle cx="36" cy="36" r="28" fill="none" stroke="#C4C3BC" strokeWidth="10"
-                      strokeDasharray="47 129" strokeDashoffset="-125" strokeLinecap="round"/>
-                    <circle cx="36" cy="36" r="28" fill="none" stroke="#D4D3CC" strokeWidth="10"
-                      strokeDasharray="12 164" strokeDashoffset="-172" strokeLinecap="round"/>
-                  </svg>
-                  <div className="donut-legend">
-                    <div className="dl-row"><div className="dl-dot" style={{ background: 'var(--coral)' }}></div><span className="dl-name">Mobile</span><span className="dl-pct">71%</span></div>
-                    <div className="dl-row"><div className="dl-dot" style={{ background: 'var(--ink4)' }}></div><span className="dl-name">Desktop</span><span className="dl-pct">27%</span></div>
-                    <div className="dl-row"><div className="dl-dot" style={{ background: 'var(--border2)' }}></div><span className="dl-name">Tablet</span><span className="dl-pct">2%</span></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="reveal">
-              <div className="eyebrow">Analytics</div>
-              <h2 className="section-h2">Know who's scanning,<br/><em>not just how many.</em></h2>
-              <p className="section-p" style={{ marginBottom: '32px' }}>Every scan gives you city-level location, device type, browser, and time of day — all in one clean dashboard.</p>
-              <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '18px' }}>
-                <li style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
-                  <span style={{ width: '22px', height: '22px', background: 'var(--coral-l)', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '12px', color: 'var(--coral)', fontWeight: 700, marginTop: '1px' }}>✓</span>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '2px' }}>City-level geo from every scan</div>
-                    <div style={{ fontSize: '13px', color: 'var(--ink3)', lineHeight: 1.6 }}>Cloudflare provides location data for free — no extra GeoIP subscription needed.</div>
-                  </div>
-                </li>
-                <li style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
-                  <span style={{ width: '22px', height: '22px', background: 'var(--coral-l)', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '12px', color: 'var(--coral)', fontWeight: 700, marginTop: '1px' }}>✓</span>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '2px' }}>Unique visitor detection</div>
-                    <div style={{ fontSize: '13px', color: 'var(--ink3)', lineHeight: 1.6 }}>Privacy-safe fingerprinting distinguishes new from returning without storing personal data.</div>
-                  </div>
-                </li>
-                <li style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
-                  <span style={{ width: '22px', height: '22px', background: 'var(--coral-l)', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '12px', color: 'var(--coral)', fontWeight: 700, marginTop: '1px' }}>✓</span>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '2px' }}>Peak hours heatmap</div>
-                    <div style={{ fontSize: '13px', color: 'var(--ink3)', lineHeight: 1.6 }}>Know exactly when your audience scans. Optimise campaigns and promotions by time of day.</div>
-                  </div>
-                </li>
-              </ul>
+            <div className="how-visual reveal" style={{ display: 'grid', justifyItems: 'center', alignContent: 'center', gap: '14px', textAlign: 'center' }}>
+              {SITE.demoSlug ? (
+                <>
+                  <span className="hv-title">Scan our live demo</span>
+                  <canvas ref={demoRef} width="132" height="132" style={{ borderRadius: '8px', background: '#fff', padding: '8px' }} />
+                  <span style={{ fontSize: '13px', color: 'var(--ink3)' }}>{SHORT_HOST}/{SITE.demoSlug} — a real dynamic code</span>
+                </>
+              ) : (
+                <>
+                  <span className="hv-title">Want help setting up?</span>
+                  <p style={{ fontSize: '14px', color: 'var(--ink3)', maxWidth: '280px' }}>We can design your codes, set the destinations and help with printing.</p>
+                </>
+              )}
+              {SITE.whatsapp && (
+                <a className="btn-plan outline" style={{ textDecoration: 'none', maxWidth: '260px' }} href={waLink(SITE.whatsapp, 'Hi, I would like help setting up QR codes for my business.')} target="_blank" rel="noreferrer">Book setup on WhatsApp</a>
+              )}
             </div>
           </div>
         </div>
@@ -496,113 +298,74 @@ export default function Landing() {
         <div className="section-wrap">
           <div className="pricing-header">
             <div className="eyebrow reveal" style={{ justifyContent: 'center' }}>Pricing</div>
-            <h2 className="section-h2 reveal" style={{ textAlign: 'center', maxWidth: '100%' }}>Start free. <em>Scale when ready.</em></h2>
-            <p className="section-p reveal" style={{ textAlign: 'center', margin: '0 auto' }}>No lock-in. Static QR codes are free forever. Upgrade only when you need dynamic links and analytics.</p>
+            <h2 className="section-h2 reveal" style={{ textAlign: 'center', maxWidth: '100%' }}>Start free. <em>Upgrade when you need more.</em></h2>
+            <p className="section-p reveal" style={{ textAlign: 'center', margin: '0 auto' }}>Every plan has clear limits. Pay yearly and get 2 months free.</p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', marginTop: '18px' }} role="group" aria-label="Currency">
+              {(['LKR', 'USD'] as Currency[]).map(c => (
+                <button key={c} className={`btn-plan ${currency === c ? 'filled' : 'outline'}`} style={{ width: 'auto', padding: '8px 18px' }} aria-pressed={currency === c} onClick={() => setCurrency(c)}>{c}</button>
+              ))}
+            </div>
           </div>
           <div className="pricing-grid reveal">
             <div className="plan">
               <div className="plan-tier">Free</div>
-              <div className="plan-price"><sup>$</sup>0</div>
+              <div className="plan-price"><sup>{currency === 'USD' ? '$' : 'LKR '}</sup>0</div>
               <div className="plan-cycle">forever · no card needed</div>
               <div className="plan-divider"></div>
               <ul className="plan-feats">
-                <li><span className="pf-check">✓</span> 3 static QR codes</li>
-                <li><span className="pf-check">✓</span> PNG + SVG export</li>
-                <li><span className="pf-check">✓</span> Basic styling</li>
-                <li><span className="pf-x">–</span> Dynamic destinations</li>
-                <li><span className="pf-x">–</span> Scan analytics</li>
-                <li><span className="pf-x">–</span> Logo embedding</li>
+                <li><span className="pf-check">✓</span> 3 QR codes, 1 of them dynamic</li>
+                <li><span className="pf-check">✓</span> 1,000 scans / month</li>
+                <li><span className="pf-check">✓</span> 7-day statistics</li>
+                <li><span className="pf-check">✓</span> Colours, shapes and logo</li>
+                <li><span className="pf-x">–</span> PIN, expiry and scan limits</li>
               </ul>
-              <button className="btn-plan outline" onClick={handleLogin}>Create free QR</button>
+              <button className="btn-plan outline" onClick={handleLogin}>Create a free code</button>
             </div>
             <div className="plan featured">
-              <div className="plan-badge">Most popular</div>
+              <div className="plan-badge">For one business</div>
               <div className="plan-tier">Pro</div>
-              <div className="plan-price"><sup>$</sup>7</div>
-              <div className="plan-cycle">per month · 14-day free trial</div>
+              <div className="plan-price"><sup>{currency === 'USD' ? '$' : 'LKR '}</sup>{price('pro')}</div>
+              <div className="plan-cycle">per month · {formatPrice('pro', currency, 'annual')} / year</div>
               <div className="plan-divider"></div>
               <ul className="plan-feats">
-                <li><span className="pf-check">✓</span> Unlimited QR codes</li>
-                <li><span className="pf-check">✓</span> Dynamic destinations</li>
-                <li><span className="pf-check">✓</span> Full scan analytics</li>
-                <li><span className="pf-check">✓</span> Logo + custom colors</li>
-                <li><span className="pf-check">✓</span> 90-day history</li>
-                <li><span className="pf-x">–</span> White-label</li>
+                <li><span className="pf-check">✓</span> 100 QR codes, all dynamic</li>
+                <li><span className="pf-check">✓</span> 75,000 scans / month</li>
+                <li><span className="pf-check">✓</span> 12 months of statistics</li>
+                <li><span className="pf-check">✓</span> PIN, expiry and scan limits</li>
+                <li><span className="pf-check">✓</span> WhatsApp support</li>
               </ul>
-              <button className="btn-plan filled" onClick={handleLogin}>Start free trial</button>
+              <button className="btn-plan filled" onClick={handleLogin}>Start 14-day trial</button>
             </div>
             <div className="plan">
               <div className="plan-tier">Team</div>
-              <div className="plan-price"><sup>$</sup>29</div>
-              <div className="plan-cycle">per month · all Pro features</div>
+              <div className="plan-price"><sup>{currency === 'USD' ? '$' : 'LKR '}</sup>{price('team')}</div>
+              <div className="plan-cycle">per month · {formatPrice('team', currency, 'annual')} / year</div>
               <div className="plan-divider"></div>
               <ul className="plan-feats">
                 <li><span className="pf-check">✓</span> Everything in Pro</li>
-                <li><span className="pf-check">✓</span> Shared workspaces</li>
-                <li><span className="pf-check">✓</span> White-label option</li>
-                <li><span className="pf-check">✓</span> API access</li>
-                <li><span className="pf-check">✓</span> 365-day history</li>
-                <li><span className="pf-check">✓</span> Priority support</li>
+                <li><span className="pf-check">✓</span> 600 QR codes</li>
+                <li><span className="pf-check">✓</span> 500,000 scans / month</li>
+                <li><span className="pf-check">✓</span> 24 months of statistics</li>
               </ul>
-              <button className="btn-plan outline" onClick={handleLogin}>Contact sales</button>
+              <button className="btn-plan outline" onClick={handleLogin}>Start 14-day trial</button>
             </div>
           </div>
-        </div>
-      </section>
-
-      {/* TESTIMONIALS */}
-      <section className="testi-section">
-        <div className="section-wrap">
-          <div className="eyebrow reveal">What people say</div>
-          <h2 className="section-h2 reveal">Loved by <em>10,000+ businesses</em></h2>
-          <div className="testi-grid reveal">
-            <div className="tcard">
-              <div className="tcard-stars">★★★★★</div>
-              <p className="tcard-text">"We updated our restaurant menu <strong>three times in one month</strong> without reprinting a single table card. Worth every cent."</p>
-              <div className="tcard-author">
-                <div className="tcard-av" style={{ background: 'var(--coral-l)', color: 'var(--coral)' }}>AR</div>
-                <div>
-                  <div className="tcard-name">Amara R.</div>
-                  <div className="tcard-role">Restaurant owner, Colombo</div>
-                </div>
-              </div>
-            </div>
-            <div className="tcard">
-              <div className="tcard-stars">★★★★★</div>
-              <p className="tcard-text">"The analytics are <strong>genuinely impressive</strong>. I can see which cities my print ads work in, which to pull. Changed how we budget entirely."</p>
-              <div className="tcard-author">
-                <div className="tcard-av" style={{ background: '#EEF0FF', color: '#5B5BD6' }}>JS</div>
-                <div>
-                  <div className="tcard-name">James S.</div>
-                  <div className="tcard-role">Marketing director, London</div>
-                </div>
-              </div>
-            </div>
-            <div className="tcard">
-              <div className="tcard-stars">★★★★★</div>
-              <p className="tcard-text">"50 property listings, 50 QR codes. I know <strong>exactly which yard signs</strong> get scanned. Best $7 I spend each month — not even close."</p>
-              <div className="tcard-author">
-                <div className="tcard-av" style={{ background: '#E8F5EC', color: 'var(--green)' }}>PK</div>
-                <div>
-                  <div className="tcard-name">Priya K.</div>
-                  <div className="tcard-role">Real estate agent, Singapore</div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <p style={{ textAlign: 'center', fontSize: '13px', color: 'var(--ink3)', marginTop: '18px' }}>
+            Prices in {currency}. {currency === 'LKR' ? 'Paid in rupees through PayHere.' : 'Paid by international card.'}
+          </p>
         </div>
       </section>
 
       {/* FINAL CTA */}
       <div className="cta-final">
         <div className="cta-box reveal">
-          <h2 className="cta-h">Your first QR is<br/><em>free right now.</em></h2>
-          <p className="cta-sub">No credit card. No setup. Paste a link and have a working,<br/>trackable QR code in under 30 seconds.</p>
+          <h2 className="cta-h">Your first code is<br/><em>free right now.</em></h2>
+          <p className="cta-sub">No card. Paste a link and download a working QR code in a few minutes.</p>
           <div className="cta-btns">
             <button className="btn-cta-white" onClick={handleLogin}>Start free trial →</button>
-            <button className="btn-cta-ghost" onClick={handleLogin}>See all features</button>
+            {SITE.whatsapp && <a className="btn-cta-ghost" style={{ textDecoration: 'none' }} href={waLink(SITE.whatsapp, 'Hi, I would like a demo of Scnr.')} target="_blank" rel="noreferrer">Ask on WhatsApp</a>}
           </div>
-          <p className="cta-note">Free forever · 14-day trial on Pro · Cancel anytime</p>
+          <p className="cta-note">Free forever plan · 14-day trial · Cancel any time</p>
         </div>
       </div>
 
@@ -621,16 +384,16 @@ export default function Landing() {
                 <rect x="12" y="12" width="2" height="2" fill="white"/>
               </svg>
             </div>
-            Scnr
+            {SITE.name}
           </a>
           <div className="footer-links">
-            <a href="#features">Features</a>
             <a href="#pricing">Pricing</a>
-            <Link to="/legal/refund-policy">Refund Policy</Link>
+            {SITE.statusUrl && <a href={SITE.statusUrl} target="_blank" rel="noreferrer">Status</a>}
+            <Link to="/legal/refund-policy">Refunds</Link>
             <Link to="/legal/privacy-policy">Privacy</Link>
             <Link to="/legal/terms-and-conditions">Terms</Link>
           </div>
-          <div className="footer-copy">© 2026 Scnr. All rights reserved.</div>
+          <div className="footer-copy">© 2026 {SITE.legalName} · {SITE.location} · {SITE.email}</div>
         </div>
       </footer>
     </div>

@@ -29,9 +29,7 @@ export default function Analytics() {
   const [countries, setCountries] = useState<any[]>([]);
   const [browsers, setBrowsers] = useState<any[]>([]);
   const [osData, setOsData] = useState<any[]>([]);
-  const [referrers, setReferrers] = useState<any[]>([]);
   const [recentScans, setRecentScans] = useState<any[]>([]);
-  const [advanced, setAdvanced] = useState<any>(null);
   const [qrDetails, setQrDetails] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
@@ -117,7 +115,6 @@ export default function Analytics() {
           apiFetch(`${baseUrl}/countries${queryParams}`),
           apiFetch(`${baseUrl}/browsers${queryParams}`),
           apiFetch(`${baseUrl}/os${queryParams}`),
-          apiFetch(`${baseUrl}/referrers${queryParams}`),
           apiFetch(`${baseUrl}/recent${queryParams}`),
         ];
 
@@ -132,22 +129,8 @@ export default function Analytics() {
         setCountries(Array.isArray(results[2]) ? results[2] : []);
         setBrowsers(Array.isArray(results[3]) ? results[3] : []);
         setOsData(Array.isArray(results[4]) ? results[4] : []);
-        setReferrers(Array.isArray(results[5]) ? results[5] : []);
-        setRecentScans(Array.isArray(results[6]) ? results[6] : []);
-        
-        if (selectedSlugs.length === 1) {
-          setQrDetails(results[7]);
-          try {
-            const advRes = await apiFetch(`${baseUrl}/advanced`);
-            setAdvanced(advRes);
-          } catch (e) {
-            console.error("Error fetching advanced analytics:", e);
-            setAdvanced(null);
-          }
-        } else {
-          setQrDetails(null);
-          setAdvanced(null);
-        }
+        setRecentScans(Array.isArray(results[5]) ? results[5] : []);
+        setQrDetails(selectedSlugs.length === 1 ? results[6] : null);
       } catch (error) {
         console.error("Error fetching analytics:", error);
       } finally {
@@ -412,8 +395,8 @@ export default function Analytics() {
         {/* Heatmap + Browsers */}
         <div className="grid-2 mb16">
           <div className="card">
-            <div className="section-title mb16">Devices & Referrers</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div className="section-title mb16">Devices <span style={{ fontSize: '11px', color: 'var(--text3)', fontWeight: 400 }}>· all time</span></div>
+            <div>
               <div>
                 <div className="card-title">Device</div>
                 <div style={{ height: '160px', marginTop: '16px', minHeight: '160px', minWidth: 0 }}>
@@ -450,24 +433,6 @@ export default function Analytics() {
                       <span style={{ color: 'var(--text2)', textTransform: 'capitalize' }}>{d.device_type} ({d.pct}%)</span>
                     </div>
                   ))}
-                </div>
-              </div>
-              <div>
-                <div className="card-title">Referrer</div>
-                <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {referrers.length === 0 ? (
-                    <p style={{ fontSize: '13px', color: 'var(--text3)' }}>No referrer data available.</p>
-                  ) : (
-                    referrers.slice(0, 5).map((ref, i) => (
-                      <div key={ref.referrer} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '13px' }}>
-                        <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '120px' }} title={ref.referrer}>{ref.referrer}</span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontWeight: 500 }}>{ref.count}</span>
-                          <span style={{ color: 'var(--text3)', width: '30px', textAlign: 'right' }}>{ref.pct}%</span>
-                        </div>
-                      </div>
-                    ))
-                  )}
                 </div>
               </div>
             </div>

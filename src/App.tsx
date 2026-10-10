@@ -8,7 +8,6 @@ import Dashboard from './pages/Dashboard';
 import CreateQR from './pages/CreateQR';
 import Analytics from './pages/Analytics';
 import AccountAnalytics from './pages/AccountAnalytics';
-import ApiDocs from './pages/ApiDocs';
 import Billing from './pages/Billing';
 import Landing from './pages/Landing';
 import Pricing from './pages/Pricing';
@@ -95,7 +94,6 @@ export default function App() {
                 <Route path="edit/:id" element={<CreateQR />} />
                 <Route path="analytics" element={<AccountAnalytics />} />
                 <Route path="analytics/:slug" element={<Analytics />} />
-                <Route path="api-docs" element={<ApiDocs />} />
                 <Route path="billing" element={<Billing />} />
                 <Route path="pricing" element={<Pricing />} />
                 <Route path="settings" element={<SettingsPage />} />

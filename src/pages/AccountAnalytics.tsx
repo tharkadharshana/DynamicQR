@@ -96,12 +96,10 @@ export default function AccountAnalytics() {
           <div className="stat-card">
             <div className="stat-label">Total scans</div>
             <div className="stat-val">{accountStats?.total_scans?.toLocaleString() || 0}</div>
-            <span className="stat-change up">↑ 0%</span>
           </div>
           <div className="stat-card">
             <div className="stat-label">Unique visitors</div>
             <div className="stat-val">{accountStats?.unique_visitors?.toLocaleString() || 0}</div>
-            <span className="stat-change up">↑ 0%</span>
           </div>
           <div className="stat-card">
             <div className="stat-label">Avg scans / day</div>

@@ -169,7 +169,6 @@ export default function Dashboard() {
               Total Scans
             </div>
             <div className="stat-val">{totalScans.toLocaleString()}</div>
-            <span className="stat-change up">↑ 0% vs last month</span>
           </div>
           <div className="stat-card">
             <div className="stat-label">
@@ -177,7 +176,6 @@ export default function Dashboard() {
               Unique Visitors
             </div>
             <div className="stat-val">{uniqueVisitors.toLocaleString()}</div>
-            <span className="stat-change up">↑ 0% vs last month</span>
           </div>
           <div className="stat-card">
             <div className="stat-label">
@@ -429,8 +427,8 @@ export default function Dashboard() {
         {/* Recent activity */}
         <div className="card">
           <div className="section-row">
-            <span className="section-title">Live scan feed</span>
-            <span style={{ fontSize: '11px', color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: '6px' }}><span className="live-dot"></span> Real-time</span>
+            <span className="section-title">Recent scans</span>
+            <span style={{ fontSize: '11px', color: 'var(--text3)' }}>Updated when you open this page</span>
           </div>
           {recentScans.length === 0 ? (
             <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text3)' }}>No recent scans</div>
