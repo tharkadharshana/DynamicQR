@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Check, X, Zap, Crown, Building2, Loader2, ExternalLink } from 'lucide-react';
 import { apiFetch } from '../lib/api';
-import { formatPrice } from '../lib/plans';
+import { formatPrice, Currency, BillingInterval } from '../lib/plans';
+import { startCheckout } from '../lib/checkout';
+import { useUI } from '../shared/UIContext';
 
 const PLANS = [
   {
@@ -16,13 +18,11 @@ const PLANS = [
     iconColor: 'text-zinc-400',
     borderColor: 'border-white/[0.06]',
     features: [
-      { text: '3 QR codes', included: true },
-      { text: 'PNG + SVG export', included: true },
-      { text: 'Basic styling', included: true },
-      { text: '7-day analytics', included: true },
-      { text: 'Dynamic destinations', included: false },
-      { text: 'Logo embedding', included: false },
-      { text: 'Custom domain', included: false },
+      { text: '3 QR codes, 1 dynamic', included: true },
+      { text: '1,000 scans / month', included: true },
+      { text: '7-day statistics', included: true },
+      { text: 'Colours, shapes and logo', included: true },
+      { text: 'PIN, expiry and scan limits', included: false },
     ],
     cta: 'Current Plan',
     ctaStyle: 'border border-white/[0.08] text-zinc-400 cursor-default',
@@ -39,13 +39,12 @@ const PLANS = [
     borderColor: 'border-violet-500/30',
     badge: 'Most Popular',
     features: [
-      { text: 'Unlimited QR codes', included: true },
-      { text: 'Dynamic destinations', included: true },
-      { text: 'Full scan analytics', included: true },
-      { text: 'Logo + custom colors', included: true },
-      { text: '90-day history', included: true },
-      { text: 'Priority support', included: true },
-      { text: 'Custom domain', included: false },
+      { text: '100 QR codes, all dynamic', included: true },
+      { text: '75,000 scans / month', included: true },
+      { text: '12 months of statistics', included: true },
+      { text: 'PIN, expiry and scan limits', included: true },
+      { text: 'Visitor Guard settings', included: true },
+      { text: 'WhatsApp support', included: true },
     ],
     cta: 'Upgrade to Pro',
     ctaStyle: 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40',
@@ -62,12 +61,9 @@ const PLANS = [
     borderColor: 'border-amber-500/20',
     features: [
       { text: 'Everything in Pro', included: true },
-      { text: 'Shared workspaces', included: true },
-      { text: 'White-label option', included: true },
-      { text: 'API access', included: true },
-      { text: '365-day history', included: true },
-      { text: 'Custom domain', included: true },
-      { text: 'Bulk QR generation', included: true },
+      { text: '600 QR codes', included: true },
+      { text: '500,000 scans / month', included: true },
+      { text: '24 months of statistics', included: true },
     ],
     cta: 'Upgrade to Team',
     ctaStyle: 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-lg shadow-amber-500/20 hover:shadow-amber-500/35',
@@ -75,58 +71,30 @@ const PLANS = [
 ];
 
 export default function Pricing() {
-  const [currentPlan, setCurrentPlan] = useState('free');
+  const [planData, setPlanData] = useState<any>(null);
   const [loading, setLoading] = useState<string | null>(null);
+  const [currency, setCurrency] = useState<Currency>('LKR');
+  const [interval, setInterval] = useState<BillingInterval>('monthly');
+  const currentPlan = planData?.is_trial ? 'trial' : planData?.plan || 'free';
+  const { showToast } = useUI();
 
   useEffect(() => {
-    const fetchPlan = async () => {
-      try {
-        const data = await apiFetch('/api/user/plan');
-        setCurrentPlan(data.plan || 'free');
-      } catch (err) {
-        console.error('Failed to fetch plan:', err);
-      }
-    };
-    fetchPlan();
+    apiFetch('/api/user/plan')
+      .then(data => {
+        setPlanData(data);
+        setCurrency(data?.profile?.country && data.profile.country !== 'LK' ? 'USD' : 'LKR');
+      })
+      .catch(err => console.error('Failed to fetch plan:', err));
   }, []);
 
   const handleUpgrade = async (planId: string) => {
     if (planId === 'free' || planId === currentPlan) return;
     setLoading(planId);
-
     try {
-      const data = await apiFetch('/api/billing/checkout', {
-        method: 'POST',
-        body: JSON.stringify({ plan: planId, interval: 'monthly' })
-      });
-
-      // Build PayHere checkout form and submit
-      const form = document.createElement('form');
-      form.method = 'POST';
-      // Use sandbox if explicitly flag is set, otherwise default to production
-      form.action = data.is_sandbox ? 'https://sandbox.payhere.lk/pay/checkout' : 'https://www.payhere.lk/pay/checkout';
-
-      const fields = [
-        'merchant_id', 'return_url', 'cancel_url', 'notify_url',
-        'order_id', 'items', 'currency', 'amount', 'first_name',
-        'last_name', 'email', 'phone', 'address', 'city', 'country',
-        'hash', 'custom_1', 'custom_2', 'recurrence', 'duration'
-      ];
-
-      fields.forEach(field => {
-        if (data[field] !== undefined) {
-          const input = document.createElement('input');
-          input.type = 'hidden';
-          input.name = field;
-          input.value = String(data[field]);
-          form.appendChild(input);
-        }
-      });
-
-      document.body.appendChild(form);
-      form.submit();
-    } catch (err) {
+      await startCheckout(planId as 'pro' | 'team', interval, currency, planData);
+    } catch (err: any) {
       console.error('Checkout error:', err);
+      showToast('error', err?.message || 'Could not start checkout');
       setLoading(null);
     }
   };
@@ -137,8 +105,23 @@ export default function Pricing() {
       <div className="text-center mb-10">
         <h1 className="text-2xl font-bold text-white mb-2">Choose Your Plan</h1>
         <p className="text-sm text-zinc-500 max-w-md mx-auto">
-          Start free. Upgrade when you need unlimited QR codes, advanced analytics, and custom branding.
+          Start free. Upgrade when you need more codes, scans and statistics. Yearly billing gives 2 months free.
         </p>
+        <div className="flex flex-wrap justify-center gap-2 mt-5">
+          {(['LKR', 'USD'] as Currency[]).map(c => (
+            <button key={c} onClick={() => setCurrency(c)} aria-pressed={currency === c}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${currency === c ? 'bg-white text-zinc-900 border-white' : 'border-white/[0.1] text-zinc-400'}`}>
+              {c === 'LKR' ? 'LKR · PayHere' : 'USD · card'}
+            </button>
+          ))}
+          <span className="w-2" />
+          {(['monthly', 'annual'] as BillingInterval[]).map(i => (
+            <button key={i} onClick={() => setInterval(i)} aria-pressed={interval === i}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${interval === i ? 'bg-white text-zinc-900 border-white' : 'border-white/[0.1] text-zinc-400'}`}>
+              {i === 'monthly' ? 'Monthly' : 'Yearly · 2 months free'}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Plans Grid */}
@@ -146,7 +129,7 @@ export default function Pricing() {
         {PLANS.map(plan => {
           const Icon = plan.icon;
           const isCurrentPlan = currentPlan === plan.id;
-          const isDowngrade = (currentPlan === 'team' && plan.id === 'pro') || (currentPlan !== 'free' && plan.id === 'free');
+          const isDowngrade = (currentPlan === 'team' && plan.id === 'pro') || (['pro', 'team'].includes(currentPlan) && plan.id === 'free');
 
           return (
             <div
@@ -173,8 +156,8 @@ export default function Pricing() {
               <p className="text-xs text-zinc-500 mb-4">{plan.description}</p>
 
               <div className="flex items-baseline gap-0.5 mb-5">
-                <span className="text-3xl font-bold text-white">{plan.id === 'free' ? 'Free' : formatPrice(plan.id as 'pro' | 'team', 'LKR', 'monthly')}</span>
-                <span className="text-sm text-zinc-500">{plan.cycle}</span>
+                <span className="text-3xl font-bold text-white">{plan.id === 'free' ? 'Free' : formatPrice(plan.id as 'pro' | 'team', currency, interval)}</span>
+                <span className="text-sm text-zinc-500">{plan.id === 'free' ? plan.cycle : interval === 'annual' ? '/year' : '/month'}</span>
               </div>
 
               <ul className="flex-1 space-y-2.5 mb-6">
@@ -225,9 +208,10 @@ export default function Pricing() {
         <div className="space-y-3">
           {[
             { q: 'Can I change plans anytime?', a: 'Yes. Upgrade or downgrade anytime. Changes take effect immediately.' },
-            { q: 'What happens when I downgrade?', a: 'You keep all existing QR codes, but new creation limits will apply. Analytics history remains accessible.' },
-            { q: 'Do you offer refunds?', a: 'Yes, within the first 7 days of any paid plan. No questions asked.' },
-            { q: 'What payment methods do you accept?', a: 'We accept Visa, Mastercard, and local bank payments through PayHere.' },
+            { q: 'What happens when a plan ends?', a: 'Nothing is deleted. All codes keep working for 30 days. After that, dynamic codes above the Free plan pause until you upgrade again — the printed link stays the same.' },
+            { q: 'Do you offer refunds?', a: 'Yes, a full refund within 7 days of your first payment. See the Refund Policy.' },
+            { q: 'What payment methods do you accept?', a: 'LKR: cards and local bank payments through PayHere. USD: international cards.' },
+            { q: 'Is this a payment QR?', a: 'No. Scnr makes marketing, menu and campaign codes. It does not replace LANKAQR.' },
           ].map(faq => (
             <div key={faq.q} className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4">
               <h3 className="text-sm font-medium text-zinc-200 mb-1">{faq.q}</h3>
