@@ -34,7 +34,9 @@
  *  24. Plan limits (caps, 365-day history), free dynamic pilot, lapse grace → pause (API + Worker)
  *  25. Guest pages (EN/SI/TA, escaping, unsafe links, branding, lang switch not a scan), dynamic
  *      vCard/Text/Email/Wi-Fi at the edge, content_data edits + size cap, activation events, waLink
- *  26. Cleanup
+ *  26. Retention: atomic record_scan (10 concurrent), real per-day uniques, hours, events.csv,
+ *      range clamp, cron auth, digest dry run + opt-out, RPC not callable by anon, list hygiene
+ *  27. Cleanup
  */
 import 'dotenv/config';
 import crypto from 'crypto';
@@ -247,6 +249,7 @@ async function run() {
       [`/api/analytics/${testSlug}/os`,         b => Array.isArray(b),                               'os array'],
       [`/api/analytics/${testSlug}/browsers`,   b => Array.isArray(b),                               'browsers array'],
       [`/api/analytics/${testSlug}/recent`,     b => Array.isArray(b),                               'recent array'],
+      [`/api/analytics/${testSlug}/hours`,      b => Array.isArray(b) && b.length === 24,            'hours: 24 buckets'],
     ];
     for (const [route, validate, label] of analyticsRoutes) {
       const r = await api(route, { token });
@@ -268,6 +271,7 @@ async function run() {
       `/api/analytics/account/${uid}/summary`,
       `/api/analytics/account/${uid}/recent`,
       `/api/analytics/account/${uid}/performance`,
+      `/api/analytics/account/${uid}/hours`,
     ];
     for (const route of routes) {
       const r = await api(route, { token });
@@ -1151,8 +1155,62 @@ async function run() {
     check('waLink builds wa.me/<digits>?text=', waLink('+94 (77) 123-4567', 'Hi there') === 'https://wa.me/94771234567?text=Hi%20there');
   }
 
-  // ── 26. Cleanup ──────────────────────────────────────────────────────────────
-  section('26. Cleanup');
+  // ── 26. Retention: atomic counters, real uniques, hours, CSV, crons, digest ──
+  section('26. Retention — atomic record_scan, per-day uniques, hours, CSV, cron auth, digest');
+  if (testSlug) {
+    await admin.from('profiles').update({ plan: 'pro', plan_expires_at: new Date(Date.now() + 30 * 86400000).toISOString(), is_trial: false }).eq('id', uid);
+    const fresh = await mkQR({ destination_url: 'https://example.com/retention', title: 'QA retention' });
+    if (fresh) {
+      // 10 concurrent scans must all count (record_scan is one transaction per scan).
+      const scan = (i: number) => api('/internal/scan', { method: 'POST', internal: true, body: JSON.stringify({
+        slug: fresh, ip: `10.9.0.${i}`, ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Safari/604.1', country: 'LK', is_unique: i < 4, status: 'success' }) });
+      await Promise.all(Array.from({ length: 10 }, (_, i) => scan(i)));
+      await sleep(600);
+      const sum = (await api(`/api/analytics/${fresh}/summary`, { token })).body;
+      check('10 concurrent scans → total_scans = 10 (atomic)', sum?.total_scans === 10, `got ${sum?.total_scans}`);
+      const today = new Date().toISOString().slice(0, 10);
+      const ts = (await api(`/api/analytics/${fresh}/timeseries?days=7`, { token })).body;
+      const t = Array.isArray(ts) ? ts.find((d: any) => d.date === today) : null;
+      check('Per-day uniques are real (4 of 10)', t?.unique_scans === 4, JSON.stringify(t));
+      const hrs = (await api(`/api/analytics/${fresh}/hours`, { token })).body;
+      const nowHour = new Date().getUTCHours();
+      check('Hours: 24 buckets, current UTC hour has the scans', Array.isArray(hrs) && hrs.length === 24 && hrs[nowHour]?.scans >= 10, JSON.stringify(hrs?.[nowHour]));
+      const acctHrs = (await api(`/api/analytics/account/${uid}/hours`, { token })).body;
+      check('Account hours: 24 buckets', Array.isArray(acctHrs) && acctHrs.length === 24);
+
+      const csv = await rawGet(`/api/analytics/${fresh}/events.csv`, { headers: { Authorization: `Bearer ${token}` } });
+      check('events.csv → text/csv with header + rows', csv.status === 200 && (csv.headers.get('content-type') || '').includes('text/csv') && csv.body.startsWith('scanned_at,country') && csv.body.split('\n').length >= 11, `status=${csv.status}`);
+
+      // Custom range is clamped to the plan's history (Pro = 365 days).
+      const longRange = (await api(`/api/analytics/${fresh}/timeseries?start=2000-01-01&end=${today}`, { token })).body;
+      check('Custom range clamped to plan history (≤ 365 days)', Array.isArray(longRange) && longRange.length === 365, `got ${longRange?.length}`);
+
+      // Digest (dry run builds without sending) and opt-out.
+      const CRON = process.env.CRON_SECRET || '';
+      check('CRON_SECRET set for QA', !!CRON);
+      const noAuth = await api('/api/cron/cleanup');
+      check('Cron without secret → 401', noAuth.status === 401, `got ${noAuth.status}`);
+      const clean = await api('/api/cron/cleanup', { headers: { Authorization: `Bearer ${CRON}` } });
+      check('Cleanup cron with secret → 200 {deleted}', clean.status === 200 && typeof clean.body?.deleted === 'number', `status=${clean.status}`);
+      const dg = await api(`/api/cron/digest?dry=1&uid=${uid}`, { headers: { Authorization: `Bearer ${CRON}` } });
+      const mine = dg.body?.digests?.[0];
+      check('Digest dry run → this week\'s scans and top code', dg.status === 200 && mine?.total >= 10 && typeof mine?.busiestHour === 'number', `status=${dg.status} ${JSON.stringify(mine)}`);
+      await api('/api/user/profile', { method: 'PUT', token, body: JSON.stringify({ company: 'QA Corp', digestOptOut: true }) });
+      const off = (await api('/api/user/plan', { token })).body;
+      const dg2 = await api(`/api/cron/digest?dry=1&uid=${uid}`, { headers: { Authorization: `Bearer ${CRON}` } });
+      check('Digest opt-out saved and respected', off?.profile?.digestOptOut === true && (dg2.body?.digests || []).length === 0, `optOut=${off?.profile?.digestOptOut} n=${dg2.body?.digests?.length}`);
+      await del(fresh);
+    }
+    // The scan RPC must not be callable with the public anon key.
+    const pub = createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false } });
+    const { error: rpcErr } = await pub.rpc('record_scan', { p_slug: testSlug, p_owner: null, p_country: 'XX', p_device: 'desktop', p_browser: 'Other', p_os: 'Unknown', p_referer: '', p_is_unique: true, p_failed: false });
+    check('record_scan not callable with the anon key', !!rpcErr, 'anon call succeeded');
+    const list = await api('/api/qr', { token });
+    check('GET /api/qr list: no password_hash on any row', Array.isArray(list.body) && list.body.every((q: any) => !('password_hash' in q)));
+  }
+
+  // ── 27. Cleanup ──────────────────────────────────────────────────────────────
+  section('27. Cleanup');
   {
     const del = await api('/api/user/account', { method: 'DELETE', token });
     check('DELETE /api/user/account → 200', del.status === 200, `status=${del.status} ${JSON.stringify(del.body)}`);

@@ -24,6 +24,7 @@ jobs:
       POLAR_WEBHOOK_SECRET: qa-polar-secret
       POLAR_PRODUCT_PRO_MONTHLY: prod_qa_pro_monthly
       # QA runs every request from one IP; production keeps the defaults (300 / 60 per 15 min).
+      CRON_SECRET: qa-cron-secret
       RATE_LIMIT_MAX: '5000'
       RATE_LIMIT_WRITE_MAX: '1000'
       NODE_ENV: test
