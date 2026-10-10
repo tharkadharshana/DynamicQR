@@ -48,11 +48,11 @@ On Vercel each serverless instance keeps its own counters, so these limits are s
 | Method / path | Auth | Purpose |
 |---|---|---|
 | `GET /api/user/plan` | user | **Main bootstrap call.** Creates the profile with a 14-day trial on first call. Returns the license plus usage. |
-| `PUT /api/user/profile` | user, write | Body `{company, jobTitle, country, timezone}` |
+| `PUT /api/user/profile` | user, write | Body `{company, jobTitle, country, timezone, digestOptOut?}` |
 | `POST /api/user/revoke-sessions` | user, write | `supabase.auth.admin.signOut(jwt,'global')` |
 | `GET /api/user/export` | user | JSON attachment: profile subset and all QR rows (`password_hash` replaced by `has_password`) |
 | `PUT /api/user/deactivate-all` | user, write | Sets `is_active=false` on every code and purges each one from the Worker KV. Returns `{success, count}`. |
-| `DELETE /api/user/account` | user, write | Deletes QRs, stats, profile and subscriptions, then the auth user. Deletes `scan_events` in the background. |
+| `DELETE /api/user/account` | user, write | Deletes the auth user. The cascade removes the profile, codes, stats, events and subscriptions. Then it purges each code from the edge. |
 
 `GET /api/user/plan` response:
 
@@ -106,7 +106,7 @@ The route returns `201` with the stored `qr_codes` row.
 
 ### `GET /api/qr` (user)
 
-Returns an array of the user's `qr_codes` rows. Each row has `id` (= slug) and `stats` (the `qr_stats` row, or `null`).
+Returns an array of the user's `qr_codes` rows (`password_hash` removed, `has_password` added). Each row has `id` (= slug) and `stats` (the `qr_stats` row, or `null`).
 
 ### `GET /api/qr/:slug` (user and owner)
 
@@ -126,41 +126,40 @@ Returns `{ success: true, slug }`.
 
 ### `DELETE /api/qr/:slug` (user and owner, write)
 
-Deletes `qr_codes` and `qr_stats`. Then, without waiting, it calls `purgeEdge(slug)` (`{APP_URL}/internal/purge/{slug}`, handled by the Worker) and deletes `scan_events` in batches of 500.
+Deletes the `qr_codes` row. `qr_stats` and `scan_events` go with it (on delete cascade). Then it calls `purgeEdge(slug)` without waiting.
 
 ### `POST /api/events` (user)
 
 Body `{ name: 'print_opened' | 'kit_started', slug? }`. Records a client-side funnel event. An unknown name returns 400. Server-side events (`qr_created`, `first_scan`, `offer_changed`, `paid`) are written automatically.
 
-## Analytics: one QR (user and owner)
+## Analytics
 
-All of these read the single `qr_stats` row, except `recent`, which reads `scan_events`.
+One set of views is served in two scopes:
 
-| Path | Query | Response |
-|---|---|---|
-| `/api/analytics/:slug/summary` | | `{total_scans, unique_visitors, mobile_pct, first_scan, last_scan}`. First and last are day keys. |
-| `/api/analytics/:slug/timeseries` | `days=N` (capped to plan `analytics_days`) **or** `start&end` (**not capped**) | `[{date, total_scans, unique_scans}]` with zero-filled days. `unique_scans` is estimated. |
-| `/api/analytics/:slug/devices` | | `[{device_type, count, pct}]` |
-| `/api/analytics/:slug/countries` | | top 10 `[{country, scans, unique_visitors: 0}]` |
-| `/api/analytics/:slug/os` | | `[{os, count, pct}]` |
-| `/api/analytics/:slug/browsers` | | `[{browser, count, pct}]` |
-| `/api/analytics/:slug/recent` | | last 10 events `[{id, scanned_at, country, city:'Unknown', device_type, os, browser, referrer, is_unique}]` |
+- `/api/analytics/:slug/<view>` for one code you own
+- `/api/analytics/account/:uid/<view>` for your account, where `:uid` must be the caller, with optional `?slugs=a,b,c`
 
-## Analytics: whole account (user, `:uid` must equal the caller)
+`/api/analytics/account/:uid` is the same as `/summary`. Every view reads `qr_stats`, except `recent`, which reads `scan_events`.
 
-Every route accepts `?slugs=a,b,c` to filter to some of the user's codes. Each one loads all the user's `qr_codes`, then their `qr_stats` in chunks of 30.
-
-| Path | Response |
+| View | Response |
 |---|---|
-| `/api/analytics/account/:uid` | `{total_scans, unique_visitors, total_qrs, active_qrs, first_scan}` |
-| `…/summary` | `{total_scans, unique_visitors, total_qrs}` |
-| `…/timeseries` | same as per-QR, summed |
-| `…/devices` | `[{device_type, count, pct}]` (mobile, desktop, tablet with count > 0) |
-| `…/countries` | top 10 `[{country, scans, unique_visitors:0}]` |
-| `…/browsers` | `[{browser, count}]` |
-| `…/os` | `[{os, count}]` |
-| `…/recent` | the 20 newest events across the codes (20 per chunk, then merged) |
-| `…/performance` | `[{id, slug, title, total_scans, unique_scans}]` sorted by scans. N+1 queries (one per QR). |
+| `summary` | `{total_scans, unique_visitors, mobile_pct, total_qrs, active_qrs, first_scan, last_scan}` |
+| `timeseries` | `?days=N` or `?start&end`. **Both are capped to the plan's history** (`analytics_days`). Returns `[{date, total_scans, unique_scans}]` with zero-filled days. Uniques are real from `days_unique` (since migration 003); older days are estimated. |
+| `devices` | `[{device_type, count, pct}]` |
+| `countries` | top 10 `[{country, scans, unique_visitors: 0}]` |
+| `os`, `browsers` | `[{os|browser, count, pct}]` |
+| `hours` | 24 rows `[{hour: 0–23 (UTC), scans}]`, all time |
+| `performance` | `[{id, slug, title, total_scans, unique_scans}]`, by scans |
+| `recent` | the 20 newest events `[{id, slug, scanned_at, country, city, device_type, os, browser, referrer, is_unique}]` |
+
+`GET /api/analytics/:slug/events.csv` returns raw scans for one code (newest 10,000) as `text/csv`.
+
+## Cron (Vercel Cron, `Authorization: Bearer $CRON_SECRET`)
+
+| Route | Schedule (vercel.json, UTC) | Does |
+|---|---|---|
+| `GET /api/cron/cleanup` | `30 21 * * *` (03:00 Colombo) | Deletes `scan_events` older than 400 days. Returns `{deleted}`. |
+| `GET /api/cron/digest` | `30 2 * * 1` (Mon 08:00 Colombo) | Emails every opted-in owner who has codes: last 7 days' scans, the busiest hour in their time zone, and the top code (`buildDigest()` in [src/lib/digest.ts](../src/lib/digest.ts), sent through Resend). `?dry=1` builds without sending, `?uid=` limits to one account. With no `RESEND_API_KEY` it returns `skipped`. |
 
 ## Billing
 

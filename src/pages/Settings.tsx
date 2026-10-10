@@ -29,6 +29,7 @@ export default function Settings() {
   const [timezone, setTimezone] = useState('Asia/Colombo');
   
   const [savingProfile, setSavingProfile] = useState(false);
+  const [digestOn, setDigestOn] = useState(true);
   const [webhookUrl, setWebhookUrl] = useState('');
 
   useEffect(() => {
@@ -44,6 +45,7 @@ export default function Settings() {
       setJobTitle(planData.profile.jobTitle || '');
       setCountry(planData.profile.country || 'LK');
       setTimezone(planData.profile.timezone || 'Asia/Colombo');
+      setDigestOn(!planData.profile.digestOptOut);
     }
   }, [user, planData]);
 
@@ -301,17 +303,35 @@ export default function Settings() {
               </div>
             </div>
 
-            {/* Notifications, Preferences, Connected Apps, Webhooks - Commented out for production readiness until implemented */}
-            {/* 
             <div className="settings-section mb16">
               <div className="settings-header">
                 <span className="settings-title">Notifications</span>
               </div>
               <div className="settings-body">
-                <div className="setting-row"><div className="setting-info"><div className="setting-name">Weekly scan digest</div><div className="setting-desc">Summary email every Monday morning</div></div><button className="toggle on"></button></div>
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <div className="setting-name">Weekly scan digest</div>
+                    <div className="setting-desc">Email every Monday: scans, busiest time and top code</div>
+                  </div>
+                  <button
+                    className={`toggle ${digestOn ? 'on' : ''}`}
+                    aria-pressed={digestOn}
+                    aria-label="Weekly scan digest"
+                    onClick={async () => {
+                      const next = !digestOn;
+                      setDigestOn(next);
+                      try {
+                        await apiFetch('/api/user/profile', { method: 'PUT', body: JSON.stringify({ company, jobTitle, country, timezone, digestOptOut: !next }) });
+                        showToast('success', next ? 'Weekly digest on' : 'Weekly digest off');
+                      } catch {
+                        setDigestOn(!next);
+                        showToast('error', 'Could not save');
+                      }
+                    }}
+                  ></button>
+                </div>
               </div>
             </div>
-            */}
 
             <div className="settings-section" style={{ borderColor: 'rgba(255,87,87,0.2)' }}>
               <div className="settings-header" style={{ borderColor: 'rgba(255,87,87,0.2)' }}><span className="settings-title" style={{ color: 'var(--red)' }}>Danger zone</span></div>

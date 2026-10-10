@@ -52,6 +52,8 @@ QR codes made while the dashboard runs on localhost encode `http://localhost…/
 | `POLAR_ACCESS_TOKEN`, `POLAR_WEBHOOK_SECRET`, `POLAR_SANDBOX` | for USD card payments | Without the token, USD checkouts fall back to PayHere in USD. Webhook URL to register in Polar: `{APP_URL}/api/billing/polar/webhook`. |
 | `POLAR_PRODUCT_PRO_MONTHLY`, `…_PRO_ANNUAL`, `…_TEAM_MONTHLY`, `…_TEAM_ANNUAL` | for Polar | Product ids created in the Polar dashboard ($7, $70, $29, $290) |
 | `POLAR_PORTAL_URL` | optional | Customer portal link shown on Billing |
+| `CRON_SECRET` | ✅ for crons | Vercel sends it as `Authorization: Bearer …` to `/api/cron/*`. Set it in Vercel env; CI uses a dummy. |
+| `RESEND_API_KEY`, `DIGEST_FROM` | for the weekly digest | Resend API key and sender (e.g. `Scnr <digest@yourdomain>`, on a domain verified in Resend). Without the key the digest cron skips. |
 | `RATE_LIMIT_MAX`, `RATE_LIMIT_WRITE_MAX` | QA only | Override the per-IP limits (default 300 / 60 per 15 min). CI raises them because QA runs every call from one IP. |
 | `VERCEL` | auto | Set by Vercel. Skips `listen()` and static serving. |
 
@@ -132,6 +134,7 @@ Phase 0 added these sections:
 - **22, Billing.** A PayHere order plus signed notifies, testing tampered `custom_2`, replay, wrong amount or currency, unknown order, annual (+12 months), recurring stopped, and chargeback.
 - **23, USD billing.** PayHere USD fallback, Polar checkout disabled without a token, and Polar Standard-Webhooks events (bad signature, active, same-period replay, canceled, revoked, unknown product). CI uses a dummy `POLAR_WEBHOOK_SECRET` and product id.
 - **25, Restaurant Kit.** Guest page rendering through the in-process Worker: EN/SI/TA, escaping, unsafe links dropped, the WhatsApp link, branding for Free, language switch not counted. Dynamic vCard/Text/Email/Wi-Fi at the edge, `content_data` edits and the 20 KB cap, activation events (needs migration 002), `/api/events` allowlist, `waLink`.
+- **26, Retention.** 10 concurrent scans count exactly 10, real per-day uniques, hours, `events.csv`, range clamp, cron auth, digest dry run and opt-out, `record_scan` not callable with the anon key, no `password_hash` in the list (needs migration 003).
 - **24, Plan limits and lapse.** Pro caps (100 codes, 365 days, timeseries capped), the Free dynamic pilot (`LIMIT_DYNAMIC_QR`), and the lapse rule end to end: `pause_on`, `/internal/slug` paused flags, and the Worker serving the holding page while the oldest code stays live.
 
 Not covered yet: the frontend (no browser tests) and real Cloudflare KV behaviour (eventual consistency, TTLs).

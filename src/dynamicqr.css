@@ -778,3 +778,10 @@ select.form-input{cursor:pointer}
 .alert-info{background:var(--blue-l);border:1px solid rgba(77,158,255,0.2);color:var(--blue)}
 .alert-warn{background:var(--amber-l);border:1px solid rgba(240,160,48,0.2);color:var(--amber)}
 .alert-icon{flex-shrink:0;font-size:14px}
+
+/* Print report: just the page content */
+@media print {
+  .sidebar, .topbar, .no-print { display: none !important; }
+  .main, .content { height: auto !important; overflow: visible !important; }
+  body { background: #fff !important; }
+}

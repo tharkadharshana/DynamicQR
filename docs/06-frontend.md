@@ -79,7 +79,7 @@ The print view lays out an A6 tent: the name, a trilingual "scan for menu" line,
 
 ### Analytics and AccountAnalytics
 
-[Analytics.tsx](../src/pages/Analytics.tsx) (`/analytics/:slug`, multi-select) shows the summary, time series, countries, devices (labelled "all time"), browsers, OS and recent scans. [AccountAnalytics.tsx](../src/pages/AccountAnalytics.tsx) shows account totals, the time series, per-code performance and countries. The always-empty referrer and "advanced" panels were removed in Phase 1.
+[Analytics.tsx](../src/pages/Analytics.tsx) (`/analytics/:slug`, multi-select) shows the summary, time series, a **busiest-hours** bar chart (UTC, all time), countries, devices (all time), browsers, OS and recent scans. **Download CSV** gives raw scans for one code (`events.csv`) or the daily series for several. **Print report** uses the browser's print, with print CSS hiding the app chrome. [AccountAnalytics.tsx](../src/pages/AccountAnalytics.tsx) shows account totals, the time series, per-code performance and countries. The always-empty referrer and "advanced" panels were removed in Phase 1.
 
 ### Billing — [Billing.tsx](../src/pages/Billing.tsx)
 
@@ -96,7 +96,7 @@ Three plan cards with real limits, a currency switch and an interval switch (bot
 
 ### Settings — [Settings.tsx](../src/pages/Settings.tsx)
 
-Plan usage, profile, security (revoke sessions), danger zone (export, deactivate all, delete account).
+Plan usage, profile, **weekly scan digest** toggle (`digestOptOut`), security (revoke sessions), danger zone (export, deactivate all, delete account).
 
 ### Legal pages
 

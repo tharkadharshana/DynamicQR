@@ -2,6 +2,20 @@
 
 One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-review-findings.md](11-review-findings.md).
 
+## Phase 3: Retention and trustworthy numbers (branch `feat/phase3-retention`)
+
+**Run before merging:** [migrations/003_phase3.sql](../migrations/003_phase3.sql). It needs 002.
+
+- **Atomic scan recording.** The Postgres `record_scan()` writes the event and every counter in one transaction, including `profiles.monthly_scans` and `first_scan` (M3). It is revoked from `anon` and `authenticated`. A legacy fallback keeps scans recording until the migration runs.
+- **Real per-day uniques** (`days_unique`) and **hour-of-day counts** (`hours`). A busiest-hours chart is on Analytics.
+- **Reports:** a CSV of raw scans (`/api/analytics/:slug/events.csv`) or of the daily series, and a **Print report** using print CSS.
+- **Weekly digest:** the Monday cron emails scans, the busiest hour in the owner's time zone and the top code (Resend). There's a Settings opt-out and `?dry=1` for QA.
+- **Retention:** the daily cron deletes scan events older than 400 days (M15).
+- **History cap** now also applies to custom date ranges (M7).
+- **Shim removed.** supabase-js is called directly; the 9 account-analytics handlers became one `views` map served for both a code and the account; deletes rely on cascades. server.ts went from 2,457 to about 1,600 lines.
+- `GET /api/qr` (the list) no longer returns `password_hash`.
+- **QA section 26** covers concurrency, uniques, hours, CSV, range clamp, cron auth, digest and RPC permissions. CI sets a dummy `CRON_SECRET`.
+
 ## Phase 2: Restaurant Kit (branch `feat/phase2-restaurant-kit`)
 
 **Run before merging:** [migrations/002_phase2.sql](../migrations/002_phase2.sql) (the `events` table).

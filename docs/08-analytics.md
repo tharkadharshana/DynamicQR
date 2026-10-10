@@ -21,7 +21,8 @@ Static QR codes produce **no analytics**. They never reach the platform.
 |---|---|
 | **Total scans** | Successful, non-bot scans that passed every gate. Wrong-PIN attempts are excluded. |
 | **Unique visitors** | The sum, over days, of distinct (IP + UA + UTC date) fingerprints per QR. One person scanning on 3 days counts 3 times. On the account view, the per-QR uniques are added together, so one person scanning 2 codes counts twice. |
-| **Unique scans per day** (chart) | **Estimated**: `round(day_total × unique_scans / total_scans)`. Per-day uniques are not stored. |
+| **Unique scans per day** (chart) | Real, from `days_unique`, for days recorded after migration 003. Older days are estimated as `round(day_total × unique_scans / total_scans)`. |
+| **Busiest hours** | `qr_stats.hours`: scans per UTC hour, all time. The weekly digest converts it to the owner's time zone. |
 | **Mobile %** | `devices.mobile / total_scans`. iPads count as mobile. |
 | **First / last scan** | The smallest and largest key in `qr_stats.days`. Only the day, no time. |
 | **Days active** (`/api/user/plan`) | Days since the earliest day key across all codes |
@@ -29,18 +30,15 @@ Static QR codes produce **no analytics**. They never reach the platform.
 
 ## Aggregation model
 
-Each scan updates a single pre-aggregated `qr_stats` row with jsonb maps. The dashboard never queries `scan_events`, except for the "recent" lists.
+Each scan calls `record_scan()`, which increments one pre-aggregated `qr_stats` row atomically. The dashboard never queries `scan_events`, except for "recent" and the CSV export.
 
-Trade-offs:
-
-- **Fast and cheap reads.** One row per QR.
-- **Lost increments under concurrency.** The server reads the row, adds 1 and upserts the whole row. Two scans at the same time can both write N+1. A Postgres function (`update qr_stats set total_scans = total_scans + 1, days = jsonb_set(…)`) called through `supabase.rpc` would fix this in one round trip.
-- **No breakdown slicing.** Countries, devices, browsers and OS are lifetime totals, so the date-range picker **filters only the time series**. Every other chart always shows all-time data. The UI does not say so.
-- **The `days` map grows without limit**, by one key per active day.
+- **Fast, consistent reads.** One row per code, with no lost increments.
+- **Breakdowns are all time.** Countries, devices, browsers, OS and hours are lifetime totals, so the date range filters only the time series. The UI labels them "all time".
+- **Retention.** Raw events are deleted after 400 days by the daily cron; aggregates stay.
 
 ## Endpoints
 
-[Doc 04](04-backend-api-reference.md#analytics-one-qr-user-and-owner) lists every route. The per-QR and account families mirror each other. The account routes fetch the user's code list and then `qr_stats` in chunks of 30 (a Firestore leftover). That is 1 + ⌈n/30⌉ queries per chart, and the Dashboard fires about 5 such calls on load.
+See [doc 04](04-backend-api-reference.md#analytics). One set of views serves both a single code and the account (`loadScope()` plus a `views` map in server.ts), with a single `in` query for the stats rows.
 
 ## Placeholder or broken analytics features
 
@@ -51,10 +49,6 @@ Trade-offs:
 | Peak-hours heatmap | Not built. It needs an `hours` map or an hourly query on `scan_events`. |
 | ~~Fake "vs last month" deltas and "Live" labels~~ | Removed in Phase 1 |
 
-## Making the numbers trustworthy (minimum changes)
+## Weekly digest
 
-1. Move the stats increment into one Postgres function (atomic, one call).
-2. Store `days` as `{date: {t, u}}` so per-day uniques are real.
-3. ~~Base the monthly quota on `profiles.monthly_scans` (account-wide)~~: done in Phase 0.
-4. Either hide the referrer and advanced panels, or write the fields the Worker already sends (`asn`, `colo`, `lang`, hour of day).
-5. Label the breakdown charts "all time", or compute them from `scan_events` for the selected range.
+`buildDigest()` ([src/lib/digest.ts](../src/lib/digest.ts), with a self-check) takes the last 7 days of scans and produces the total, the busiest hour in the owner's time zone, the top code and a short tip. The Monday cron emails it through Resend. Owners opt out in Settings.

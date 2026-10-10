@@ -69,11 +69,11 @@ This is a legal and trust risk with paying customers. Remove the claims, or labe
 |---|---|---|
 | ✅ M1 | Trial users see Pro toggles as locked (the UI checks `plan === 'free'`, not `limits`), and the Worker forces their Visitor Guard to 5 | CreateQR.tsx, worker.js:117 |
 | ✅ M2 | Dynamic codes keep working after a trial or plan lapses. Nothing enforces the "Free = static only" rule after the fact. | worker.js, getLicense |
-| M3 | `qr_stats` and `profiles.monthly_scans` read-modify-write races lose counts | server.ts:2347-2374 |
+| ✅ M3 | `qr_stats` and `profiles.monthly_scans` read-modify-write races lose counts | server.ts:2347-2374 |
 | M4 | KV write volume: up to 3 puts per scan, and the `{slug}` key is rewritten per scan (KV allows 1 write/s per key; the free tier allows 1k writes/day) | worker.js:231-245 |
 | M5 | Scan limit is approximate across edges, and bots count toward the limits at the edge | worker.js |
 | M6 | Expiry is a time-zone-less local string, compared as UTC at the edge | CreateQR / worker |
-| M7 | Date range filters only the time series. Breakdowns are all-time and are not labelled as such. Custom ranges skip the plan's `analytics_days` cap. | Analytics pages, server timeseries |
+| ✅ M7 | Date range filters only the time series. Breakdowns are all-time and are not labelled as such. Custom ranges skip the plan's `analytics_days` cap. | Analytics pages, server timeseries |
 | M8 | Webhook treats PayHere `-3` (chargeback) as a cancellation and ignores recurring `message_type` events | server.ts:916 |
 | ✅ M9 | `PUT /api/qr/:slug` cannot change `qr_type` or `content_data`, so a vCard cannot be edited | server.ts:1193 |
 | M10 | Reactivating codes through PUT skips the QR-count limit | server.ts:1212 |
@@ -81,7 +81,7 @@ This is a legal and trust risk with paying customers. Remove the claims, or labe
 | ✅ M12 | Billing "Next billing" always shows N/A (`_seconds`) | Billing.tsx:57-60 |
 | ✅ M13 | The quota page links to `dynamicqr.app/pricing`, and the brand differs across 5+ domains | worker.js:30, doc 01 |
 | ✅ M14 | Service-role key fallbacks with `VITE_` names risk leaking the key into the bundle | server.ts:12 |
-| M15 | `scan_events` has no retention limit, and the `qr_stats.days` map grows without limit | schema |
+| ✅ M15 | `scan_events` has no retention limit, and the `qr_stats.days` map grows without limit | schema |
 | ✅ M16 | `/api/qr/:slug` and the export return `password_hash` | server.ts:1170, 567 |
 
 ## Low
@@ -111,9 +111,9 @@ This is a legal and trust risk with paying customers. Remove the claims, or labe
 
 ## Simplification opportunities (smaller code, same behaviour)
 
-1. **Remove the Firestore shim** ([server.ts:23-196](../server.ts#L23-L196)) and call supabase-js directly. This fixes H1 and H6 as a side effect, and it removes the 30-item chunking and the fake batches. Keep `qa.ts` green before and after the change.
-2. **Merge the 9 account-analytics handlers** into one helper `loadStats(uid, slugs)` plus small mappers. That cuts about 450 lines.
-3. **Use one atomic Postgres function for scan capture**: insert the event and increment the stats and the monthly counter in one call. This fixes M3, removes 3 round trips, and helps H8.
+1. ✅ **Remove the Firestore shim** (Phase 3) ([server.ts:23-196](../server.ts#L23-L196)) and call supabase-js directly. This fixes H1 and H6 as a side effect, and it removes the 30-item chunking and the fake batches. Keep `qa.ts` green before and after the change.
+2. ✅ **Merge the 9 account-analytics handlers** (Phase 3, one `views` map) into one helper `loadStats(uid, slugs)` plus small mappers. That cuts about 450 lines.
+3. ✅ **Use one atomic Postgres function for scan capture** (Phase 3, `record_scan`): insert the event and increment the stats and the monthly counter in one call. This fixes M3, removes 3 round trips, and helps H8.
 4. ✅ **Use one QR content builder**: `src/lib/qrContent.ts`, done in Phase 0.
 5. **Fetch `/api/user/plan` once.** Pages should use the Outlet `planData`, not re-fetch it.
 

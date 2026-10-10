@@ -94,13 +94,15 @@ After the gates pass, the Worker sends `POST {API_URL}/internal/scan` with `ctx.
 
 `/internal/scan` checks the secret, looks up the code's owner, and records the scan. It no longer enforces the quota; gate 3 does that from the cached config.
 
-The recording steps:
+Recording is **one call**: `supabase.rpc('record_scan', …)` (migration 003). The function runs in one transaction and:
 
-1. Drop bots (a regex on the UA).
-2. Insert into `scan_events`.
-3. Stop here when `status == 'failed_password'`.
-4. Read-modify-write `qr_stats` (totals and the days, countries, browsers, os, devices and monthly_scans maps).
-5. Read-modify-write `profiles.monthly_scans[YYYY-MM]`. This is the **account-wide** counter that `quota_exceeded` uses.
+1. inserts the `scan_events` row
+2. stops for `failed_password` attempts (logged, not counted)
+3. increments `qr_stats`: `total_scans`, `unique_scans`, and the maps `days`, `days_unique`, `hours` (UTC), `countries`, `browsers`, `os`, `devices` and `monthly_scans`
+4. increments `profiles.monthly_scans[YYYY-MM]`, the account-wide counter behind `quota_exceeded`
+5. writes a `first_scan` event the first time a code is scanned
+
+Bots are dropped before the call (a regex on the UA). Until migration 003 is applied, the server falls back to a non-atomic read-modify-write (`recordScanLegacy`, marked `ponytail:`). QA section 26 shows the difference: 10 concurrent scans give exactly 10 with the RPC, and fewer with the fallback.
 
 ## Sequence
 
