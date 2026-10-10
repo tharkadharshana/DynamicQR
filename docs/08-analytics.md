@@ -46,12 +46,10 @@ Trade-offs:
 
 | Feature | Why it shows nothing |
 |---|---|
-| Referrers chart | Nothing writes `qr_stats.referrers`, and the column does not exist. QR scans almost never carry a Referer anyway. |
-| Advanced (regions, ISPs, languages, hours, OS versions, TLS, EU) | The columns do not exist, and the Worker payload fields are discarded |
+| ~~Referrers and "advanced" panels~~ | Removed in Phase 1 (they were always empty). The referer of each scan is still shown in recent scans. |
 | City | Never captured (`scan_events.city` is always null) |
 | Peak-hours heatmap | Not built. It needs an `hours` map or an hourly query on `scan_events`. |
-| "vs last month" deltas | Hard-coded "↑ 0%" |
-| Live updates | No polling and no Supabase Realtime |
+| ~~Fake "vs last month" deltas and "Live" labels~~ | Removed in Phase 1 |
 
 ## Making the numbers trustworthy (minimum changes)
 

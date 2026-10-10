@@ -2,6 +2,43 @@
 
 One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-review-findings.md](11-review-findings.md).
 
+## Phase 1: Credible (branch `feat/phase1-credible`)
+
+No new migration.
+
+### Honest product
+- **Landing rewritten:**
+  - aimed at Sri Lankan businesses
+  - a trust strip (location, WhatsApp support, status page, "not a LANKAQR payment replacement")
+  - the live demo QR (`VITE_DEMO_SLUG`)
+  - LKR/USD pricing with real limits
+  - removed: the fake brand logos, "10,000+ businesses", testimonials, ticking counters, and the city and heatmap claims (H11)
+- **Legal pages rewritten for SaaS** (`LegalLayout`). They cover renewal, trial, the 30-day grace and pause rule, acceptable use, availability, data, liability and refunds. The identity comes from `src/lib/site.ts` (`VITE_*`).
+- **Other removals:** the ApiDocs page (no such API yet), the referrer and "advanced" panels and their endpoints, the fake "vs last month" deltas, and the "Live" labels.
+
+### Plans and limits (gap table)
+- **Caps instead of "unlimited":** Pro 100, Team 600.
+- **History:** Pro 365 days, Team 730.
+- **Free dynamic pilot:** Free keeps 1 dynamic code forever (`dynamic_qr_codes`, `LIMIT_DYNAMIC_QR`).
+- **Lapse rule:** a 30-day grace period, then dynamic codes above the allowance pause behind a holding page and are never deleted (`graceEndsAt`, `/internal/slug` `paused`, Worker page, layout banner, terms).
+- **Trial UI fix:** CreateQR gates on `limits.*`, not on `plan === 'free'` (M1).
+
+### Billing: two providers
+- An **LKR / USD** switch on Landing, Pricing and Billing. LKR → PayHere; USD → Polar card checkout.
+- `/api/billing/polar/checkout` and `/api/billing/polar/webhook`, with a Standard Webhooks signature, idempotency per subscription period, and canceled, revoked and refunded handling.
+- PayHere in USD as the fallback when Polar is off.
+- `startCheckout()` is shared by Pricing and Billing, so the form-post code is no longer copied.
+
+### Print-ready output
+- Downloads use the chosen size (400/800/1200 px). The fake "Print PDF" button is gone (H10).
+- Logos are resized to ≤256 px on the device, so saves no longer fail (H9).
+- The viewer modal uses the editor's renderer (`stylingOptions`), so dots, corners and the logo match.
+
+### Cleanup and QA
+- Deleted: `Layout.tsx`, `Login.tsx`, `metadata.json`, `firestore.rules`, and the AI Studio Vite settings. A short accurate README.
+- The rate limits can be overridden through env (`RATE_LIMIT_MAX`, `RATE_LIMIT_WRITE_MAX`) for QA.
+- QA section 23 covers the USD fallback and Polar webhooks; section 24 covers the caps, history cap, free pilot and the lapse rule through the API and the in-process Worker.
+
 ## Phase 0: Safe and working (branch `fix/phase0-safe-and-working`)
 
 **Run before merging:** [migrations/001_phase0.sql](../migrations/001_phase0.sql) in the Supabase SQL editor.

@@ -50,11 +50,11 @@ Fix: add `{ "source": "/internal/(.*)", "destination": "/api/index.ts" }` before
 
 **H8. The Worker waits for a Vercel and Supabase round trip on every scan.** ✅ Phase 0 (waitUntil, quota from config) `/internal/scan` does about 5 sequential DB calls, plus a cold start, before the 302. That adds hundreds of ms and up to a 4 s stall. Option: check the quota from a KV monthly counter, and send analytics with `ctx.waitUntil` (do not wait for it).
 
-**H9. Logos above about 70 KB cannot be saved.** The client allows 1 MB, but the body limit is 100 KB. Fix: compress or resize the logo on the client (canvas to 256 px PNG), or upload it to Supabase Storage and store the URL.
+**H9. Logos above about 70 KB cannot be saved.** ✅ Phase 1 (resized to 256 px on the device) The client allows 1 MB, but the body limit is 100 KB. Fix: compress or resize the logo on the client (canvas to 256 px PNG), or upload it to Supabase Storage and store the URL.
 
-**H10. Downloads are 180 px, whatever "Output size" says, and "Print PDF" is a PNG.** Customers will print these files. Fix: `qrCodeRef.current.update({width: size, height: size})` before `download()`, then reset.
+**H10. Downloads are 180 px, whatever "Output size" says, and "Print PDF" is a PNG.** ✅ Phase 1 Customers will print these files. Fix: `qrCodeRef.current.update({width: size, height: size})` before `download()`, then reset.
 
-**H11. Advertised features do not exist.**
+**H11. Advertised features do not exist.** ✅ Phase 1 (claims removed; legal pages rewritten)
 
 - Root README: device routing, SMS, UTM, webhooks, API keys, Firebase stack.
 - ApiDocs page: the whole `/api/v1` API.
@@ -67,8 +67,8 @@ This is a legal and trust risk with paying customers. Remove the claims, or labe
 
 | # | Finding | Where |
 |---|---|---|
-| M1 | Trial users see Pro toggles as locked (the UI checks `plan === 'free'`, not `limits`), and the Worker forces their Visitor Guard to 5 | CreateQR.tsx, worker.js:117 |
-| M2 | Dynamic codes keep working after a trial or plan lapses. Nothing enforces the "Free = static only" rule after the fact. | worker.js, getLicense |
+| ✅ M1 | Trial users see Pro toggles as locked (the UI checks `plan === 'free'`, not `limits`), and the Worker forces their Visitor Guard to 5 | CreateQR.tsx, worker.js:117 |
+| ✅ M2 | Dynamic codes keep working after a trial or plan lapses. Nothing enforces the "Free = static only" rule after the fact. | worker.js, getLicense |
 | M3 | `qr_stats` and `profiles.monthly_scans` read-modify-write races lose counts | server.ts:2347-2374 |
 | M4 | KV write volume: up to 3 puts per scan, and the `{slug}` key is rewritten per scan (KV allows 1 write/s per key; the free tier allows 1k writes/day) | worker.js:231-245 |
 | M5 | Scan limit is approximate across edges, and bots count toward the limits at the edge | worker.js |
@@ -79,7 +79,7 @@ This is a legal and trust risk with paying customers. Remove the claims, or labe
 | M10 | Reactivating codes through PUT skips the QR-count limit | server.ts:1212 |
 | M11 | Rate limiters are in memory on serverless, so they are soft | server.ts:239-267 |
 | ✅ M12 | Billing "Next billing" always shows N/A (`_seconds`) | Billing.tsx:57-60 |
-| 🟡 M13 | The quota page links to `dynamicqr.app/pricing`, and the brand differs across 5+ domains | worker.js:30, doc 01 |
+| ✅ M13 | The quota page links to `dynamicqr.app/pricing`, and the brand differs across 5+ domains | worker.js:30, doc 01 |
 | ✅ M14 | Service-role key fallbacks with `VITE_` names risk leaking the key into the bundle | server.ts:12 |
 | M15 | `scan_events` has no retention limit, and the `qr_stats.days` map grows without limit | schema |
 | ✅ M16 | `/api/qr/:slug` and the export return `password_hash` | server.ts:1170, 567 |
