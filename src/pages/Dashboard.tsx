@@ -6,7 +6,7 @@ import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
 import { apiFetch } from '../lib/api';
 import { useUI } from '../shared/UIContext';
 import QRViewerModal from '../components/QRViewerModal';
-import { getQRContent, SHORT_DOMAIN, SHORT_HOST } from '../lib/qrContent';
+import { getQRContent, SHORT_DOMAIN, shortHost } from '../lib/qrContent';
 
 // "Swap today's offer": edit a guest page's offer in place; live on the next scan, no reprint.
 function OfferSwap({ qr, onSaved }: { qr: any; onSaved: (qr: any) => void }) {
@@ -39,6 +39,7 @@ function OfferSwap({ qr, onSaved }: { qr: any; onSaved: (qr: any) => void }) {
 
 export default function Dashboard() {
   const [qrCodes, setQrCodes] = useState<any[]>([]);
+  const [clientFilter, setClientFilter] = useState('');
   const [viewQR, setViewQR] = useState<any | null>(null);
   const [stats, setStats] = useState<Record<string, any>>({});
   const [timeseries, setTimeseries] = useState<any[]>([]);
@@ -368,7 +369,14 @@ export default function Dashboard() {
           <div className="card">
             <div className="section-row">
               <span className="section-title">Your QR codes</span>
-              <button className="btn btn-ghost btn-sm" onClick={() => navigate('/create')}>+ New</button>
+              {qrCodes.some(q => q.client) && (
+              <select aria-label="Filter by client" className="form-input" style={{ width: 'auto', padding: '4px 8px', fontSize: '12px' }} value={clientFilter} onChange={e => setClientFilter(e.target.value)}>
+                <option value="">All clients</option>
+                {[...new Set(qrCodes.map(q => q.client).filter(Boolean))].map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            )}
+            {planData?.limits?.bulk_create && <button className="btn btn-ghost btn-sm" onClick={() => navigate('/bulk')}>Bulk</button>}
+            <button className="btn btn-ghost btn-sm" onClick={() => navigate('/create')}>+ New</button>
             </div>
             
             {qrCodes.length === 0 ? (
@@ -407,7 +415,7 @@ export default function Dashboard() {
                               </div>
                               <div>
                                 <div className="qr-row-name">{qr.title || 'Untitled'}</div>
-                                <div className="qr-row-slug">{SHORT_HOST}/{qr.slug}</div>
+                                <div className="qr-row-slug">{shortHost()}/{qr.slug}</div>
                               </div>
                             </div>
                           </td>

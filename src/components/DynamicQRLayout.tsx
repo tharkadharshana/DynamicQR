@@ -57,6 +57,13 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
     ), badge: <span className={`nav-badge ${currentPlan === 'free' ? '' : 'amber'}`}>{isTrial ? 'Trial' : planLabel}</span> },
   ];
 
+  if (planData?.limits?.bulk_create) navItems.push({ name: 'Bulk create', path: '/bulk', icon: (
+    <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1.5" y="1.5" width="5" height="5"/><rect x="9.5" y="1.5" width="5" height="5"/><rect x="1.5" y="9.5" width="5" height="5"/><path d="M12 9v6M9 12h6"/></svg>
+  ) });
+  if (planData?.limits?.api_access) accountItems.push({ name: 'API Docs', path: '/api-docs', icon: (
+    <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M5 4l-3 4 3 4M11 4l3 4-3 4M9 3l-2 10"/></svg>
+  ) });
+
   const legalItems: NavItem[] = [
     { name: 'Privacy Policy', path: '/legal/privacy-policy', icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M4 2h8a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V4a2 2 0 012-2z"/><path d="M6 6h4M6 10h4"/></svg>
@@ -80,6 +87,8 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
       case '/analytics': return { title: 'Analytics', sub: 'Detailed scan insights' };
       case '/create': return { title: 'Create QR', sub: 'Generate a new QR code' };
       case '/kit': return { title: 'Restaurant Kit', sub: 'Menu, reviews, Wi-Fi and offers on one code' };
+      case '/bulk': return { title: 'Bulk create', sub: 'Many codes from one CSV' };
+      case '/api-docs': return { title: 'API Docs', sub: 'Team plan · REST API v1' };
       case '/settings': return { title: 'Profile & Settings', sub: 'Manage your account' };
       case '/billing': return { title: 'Billing', sub: 'Subscription & invoices' };
       case '/pricing': return { title: 'Pricing', sub: 'Choose your plan' };

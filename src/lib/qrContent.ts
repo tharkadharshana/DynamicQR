@@ -8,6 +8,13 @@ export const SHORT_DOMAIN: string = (
 
 export const SHORT_HOST = SHORT_DOMAIN.replace(/^https?:\/\//, '');
 
+// Team accounts with a verified custom domain encode that instead (set once the plan loads).
+let activeDomain = SHORT_DOMAIN;
+export function setShortDomain(hostname: string | null | undefined) {
+  activeDomain = hostname ? `https://${hostname}` : SHORT_DOMAIN;
+}
+export const shortHost = () => activeDomain.replace(/^https?:\/\//, '');
+
 export function vcardText(d: any = {}): string {
   return `BEGIN:VCARD\nVERSION:3.0\nN:${d.last_name || ''};${d.first_name || ''}\nFN:${d.first_name || ''} ${d.last_name || ''}\nTEL:${d.phone || ''}\nEMAIL:${d.email || ''}\nORG:${d.company || ''}\nURL:${d.website || ''}\nEND:VCARD`;
 }
@@ -49,7 +56,7 @@ export function resizeLogo(file: File, maxPx = 256): Promise<string> {
   });
 }
 
-export function getQRContent(qr: any, shortDomain: string = SHORT_DOMAIN): string {
+export function getQRContent(qr: any, shortDomain: string = activeDomain): string {
   if (qr.is_dynamic !== false) return `${shortDomain}/${qr.slug}`;
   const d = qr.content_data || {};
   switch (qr.qr_type) {

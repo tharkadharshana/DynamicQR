@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import QRCodeStyling from 'qr-code-styling';
 import { useUI } from '../shared/UIContext';
-import { getQRContent, stylingOptions, SHORT_HOST } from '../lib/qrContent';
+import { getQRContent, stylingOptions, shortHost } from '../lib/qrContent';
 
 export { getQRContent };
 
@@ -11,7 +11,7 @@ export default function QRViewerModal({ qr, onClose }: { qr: any; onClose: () =>
   const hostRef = useRef<HTMLDivElement>(null);
   const qrRef = useRef<QRCodeStyling | null>(null);
   const { showToast } = useUI();
-  const shortUrl = `${SHORT_HOST}/${qr.slug}`;
+  const shortUrl = `${shortHost()}/${qr.slug}`;
   const content = getQRContent(qr);
 
   // Same renderer and options as the editor, so the viewer matches the printed design (dots, corners, logo).
