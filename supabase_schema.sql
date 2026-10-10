@@ -34,13 +34,7 @@ create policy "Users can view own profile"
   on public.profiles for select
   using (auth.uid() = id);
 
-create policy "Users can update own profile"
-  on public.profiles for update
-  using (auth.uid() = id);
-
-create policy "Users can insert own profile"
-  on public.profiles for insert
-  with check (auth.uid() = id);
+-- No insert/update policies: profiles are written only by the API (service role).
 
 -- ──────────────────────────────────────────────────────────────
 -- 2. QR_CODES (replaces Firestore 'qr_codes' collection)
@@ -69,12 +63,7 @@ create index if not exists qr_codes_user_uid_idx on public.qr_codes(user_uid);
 
 alter table public.qr_codes enable row level security;
 
--- Backend (service role) can do anything
--- Frontend clients are NOT expected to call Supabase directly for QR data — all goes via backend API
-create policy "Service role full access qr_codes"
-  on public.qr_codes for all
-  using (true)
-  with check (true);
+-- No policies: RLS denies anon/authenticated. The API uses the service-role key, which bypasses RLS.
 
 -- ──────────────────────────────────────────────────────────────
 -- 3. QR_STATS (replaces Firestore 'qr_stats' collection)
@@ -100,10 +89,7 @@ create table if not exists public.qr_stats (
 
 alter table public.qr_stats enable row level security;
 
-create policy "Service role full access qr_stats"
-  on public.qr_stats for all
-  using (true)
-  with check (true);
+-- No policies: RLS denies anon/authenticated. The API uses the service-role key, which bypasses RLS.
 
 -- ──────────────────────────────────────────────────────────────
 -- 4. SCAN_EVENTS (replaces Firestore 'scan_events' collection)
@@ -127,10 +113,7 @@ create index if not exists scan_events_scanned_at_idx on public.scan_events(scan
 
 alter table public.scan_events enable row level security;
 
-create policy "Service role full access scan_events"
-  on public.scan_events for all
-  using (true)
-  with check (true);
+-- No policies: RLS denies anon/authenticated. The API uses the service-role key, which bypasses RLS.
 
 -- ──────────────────────────────────────────────────────────────
 -- 5. SUBSCRIPTIONS (replaces Firestore 'subscriptions' collection)
@@ -142,19 +125,22 @@ create table if not exists public.subscriptions (
   order_id    text,
   amount      text,
   expires_at  timestamptz,
-  status      text not null default 'active',
+  status      text not null default 'active',  -- pending | active | failed | cancelled | chargeback
+  interval    text,                             -- monthly | annual
+  payment_id  text,                             -- provider payment id; unique per provider
+  provider    text not null default 'payhere',  -- payhere | polar
+  currency    text not null default 'USD',
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
 
 create index if not exists subscriptions_uid_idx on public.subscriptions(uid);
+create index if not exists subscriptions_order_id_idx on public.subscriptions(order_id);
+create unique index if not exists subscriptions_provider_payment_id_key on public.subscriptions(provider, payment_id);
 
 alter table public.subscriptions enable row level security;
 
-create policy "Service role full access subscriptions"
-  on public.subscriptions for all
-  using (true)
-  with check (true);
+-- No policies: RLS denies anon/authenticated. The API uses the service-role key, which bypasses RLS.
 
 -- ──────────────────────────────────────────────────────────────
 -- 6. ADDON_PURCHASES (replaces Firestore 'addon_purchases' collection)
@@ -170,7 +156,4 @@ create table if not exists public.addon_purchases (
 
 alter table public.addon_purchases enable row level security;
 
-create policy "Service role full access addon_purchases"
-  on public.addon_purchases for all
-  using (true)
-  with check (true);
+-- No policies: RLS denies anon/authenticated. The API uses the service-role key, which bypasses RLS.
