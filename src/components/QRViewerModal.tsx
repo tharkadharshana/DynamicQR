@@ -1,31 +1,14 @@
 import React, { useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
 import { useUI } from '../shared/UIContext';
+import { getQRContent, SHORT_HOST } from '../lib/qrContent';
 
-export function getQRContent(qr: any): string {
-  if (qr.is_dynamic !== false) {
-    return `${window.location.origin}/${qr.slug}`;
-  }
-  if (qr.qr_type === 'vcard') {
-    const d = qr.content_data || {};
-    return `BEGIN:VCARD\nVERSION:3.0\nN:${d.last_name||''};${d.first_name||''}\nFN:${d.first_name||''} ${d.last_name||''}\nTEL:${d.phone||''}\nEMAIL:${d.email||''}\nORG:${d.company||''}\nURL:${d.website||''}\nEND:VCARD`;
-  }
-  if (qr.qr_type === 'wifi') {
-    const d = qr.content_data || {};
-    return `WIFI:S:${d.ssid||''};T:${d.encryption||'WPA'};P:${d.password||''};;`;
-  }
-  if (qr.qr_type === 'text') return qr.content_data?.text || '';
-  if (qr.qr_type === 'email') {
-    const d = qr.content_data || {};
-    return `mailto:${d.email||''}?subject=${encodeURIComponent(d.subject||'')}&body=${encodeURIComponent(d.body||'')}`;
-  }
-  return qr.destination_url || 'https://scnr.app';
-}
+export { getQRContent };
 
 export default function QRViewerModal({ qr, onClose }: { qr: any; onClose: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { showToast } = useUI();
-  const shortUrl = `${window.location.host}/${qr.slug}`;
+  const shortUrl = `${SHORT_HOST}/${qr.slug}`;
   const content = getQRContent(qr);
 
   useEffect(() => {

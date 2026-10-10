@@ -4,6 +4,7 @@ import { supabase } from '../supabase';
 import QRCodeStyling from 'qr-code-styling';
 import { apiFetch } from '../lib/api';
 import { useUI } from '../shared/UIContext';
+import { getQRContent, SHORT_DOMAIN, SHORT_HOST } from '../lib/qrContent';
 
 export default function CreateQR() {
   const { id } = useParams();
@@ -88,7 +89,7 @@ export default function CreateQR() {
               logo_url: data.style?.logo_url || ''
             },
             options: {
-              password_protect: !!data.password_hash,
+              password_protect: !!data.has_password,
               password: '',
               expiry_date_enabled: !!data.expiry_date,
               expiry_date: data.expiry_date || '',
@@ -120,29 +121,21 @@ export default function CreateQR() {
   };
 
   useEffect(() => {
-    if (qrType === 'wifi') {
+    if (qrType !== 'url') {
+      // Only URL codes can be dynamic until guest pages ship (Phase 2).
       setIsDynamic(false);
     }
   }, [qrType]);
 
   useEffect(() => {
     if (qrCodeRef.current) {
-      let content = '';
-      if (isDynamic) {
-        content = formData.slug ? `${window.location.origin}/${formData.slug}` : `${window.location.origin}/preview`;
-      } else {
-        if (qrType === 'url') {
-          content = formData.destination_url || 'https://scnr.app';
-        } else if (qrType === 'vcard') {
-          content = `BEGIN:VCARD\nVERSION:3.0\nN:${formData.content_data?.last_name || ''};${formData.content_data?.first_name || ''}\nFN:${formData.content_data?.first_name || ''} ${formData.content_data?.last_name || ''}\nTEL:${formData.content_data?.phone || ''}\nEMAIL:${formData.content_data?.email || ''}\nORG:${formData.content_data?.company || ''}\nURL:${formData.content_data?.website || ''}\nEND:VCARD`;
-        } else if (qrType === 'wifi') {
-          content = `WIFI:S:${formData.content_data?.ssid || ''};T:${formData.content_data?.encryption || 'WPA'};P:${formData.content_data?.password || ''};;`;
-        } else if (qrType === 'text') {
-          content = formData.content_data?.text || 'Enter text';
-        } else if (qrType === 'email') {
-          content = `mailto:${formData.content_data?.email || ''}?subject=${encodeURIComponent(formData.content_data?.subject || '')}&body=${encodeURIComponent(formData.content_data?.body || '')}`;
-        }
-      }
+      const content = getQRContent({
+        is_dynamic: isDynamic,
+        slug: formData.slug || 'preview',
+        qr_type: qrType,
+        content_data: formData.content_data,
+        destination_url: formData.destination_url,
+      }) || SHORT_DOMAIN;
 
       let dotType: any = 'square';
       if (formData.style.dot_style === 'dots') dotType = 'dots';
@@ -578,7 +571,7 @@ export default function CreateQR() {
                 </div>
                 <button 
                   className={`toggle ${isDynamic ? 'on' : ''}`} 
-                  onClick={() => setIsDynamic(!isDynamic)}
+                  onClick={() => qrType === 'url' && setIsDynamic(!isDynamic)}
                 ></button>
               </div>
 
@@ -777,7 +770,7 @@ export default function CreateQR() {
               <div ref={canvasRef} id="preview-canvas"></div>
             </div>
             <div className="qr-preview-slug" id="preview-slug">
-              {isDynamic ? `scnr.tharkak.com/${formData.slug || '———'}` : 'Static QR'}
+              {isDynamic ? `${SHORT_HOST}/${formData.slug || '———'}` : 'Static QR'}
             </div>
             <div style={{ marginBottom: '16px' }}>
               <div style={{ fontSize: '11px', color: 'var(--text3)', marginBottom: '4px' }}>Destination</div>

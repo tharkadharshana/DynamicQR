@@ -13,11 +13,21 @@ export interface PlanLimits {
   api_access: boolean;
 }
 
-export const ANNUAL_PRICES = {
-  free: 0,
-  pro: 70,   // $70/yr (~$5.8/mo)
-  team: 290, // $290/yr (~$24/mo)
+export type Currency = 'USD' | 'LKR';
+export type BillingInterval = 'monthly' | 'annual';
+
+// Single price source for checkout, Pricing, Billing and Landing. Annual = 10x monthly (2 months free).
+// LKR is charged via PayHere; USD via Polar (Phase 1) or PayHere as fallback.
+export const PRICES: Record<'pro' | 'team', Record<Currency, Record<BillingInterval, number>>> = {
+  pro:  { USD: { monthly: 7,  annual: 70  }, LKR: { monthly: 2290, annual: 22900 } },
+  team: { USD: { monthly: 29, annual: 290 }, LKR: { monthly: 9490, annual: 94900 } },
 };
+
+/** "LKR 2,290" / "$7". */
+export function formatPrice(plan: 'pro' | 'team', currency: Currency, interval: BillingInterval): string {
+  const n = PRICES[plan][currency][interval];
+  return currency === 'USD' ? `$${n}` : `LKR ${n.toLocaleString('en-US')}`;
+}
 
 export const PLANS: Record<PlanId, PlanLimits> = {
   free: {
@@ -63,35 +73,6 @@ export const PLANS: Record<PlanId, PlanLimits> = {
 export const TRIAL_LIMITS: PlanLimits = {
   ...PLANS.pro,
   qr_codes: PLANS.free.qr_codes, // 3 QRs max during trial
-};
-
-export type AddonId = 'extra_scans_50k' | 'extra_qr_5';
-
-export interface Addon {
-  id: AddonId;
-  label: string;
-  amount_usd: number;
-  grants: {
-    extra_scans?: number;
-    extra_qr_codes?: number;
-    custom_domain?: boolean;
-    api_access?: boolean;
-  };
-}
-
-export const ADDONS: Record<AddonId, Addon> = {
-  extra_scans_50k: {
-    id: 'extra_scans_50k',
-    label: '50,000 Extra Scans',
-    amount_usd: 5.0,
-    grants: { extra_scans: 50000 },
-  },
-  extra_qr_5: {
-    id: 'extra_qr_5',
-    label: '5 Extra QR Codes',
-    amount_usd: 10.0,
-    grants: { extra_qr_codes: 5 },
-  },
 };
 
 export interface UserAddons {

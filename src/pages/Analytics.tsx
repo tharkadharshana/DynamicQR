@@ -6,6 +6,7 @@ import {
 } from 'recharts';
 import { supabase } from '../supabase';
 import { apiFetch } from '../lib/api';
+import { SHORT_HOST } from '../lib/qrContent';
 import QRViewerModal from '../components/QRViewerModal';
 
 const COLORS = ['#1A1916', '#E85D3A', '#4D9EFF', '#3DCC7E', '#9B7FFF', '#F5A623', '#D0021B'];
@@ -181,7 +182,7 @@ export default function Analytics() {
               </div>
               {selectedSlugs.length === 1 && (
                 <div style={{ fontSize: '12px', color: 'var(--text3)', marginTop: '2px' }}>
-                  scnr.tharkak.com/{selectedSlugs[0]}
+                  {SHORT_HOST}/{selectedSlugs[0]}
                 </div>
               )}
             </div>

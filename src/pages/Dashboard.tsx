@@ -6,6 +6,7 @@ import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
 import { apiFetch } from '../lib/api';
 import { useUI } from '../shared/UIContext';
 import QRViewerModal from '../components/QRViewerModal';
+import { getQRContent, SHORT_DOMAIN, SHORT_HOST } from '../lib/qrContent';
 
 export default function Dashboard() {
   const [qrCodes, setQrCodes] = useState<any[]>([]);
@@ -135,24 +136,7 @@ export default function Dashboard() {
     qrCodes.forEach(qr => {
       const canvas = document.getElementById(`thumb-${qr.id}`) as HTMLCanvasElement;
       if (canvas) {
-        let content = '';
-        if (qr.is_dynamic !== false) {
-          content = `${window.location.origin}/${qr.slug}`;
-        } else {
-          if (qr.qr_type === 'url') {
-            content = qr.destination_url || 'https://scnr.app';
-          } else if (qr.qr_type === 'vcard') {
-            content = `BEGIN:VCARD\nVERSION:3.0\nN:${qr.content_data?.last_name || ''};${qr.content_data?.first_name || ''}\nFN:${qr.content_data?.first_name || ''} ${qr.content_data?.last_name || ''}\nTEL:${qr.content_data?.phone || ''}\nEMAIL:${qr.content_data?.email || ''}\nORG:${qr.content_data?.company || ''}\nURL:${qr.content_data?.website || ''}\nEND:VCARD`;
-          } else if (qr.qr_type === 'wifi') {
-            content = `WIFI:S:${qr.content_data?.ssid || ''};T:${qr.content_data?.encryption || 'WPA'};P:${qr.content_data?.password || ''};;`;
-          } else if (qr.qr_type === 'text') {
-            content = qr.content_data?.text || 'Enter text';
-          } else if (qr.qr_type === 'email') {
-            content = `mailto:${qr.content_data?.email || ''}?subject=${encodeURIComponent(qr.content_data?.subject || '')}&body=${encodeURIComponent(qr.content_data?.body || '')}`;
-          } else {
-            content = qr.destination_url || 'https://scnr.app';
-          }
-        }
+        const content = getQRContent(qr) || SHORT_DOMAIN;
 
         QRCode.toCanvas(canvas, content, {
           width: 32,
@@ -376,7 +360,7 @@ export default function Dashboard() {
                               </div>
                               <div>
                                 <div className="qr-row-name">{qr.title || 'Untitled'}</div>
-                                <div className="qr-row-slug">{window.location.host}/{qr.slug}</div>
+                                <div className="qr-row-slug">{SHORT_HOST}/{qr.slug}</div>
                               </div>
                             </div>
                           </td>

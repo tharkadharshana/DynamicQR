@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../supabase';
 import { apiFetch } from '../lib/api';
 import { useUI } from '../shared/UIContext';
+import { formatPrice } from '../lib/plans';
 
 export default function Billing() {
   const { planData } = useOutletContext<{ planData: any }>();
@@ -55,10 +56,9 @@ export default function Billing() {
 
   const { plan, plan_expires_at, monthly_scans_used, limits, is_trial, is_expired, plan_since, email } = planData;
   const trialEnded = plan === 'free' && !is_trial && !is_expired;
-  // plan_expires_at arrives as a Firestore Timestamp serialised to {_seconds, _nanoseconds}
-  const expiryDate = plan_expires_at?._seconds
-    ? new Date(plan_expires_at._seconds * 1000).toLocaleDateString()
-    : 'N/A';
+  // Checkout is charged in LKR through PayHere.
+  const cur = 'LKR' as const;
+  const expiryDate = plan_expires_at ? new Date(plan_expires_at).toLocaleDateString() : 'N/A';
   const planSince = plan_since
     ? new Date(plan_since).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : '—';
@@ -191,7 +191,7 @@ export default function Billing() {
                 ● {is_expired ? 'Expired' : trialEnded ? 'Trial Ended' : is_trial ? 'Trial Active' : 'Active'}
               </span>
             </div>
-            <div className="billing-plan-name">{plan.charAt(0).toUpperCase() + plan.slice(1)} — {plan === 'free' ? '$0' : plan === 'pro' ? '$7' : '$29'} / month</div>
+            <div className="billing-plan-name">{plan.charAt(0).toUpperCase() + plan.slice(1)} — {plan === 'free' ? 'Free' : `${formatPrice(plan, cur, 'monthly')} / month`}</div>
             <div className="billing-plan-desc">
               {plan === 'free' ? 'Basic QR creation & standard security' : plan === 'pro' ? 'Unlimited Dynamic QRs · 75k Scans · full Analytics' : 'Heavy volume scans · All features unlocked'}
             </div>
@@ -264,12 +264,12 @@ export default function Billing() {
                 <tr><td>Overage scans</td><td>—</td><td>$10 / 100k</td><td>$10 / 100k</td></tr>
                 <tr>
                   <td style={{ fontWeight: 600, color: 'var(--text)' }}>Price</td>
-                  <td style={{ fontWeight: 600 }}>$0</td>
+                  <td style={{ fontWeight: 600 }}>Free</td>
                   <td style={{ color: 'var(--coral)', fontWeight: 700 }}>
-                    {isAnnual ? '$70/yr' : '$7/mo'}
+                    {isAnnual ? `${formatPrice('pro', cur, 'annual')}/yr` : `${formatPrice('pro', cur, 'monthly')}/mo`}
                   </td>
                   <td style={{ fontWeight: 600 }}>
-                    {isAnnual ? '$290/yr' : '$29/mo'}
+                    {isAnnual ? `${formatPrice('team', cur, 'annual')}/yr` : `${formatPrice('team', cur, 'monthly')}/mo`}
                   </td>
                 </tr>
               </tbody>
@@ -282,11 +282,8 @@ export default function Billing() {
                   {plan === 'free' ? 'Pro Plan' : 'Team Plan'}
                 </div>
                 <div style={{ fontFamily: 'var(--font-h)', fontSize: '32px', fontWeight: 600, color: 'var(--text)', letterSpacing: '-1px', marginBottom: '4px' }}>
-                  {isAnnual ? (
-                    <>${plan === 'free' ? '70' : '290'}<span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--text3)' }}>/yr</span></>
-                  ) : (
-                    <>${plan === 'free' ? '7' : '29'}<span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--text3)' }}>/mo</span></>
-                  )}
+                  {formatPrice(plan === 'free' ? 'pro' : 'team', cur, isAnnual ? 'annual' : 'monthly')}
+                  <span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--text3)' }}>{isAnnual ? '/yr' : '/mo'}</span>
                 </div>
                 <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '11px' }} onClick={() => handleCheckout(plan === 'free' ? 'pro' : 'team')}>
                   Upgrade Now →
@@ -328,7 +325,7 @@ export default function Billing() {
                     <td><span style={{ fontFamily: 'monospace', fontSize: '12px', color: 'var(--text)' }}>{inv.order_id}</span></td>
                     <td style={{ color: 'var(--text2)' }}>{inv.date}</td>
                     <td><span className="chip" style={{ background: 'var(--amber-l)', color: 'var(--amber)', fontSize: '11px', padding: '3px 8px', borderRadius: '4px' }}>{inv.plan}</span></td>
-                    <td style={{ fontWeight: 600, color: 'var(--text)' }}>${inv.amount}</td>
+                    <td style={{ fontWeight: 600, color: 'var(--text)' }}>{inv.currency} {inv.amount}</td>
                     <td><span className="invoice-status inv-paid">● {inv.status || 'Paid'}</span></td>
                   </tr>
                 ))}

@@ -9,7 +9,8 @@ import { createClient } from '@supabase/supabase-js';
 
 // Initialize Supabase Client
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || 'https://missing-supabase-url.supabase.co';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SECRET_KEY || 'missing-service-role-key';
+// Never read a service key from a VITE_* name: Vite inlines VITE_* vars into the browser bundle.
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'missing-service-role-key';
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -18,7 +19,8 @@ import { customAlphabet } from 'nanoid';
 import QRCode from 'qrcode';
 import logger from "./logger.js";
 import fs from 'fs';
-import { PLANS, TRIAL_LIMITS, DEFAULT_ADDONS, PlanId, UserAddons, ADDONS, AddonId } from './src/lib/plans.js';
+import { vcardText } from './src/lib/qrContent.js';
+import { PLANS, TRIAL_LIMITS, DEFAULT_ADDONS, PRICES, PlanId, UserAddons, Currency, BillingInterval } from './src/lib/plans.js';
 
 // Shim to keep existing call patterns working backed by Supabase
 class SupabaseRef {
@@ -335,13 +337,26 @@ async function startServer() {
     }
   };
 
+  // Never send the PIN hash to a browser.
+  const publicQr = ({ password_hash, ...qr }: any) => ({ ...qr, has_password: !!password_hash });
+
+  // Drop the Worker's cached config so an edit is live on the next scan (else up to the 300s KV TTL).
+  // The Worker owns /internal/purge on APP_URL's domain.
+  const purgeEdge = (slug: string) => {
+    const appUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
+    return fetch(`${appUrl}/internal/purge/${slug}`, {
+      headers: { 'x-internal-secret': process.env.INTERNAL_SECRET || '' },
+      signal: AbortSignal.timeout(3000),
+    }).catch(err => logger.error(`Cache purge failed for ${slug}`, { error: err.message }));
+  };
+
   // API routes
   app.get('/api/health', (req, res) => {
     const envStatus = {
       NODE_ENV: process.env.NODE_ENV,
       APP_URL: process.env.APP_URL ? 'set' : 'missing',
       SUPABASE_URL: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL ? 'set' : 'missing',
-      SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY ? 'set' : 'missing',
+      SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'set' : 'missing',
       INTERNAL_SECRET: process.env.INTERNAL_SECRET ? 'set' : 'missing',
       VERCEL: process.env.VERCEL ? 'true' : 'false'
     };
@@ -349,7 +364,7 @@ async function startServer() {
     const criticalMissing = [];
     if (!process.env.APP_URL) criticalMissing.push('APP_URL');
     if (!process.env.SUPABASE_URL && !process.env.VITE_SUPABASE_URL) criticalMissing.push('SUPABASE_URL');
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.VITE_SUPABASE_SERVICE_ROLE_KEY) criticalMissing.push('SUPABASE_SERVICE_ROLE_KEY');
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) criticalMissing.push('SUPABASE_SERVICE_ROLE_KEY');
     
     res.json({ 
       status: criticalMissing.length === 0 ? 'ok' : 'error',
@@ -365,11 +380,12 @@ async function startServer() {
     isTrial: boolean;
     isExpired: boolean;
     addons: UserAddons;
+    monthlyUsed: number;
   }> {
     const userSnap = await getDoc(doc(db, 'profiles', uid));
     
     if (!userSnap.exists()) {
-      return { effectivePlan: 'free', limits: PLANS.free, isTrial: false, isExpired: false, addons: DEFAULT_ADDONS };
+      return { effectivePlan: 'free', limits: PLANS.free, isTrial: false, isExpired: false, addons: DEFAULT_ADDONS, monthlyUsed: 0 };
     }
 
     const user = userSnap.data()!;
@@ -401,7 +417,9 @@ async function startServer() {
       api_access: baseLimits.api_access || addons.api_access,
     };
 
-    return { effectivePlan, limits, isTrial, isExpired, addons };
+    const monthlyUsed = user.monthly_scans?.[now.toISOString().slice(0, 7)] || 0;
+
+    return { effectivePlan, limits, isTrial, isExpired, addons, monthlyUsed };
   }
 
   // User Plan API
@@ -564,7 +582,7 @@ async function startServer() {
     try {
       const uid = (req as any).user.uid;
       const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      const qrs = qrSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      const qrs = qrSnapshot.docs.map(d => ({ id: d.id, ...publicQr(d.data()) }));
       
       const userSnap = await getDoc(doc(db, 'profiles', uid));
       const profile = userSnap.exists() ? userSnap.data() : {};
@@ -595,15 +613,13 @@ async function startServer() {
   app.put('/api/user/deactivate-all', writeLimiter, authenticate, async (req, res) => {
     try {
       const uid = (req as any).user.uid;
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      
-      const batch = db.batch();
-      qrSnapshot.docs.forEach(d => {
-        batch.update(d.ref, { is_active: false, updated_at: serverTimestamp() });
-      });
-      await batch.commit();
-      
-      res.json({ success: true, count: qrSnapshot.size });
+      const { data, error } = await supabase.from('qr_codes')
+        .update({ is_active: false, updated_at: new Date().toISOString() })
+        .eq('user_uid', uid).select('slug');
+      if (error) throw error;
+      await Promise.all((data || []).map(r => purgeEdge(r.slug)));
+
+      res.json({ success: true, count: (data || []).length });
     } catch (error) {
       logger.error('Deactivate all error:', error);
       res.status(500).json({ error: 'Failed to deactivate QR codes' });
@@ -666,6 +682,65 @@ async function startServer() {
     }
   });
 
+  // ── Billing ────────────────────────────────────────────────────────────────
+  // PayHere charges LKR. Every grant of paid state goes through applyPayment().
+  const md5 = (s: string) => crypto.createHash('md5').update(s).digest('hex').toUpperCase();
+  const safeEqual = (a: string, b: string) =>
+    a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+  const addInterval = (base: Date, interval: string) => {
+    const d = new Date(base);
+    d.setMonth(d.getMonth() + (interval === 'annual' ? 12 : 1));
+    return d;
+  };
+
+  // The only code that sets profiles.plan / plan_expires_at / is_trial.
+  // Idempotent: the unique index on subscriptions(provider, payment_id) rejects a replayed payment.
+  // Returns false when the payment was already applied.
+  async function applyPayment(p: {
+    uid: string; plan: string; interval: string; provider: string; paymentId: string;
+    orderId: string; amount: string; currency: string; expiresAt?: Date;
+  }): Promise<boolean> {
+    const { data: profile, error: readErr } = await supabase
+      .from('profiles').select('plan_expires_at, plan_since').eq('id', p.uid).maybeSingle();
+    if (readErr) throw readErr;
+    const current = profile?.plan_expires_at ? new Date(profile.plan_expires_at) : null;
+    const expiresAt = p.expiresAt || addInterval(current && current > new Date() ? current : new Date(), p.interval);
+    const now = new Date().toISOString();
+    const row = {
+      uid: p.uid, plan: p.plan, interval: p.interval, order_id: p.orderId, amount: p.amount,
+      currency: p.currency, provider: p.provider, payment_id: p.paymentId,
+      expires_at: expiresAt.toISOString(), status: 'active', updated_at: now,
+    };
+
+    // First payment of an order claims its pending row; a renewal inserts a new row.
+    const upd = await supabase.from('subscriptions').update(row)
+      .eq('provider', p.provider).eq('order_id', p.orderId).is('payment_id', null).select('id');
+    if (upd.error?.code === '23505') return false;
+    if (upd.error) throw upd.error;
+    if (!upd.data?.length) {
+      const ins = await supabase.from('subscriptions').insert(row);
+      if (ins.error?.code === '23505') return false;
+      if (ins.error) throw ins.error;
+    }
+
+    const { error } = await supabase.from('profiles').update({
+      plan: p.plan,
+      plan_expires_at: expiresAt.toISOString(),
+      plan_since: profile?.plan_since || now,
+      is_trial: false,
+      ...(p.provider === 'payhere' ? { payhere_order_id: p.orderId } : {}),
+      updated_at: now,
+    }).eq('id', p.uid);
+    if (error) throw error;
+    return true;
+  }
+
+  async function downgradeToFree(uid: string) {
+    const { error } = await supabase.from('profiles')
+      .update({ plan: 'free', plan_expires_at: null, updated_at: new Date().toISOString() }).eq('id', uid);
+    if (error) throw error;
+  }
+
   // Billing Checkout API
   app.post('/api/billing/checkout', writeLimiter, authenticate, async (req, res) => {
     try {
@@ -680,39 +755,29 @@ async function startServer() {
         return res.status(400).json({ error: 'plan must be pro or team' });
       }
 
-      const prices: Record<string, any> = {
-        pro: { monthly: 7, annual: 70 },
-        team: { monthly: 29, annual: 290 }
-      };
-      
-      const planPrice = prices[plan];
-      if (!planPrice) {
-        return res.status(400).json({ error: 'Invalid plan' });
-      }
-
-      const amountValue = (interval === 'annual') ? planPrice.annual : planPrice.monthly;
-      const recurrenceValue = (interval === 'annual') ? '1 Year' : '1 Month';
-
       const merchant_id = process.env.PAYHERE_MERCHANT_ID;
       const merchant_secret = process.env.PAYHERE_SECRET;
-      
       if (!merchant_id || !merchant_secret) {
         logger.error('Missing PayHere credentials');
         return res.status(500).json({ error: 'Billing configuration error' });
       }
+
+      const currency: Currency = 'LKR';
+      const amount = PRICES[plan as 'pro' | 'team'][currency][interval as BillingInterval].toFixed(2);
       const order_id = `ORDER_${uid}_${Date.now()}`;
-      const amount = amountValue.toFixed(2);
-      const currency = 'USD';
-      
-      // Generate PayHere Hash
+
+      // The server-side order is the source of truth for uid/plan/amount at notify time.
+      const { error: orderErr } = await supabase.from('subscriptions').insert({
+        uid, plan, interval, order_id, amount, currency, provider: 'payhere', status: 'pending',
+      });
+      if (orderErr) throw orderErr;
+
       // md5(merchant_id + order_id + amount + currency + md5(merchant_secret))
-      const hashedSecret = crypto.createHash('md5').update(merchant_secret).digest('hex').toUpperCase();
-      const hashString = `${merchant_id}${order_id}${amount}${currency}${hashedSecret}`;
-      const hash = crypto.createHash('md5').update(hashString).digest('hex').toUpperCase();
-
+      const hash = md5(`${merchant_id}${order_id}${amount}${currency}${md5(merchant_secret)}`);
       const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
+      const fullName: string = user.user_metadata?.full_name || '';
 
-      const checkoutData = {
+      res.json({
         merchant_id,
         return_url: `${appUrl}/settings`,
         cancel_url: `${appUrl}/pricing`,
@@ -721,8 +786,8 @@ async function startServer() {
         items: `${plan.toUpperCase()} Plan (${interval === 'annual' ? 'Annual' : 'Monthly'})`,
         currency,
         amount,
-        first_name: user.name?.split(' ')[0] || 'User',
-        last_name: user.name?.split(' ').slice(1).join(' ') || '',
+        first_name: fullName.split(' ')[0] || 'User',
+        last_name: fullName.split(' ').slice(1).join(' '),
         email: user.email || '',
         phone: '0000000000',
         address: 'N/A',
@@ -731,13 +796,11 @@ async function startServer() {
         hash,
         custom_1: uid,
         custom_2: plan,
-        recurrence: recurrenceValue,
-        duration: 'Forever'
-      };
-
-      res.json(checkoutData);
+        recurrence: interval === 'annual' ? '1 Year' : '1 Month',
+        duration: 'Forever',
+      });
     } catch (error: any) {
-      logger.error('Checkout error:', error);
+      logger.error('Checkout error:', { message: error.message });
       res.status(500).json({ error: 'Failed to generate checkout' });
     }
   });
@@ -746,200 +809,94 @@ async function startServer() {
   app.get('/api/billing/invoices', authenticate, async (req, res) => {
     try {
       const uid = (req as any).user.uid;
-      // Use only a single-field where() to avoid requiring a composite index.
-      // Sort and slice in memory — invoice counts are always small.
-      const subs = await getDocs(query(
-        collection(db, 'subscriptions'),
-        where('uid', '==', uid)
-      ));
-      
-      const invoices = subs.docs
-        .map((d: any) => ({
-          id: d.id,
-          ...d.data(),
-          _ts: toDate(d.data().timestamp || d.data().created_at)?.getTime() || 0,
-          date: toDate(d.data().timestamp || d.data().created_at)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-        }))
-        .sort((a: any, b: any) => b._ts - a._ts)
-        .slice(0, 12)
-        .map(({ _ts, ...rest }: any) => rest);
-      
-      res.json(invoices);
+      const { data, error } = await supabase.from('subscriptions')
+        .select('id, plan, interval, amount, currency, status, provider, order_id, expires_at, created_at')
+        .eq('uid', uid).not('status', 'in', '(pending,failed)')
+        .order('created_at', { ascending: false }).limit(12);
+      if (error) throw error;
+      res.json((data || []).map(r => ({
+        ...r,
+        date: new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      })));
     } catch (error: any) {
-      logger.error('Invoice fetch error:', error);
+      logger.error('Invoice fetch error:', { message: error.message });
       res.status(500).json({ error: 'Failed to fetch invoices' });
-    }
-  });
-
-  // Addon Checkout API
-  app.post('/api/billing/addon/checkout', writeLimiter, authenticate, async (req, res) => {
-    try {
-      const user = (req as any).user;
-      const { addonId } = req.body;
-      const uid = user.uid;
-
-      const addon = ADDONS[addonId as AddonId];
-      if (!addon) {
-        return res.status(400).json({ error: 'Invalid addon' });
-      }
-
-      const merchant_id = process.env.PAYHERE_MERCHANT_ID;
-      const merchant_secret = process.env.PAYHERE_SECRET;
-
-      if (!merchant_id || !merchant_secret) {
-        logger.error('Missing PayHere credentials');
-        return res.status(500).json({ error: 'Billing configuration error' });
-      }
-
-      const order_id = `ADDON_${uid}_${Date.now()}`;
-      const amount = addon.amount_usd.toFixed(2);
-      const currency = 'USD';
-
-      const hashedSecret = crypto.createHash('md5').update(merchant_secret).digest('hex').toUpperCase();
-      const hashString = `${merchant_id}${order_id}${amount}${currency}${hashedSecret}`;
-      const hash = crypto.createHash('md5').update(hashString).digest('hex').toUpperCase();
-
-      const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
-
-      const checkoutData = {
-        merchant_id,
-        return_url: `${appUrl}/settings`,
-        cancel_url: `${appUrl}/billing`,
-        notify_url: `${appUrl}/api/billing/notify`,
-        order_id,
-        items: `Addon: ${addon.label}`,
-        currency,
-        amount,
-        first_name: user.name?.split(' ')[0] || 'User',
-        last_name: user.name?.split(' ').slice(1).join(' ') || '',
-        email: user.email || '',
-        phone: '0000000000',
-        address: 'N/A',
-        city: 'N/A',
-        country: 'Sri Lanka',
-        hash,
-        custom_1: uid,
-        custom_2: `addon:${addonId}`,
-      };
-
-      res.json(checkoutData);
-    } catch (error: any) {
-      logger.error('Addon checkout error:', error);
-      res.status(500).json({ error: 'Failed' });
     }
   });
 
   const ALPHABET = "23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ";
   const generateSlug = customAlphabet(ALPHABET, 7);
 
-  // PayHere Webhook
-  app.post('/api/billing/notify', webhookLimiter, async (req, res) => {
+  // PayHere Webhook (server-to-server). uid/plan/amount come from our order row, never from custom_*.
+  // PayHere posts application/x-www-form-urlencoded.
+  app.post('/api/billing/notify', webhookLimiter, express.urlencoded({ extended: false, limit: '100kb' }), async (req, res) => {
     try {
-      const { 
-        merchant_id, order_id, payhere_amount, payhere_currency, 
-        status_code, md5sig, custom_1, custom_2 
+      const {
+        merchant_id, order_id, payment_id, payhere_amount, payhere_currency,
+        status_code, md5sig, message_type,
       } = req.body;
 
-      // Verify PayHere Hash (status_code 2 is success)
       const secret = process.env.PAYHERE_SECRET;
-      const hashedSecret = crypto.createHash('md5').update(secret || '').digest('hex').toUpperCase();
-      const localHashString = `${merchant_id}${order_id}${payhere_amount}${payhere_currency}${status_code}${hashedSecret}`;
-      const localHash = crypto.createHash('md5').update(localHashString).digest('hex').toUpperCase();
-
-      if (localHash !== md5sig) {
+      if (!secret || merchant_id !== process.env.PAYHERE_MERCHANT_ID) {
+        logger.warn('PayHere notify: unknown merchant');
+        return res.status(401).send('Invalid signature');
+      }
+      const localHash = md5(`${merchant_id}${order_id}${payhere_amount}${payhere_currency}${status_code}${md5(secret)}`);
+      if (!safeEqual(localHash, String(md5sig || ''))) {
         logger.warn('PayHere notify: Invalid signature');
         return res.status(401).send('Invalid signature');
       }
 
-      const uid = custom_1;
-      const metadata = custom_2; // 'pro', 'team', or 'addon:id'
+      const { data: order, error: orderErr } = await supabase.from('subscriptions').select('*')
+        .eq('provider', 'payhere').eq('order_id', order_id)
+        .order('created_at', { ascending: true }).limit(1).maybeSingle();
+      if (orderErr) throw orderErr;
+      if (!order) {
+        logger.warn('PayHere notify: unknown order', { order_id });
+        return res.status(400).send('Unknown order');
+      }
+      if (Number(payhere_amount) !== Number(order.amount) || payhere_currency !== order.currency) {
+        logger.warn('PayHere notify: amount/currency mismatch', { order_id, payhere_amount, payhere_currency });
+        return res.status(400).send('Amount mismatch');
+      }
+
+      const uid = order.uid;
+      const now = new Date().toISOString();
+
+      // Customer stopped the recurring plan: keep access until the paid period ends.
+      // ponytail: message_type names from PayHere recurring docs; verify against the sandbox.
+      if (message_type === 'RECURRING_STOPPED' || message_type === 'RECURRING_COMPLETE') {
+        await supabase.from('subscriptions').update({ status: 'cancelled', updated_at: now })
+          .eq('provider', 'payhere').eq('order_id', order_id).eq('status', 'active');
+        logger.info('Subscription stopped; plan kept until expiry', { uid, order_id });
+        return res.send('OK');
+      }
 
       if (status_code === '2') {
-        logger.info(`Payment successful for user ${uid}: ${metadata}`);
-        
-        const userRef = doc(db, 'profiles', uid);
-
-        if (metadata.startsWith('addon:')) {
-          const addonId = metadata.split(':')[1] as AddonId;
-          const addon = ADDONS[addonId];
-          if (addon) {
-            const updates: any = {};
-            const grants = addon.grants as any;
-            if (grants.extra_scans) {
-              updates['addons.extra_scans'] = increment(grants.extra_scans);
-            }
-            if (grants.extra_qr_codes) {
-              updates['addons.extra_qr_codes'] = increment(grants.extra_qr_codes);
-            }
-            if (grants.custom_domain) {
-              updates['addons.custom_domain'] = true;
-            }
-            updates['addons.api_access'] = true;
-            
-            await updateDoc(userRef, updates);
-            
-            // Log purchase
-            await addDoc(collection(db, 'addon_purchases'), {
-              uid, addonId, order_id, amount: payhere_amount, timestamp: serverTimestamp()
-            });
-          }
-        } else {
-          // Regular Plan Subscription
-          const plan = metadata;
-          const userSnap = await getDoc(userRef);
-          const currentExpiry = userSnap.exists() ? (userSnap.data()?.plan_expires_at ? new Date(userSnap.data().plan_expires_at) : null) : null;
-          
-          const base = currentExpiry && currentExpiry > new Date() ? currentExpiry : new Date();
-          const expiry = new Date(base);
-          expiry.setMonth(expiry.getMonth() + 1);
-
-          const planSince = userSnap.exists() && userSnap.data()?.plan_since ? userSnap.data()?.plan_since : new Date().toISOString();
-
-          await setDoc(userRef, {
-            plan,
-            plan_expires_at: expiry.toISOString(),
-            plan_since: planSince,
-            is_trial: false,
-            updated_at: serverTimestamp(),
-            payhere_order_id: order_id
-          }, { merge: true });
-
-          // Log subscription
-          await addDoc(collection(db, 'subscriptions'), {
-            uid, plan, order_id, 
-            amount: payhere_amount, 
-            expires_at: expiry, 
-            timestamp: serverTimestamp(),
-            status: 'active'
-          });
-        }
-      } else if (status_code === '-3') {
-        // Subscription Cancelled
-        const uid = custom_1;
-        logger.info(`Subscription cancelled for user ${uid}`);
-        await updateDoc(doc(db, 'profiles', uid), { 
-          plan: 'free', 
-          plan_expires_at: null 
+        if (!payment_id) return res.status(400).send('Missing payment_id');
+        const applied = await applyPayment({
+          uid, plan: order.plan, interval: order.interval || 'monthly', provider: 'payhere',
+          paymentId: String(payment_id), orderId: order_id, amount: order.amount, currency: order.currency,
         });
-        // Find most recent subscription and mark as cancelled.
-        // Use single-field where() to avoid composite index requirement; sort in memory.
-        const subs = await getDocs(query(collection(db, 'subscriptions'), where('uid', '==', uid)));
-        if (!subs.empty) {
-          const mostRecent = subs.docs.sort((a: any, b: any) => {
-            const aTs = toDate(a.data().timestamp || a.data().created_at)?.getTime() || 0;
-            const bTs = toDate(b.data().timestamp || b.data().created_at)?.getTime() || 0;
-            return bTs - aTs;
-          })[0];
-          await updateDoc(mostRecent.ref, { status: 'cancelled', updated_at: serverTimestamp() });
-        }
+        logger.info(applied ? 'Payment applied' : 'Duplicate payment ignored', { uid, order_id, payment_id });
+      } else if (status_code === '-3') {
+        // Chargeback: remove access now.
+        await downgradeToFree(uid);
+        await supabase.from('subscriptions').update({ status: 'chargeback', updated_at: now })
+          .eq('provider', 'payhere').eq('order_id', order_id);
+        logger.warn('Chargeback: downgraded to free', { uid, order_id });
+      } else if (status_code === '-1' || status_code === '-2') {
+        await supabase.from('subscriptions').update({ status: 'failed', updated_at: now })
+          .eq('provider', 'payhere').eq('order_id', order_id).eq('status', 'pending');
       }
 
       res.send('OK');
     } catch (error: any) {
-      logger.error('Billing notify error:', error);
+      logger.error('Billing notify error:', { message: error.message });
       res.status(500).send('Error');
     }
   });
+
   async function createUniqueSlug(): Promise<string> {
     let slug: string, exists: boolean, attempts = 0;
     do {
@@ -957,7 +914,9 @@ async function startServer() {
   app.post('/api/qr', writeLimiter, authenticate, async (req, res) => {
     try {
       const user = (req as any).user;
-      const { destination_url, title, style, is_dynamic, qr_type, content_data, options } = req.body;
+      const { destination_url, title, style, is_dynamic: requestedDynamic, qr_type, content_data, options } = req.body;
+      // Only URL codes can be dynamic until the Worker renders the other types (Phase 2).
+      const is_dynamic = requestedDynamic !== false && (qr_type || 'url') === 'url';
       const uid = user.uid;
 
       // Input validation
@@ -1049,23 +1008,6 @@ async function startServer() {
       const defaultStyle = { dot_color: '#000000', bg_color: '#ffffff' };
       const activeStyle = style || defaultStyle;
 
-      const protocol = req.headers['x-forwarded-proto'] || 'https';
-      const host = req.headers.host;
-      let qrContent = `${protocol}://${host}/${slug}`;
-      if (is_dynamic === false) {
-        if (qr_type === 'wifi') {
-          qrContent = `WIFI:S:${content_data?.ssid || ''};T:${content_data?.encryption || 'WPA'};P:${content_data?.password || ''};;`;
-        } else if (qr_type === 'vcard') {
-          qrContent = `BEGIN:VCARD\nVERSION:3.0\nN:${content_data?.last_name || ''};${content_data?.first_name || ''}\nFN:${content_data?.first_name || ''} ${content_data?.last_name || ''}\nTEL:${content_data?.phone || ''}\nEMAIL:${content_data?.email || ''}\nORG:${content_data?.company || ''}\nURL:${content_data?.website || ''}\nEND:VCARD`;
-        } else if (qr_type === 'email') {
-          qrContent = `mailto:${content_data?.email || ''}?subject=${encodeURIComponent(content_data?.subject || '')}&body=${encodeURIComponent(content_data?.body || '')}`;
-        } else if (qr_type === 'text') {
-          qrContent = content_data?.text || '';
-        } else {
-          qrContent = destination_url;
-        }
-      }
-
       let passwordHash = null;
       if (password) {
         passwordHash = crypto.createHash('sha256').update(password + slug).digest('hex');
@@ -1077,7 +1019,7 @@ async function startServer() {
         destination_url: destination_url || '',
         qr_type: qr_type || 'url',
         content_data: content_data || null,
-        is_dynamic: is_dynamic !== false,
+        is_dynamic,
         title: title || 'My QR',
         is_active: true,
         style: activeStyle,
@@ -1167,7 +1109,7 @@ async function startServer() {
     try {
       const { slug } = req.params;
       const qrDoc = await getDoc(doc(db, 'qr_codes', slug));
-      res.json(qrDoc.data());
+      res.json(publicQr(qrDoc.data()));
     } catch (error: any) {
       logger.error('QR fetch error:', error);
       res.status(500).json({ error: 'Failed to fetch QR code' });
@@ -1224,9 +1166,12 @@ async function startServer() {
           if (options.scan_limit_enabled && !license.limits.scan_limit_gate) {
             return res.status(403).json({ error: 'Scan limits require Pro plan', code: 'FEATURE_SCAN_LIMIT' });
           }
-          updateData['rate_limit.enabled'] = options.scan_limit_enabled;
-          updateData['rate_limit.max_scans'] = options.scan_limit;
-          updateData['rate_limit.period'] = 'total';
+          // One jsonb value. Dotted keys ('rate_limit.enabled') are Firestore paths, not Postgres columns.
+          updateData.rate_limit = {
+            enabled: !!options.scan_limit_enabled,
+            max_scans: Number(options.scan_limit) || 100,
+            period: 'total',
+          };
         }
 
         if (options.visitor_rate_limit !== undefined) {
@@ -1250,7 +1195,9 @@ async function startServer() {
         }
       }
       
+      updateData.updated_at = new Date().toISOString();
       await updateDoc(doc(db, 'qr_codes', slug), updateData);
+      await purgeEdge(slug);
       res.json({ success: true, slug });
     } catch (error: any) {
       logger.error('QR update error:', error);
@@ -1273,13 +1220,7 @@ async function startServer() {
 
       res.json({ message: 'QR code deleted successfully' });
 
-      // Purge Worker Cache
-      const appUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
-      fetch(`${appUrl}/internal/purge/${slug}`, {
-        headers: { 'x-internal-secret': process.env.INTERNAL_SECRET || '' }
-      }).catch(err => {
-        logger.error(`Cache purge failed for ${slug}`, { error: err.message });
-      });
+      purgeEdge(slug);
 
       // Phase 12: Background orphan scan_events cleanup
       (async () => {
@@ -2111,24 +2052,13 @@ async function startServer() {
       logger.info(`Received internal scan for slug: ${req.body.slug}`);
       
       const { slug } = req.body;
-      const currentMonth = new Date().toISOString().slice(0, 7); // "2026-03"
-
-      const [qrSnap, statsSnap] = await Promise.all([
-        getDoc(doc(db, 'qr_codes', slug)),
-        getDoc(doc(db, 'qr_stats', slug))
-      ]);
-      if (!qrSnap.exists()) {
+      // Recording only. The monthly quota is enforced by the Worker from /internal/slug's quota_exceeded.
+      const { data: qr, error } = await supabase.from('qr_codes').select('user_uid').eq('slug', slug).maybeSingle();
+      if (error) throw error;
+      if (!qr) {
         return res.status(404).json({ error: 'QR not found' });
       }
-
-      const qrOwnerUid = qrSnap.data().user_uid;
-      const license = await getLicense(qrOwnerUid);
-      const monthlyScans = statsSnap.data()?.monthly_scans?.[currentMonth] || 0;
-
-      if (monthlyScans >= license.limits.monthly_scans) {
-        logger.warn(`Monthly scan quota exceeded for user ${qrOwnerUid} on slug ${slug}`);
-        return res.status(429).json({ blocked: true, reason: 'monthly_quota' });
-      }
+      const qrOwnerUid = qr.user_uid;
 
       await captureAnalyticsFromPayload(req.body, qrOwnerUid);
       res.send('OK');
@@ -2160,11 +2090,11 @@ async function startServer() {
       }
 
       const qr = qrDoc.data();
-      const userDoc = await getDoc(doc(db, 'profiles', qr.user_uid));
-      const userPlan = userDoc.exists() ? userDoc.data().plan : 'free';
+      const license = await getLicense(qr.user_uid);
       const stats = statsDoc.exists() ? statsDoc.data() : { total_scans: 0 };
 
-      // Return compact gate config for Worker
+      // Compact gate config for the Worker. Policy (quota, visitor guard) is decided here, from the
+      // account-wide license, so the Worker never waits on the analytics write.
       const responseBody = {
         destination_url: qr.destination_url,
         is_active: qr.is_active,
@@ -2172,15 +2102,12 @@ async function startServer() {
         password_hash: qr.password_hash || null,
         scan_limit: qr.rate_limit?.enabled ? qr.rate_limit.max_scans : null,
         total_scans: stats.total_scans || 0,
-        visitor_rate_limit: qr.visitor_rate_limit !== undefined ? qr.visitor_rate_limit : 5,
-        visitor_rate_period: qr.visitor_rate_period !== undefined ? qr.visitor_rate_period : 3600,
-        owner_plan: userPlan 
+        visitor_rate_limit: license.limits.visitor_guard_gate && qr.visitor_rate_limit != null ? qr.visitor_rate_limit : 5,
+        visitor_rate_period: license.limits.visitor_guard_gate && qr.visitor_rate_period != null ? qr.visitor_rate_period : 3600,
+        visitor_guard: license.limits.visitor_guard_gate,
+        quota_exceeded: license.monthlyUsed >= license.limits.monthly_scans,
+        owner_plan: license.effectivePlan,
       };
-
-      logger.info(`Returning config for slug ${slug}:`, { 
-        has_password: !!responseBody.password_hash,
-        is_active: responseBody.is_active 
-      });
 
       res.json(responseBody);
     } catch (error: any) {
@@ -2220,7 +2147,7 @@ async function startServer() {
       // 3. Handle different QR types
       if (qrData.qr_type === 'vcard') {
         const content = qrData.content_data;
-        const vcard = `BEGIN:VCARD\nVERSION:3.0\nN:${content?.last_name || ''};${content?.first_name || ''}\nFN:${content?.first_name || ''} ${content?.last_name || ''}\nTEL:${content?.phone || ''}\nEMAIL:${content?.email || ''}\nORG:${content?.company || ''}\nURL:${content?.website || ''}\nEND:VCARD`;
+        const vcard = vcardText(content);
         res.setHeader('Content-Type', 'text/vcard');
         res.setHeader('Content-Disposition', `attachment; filename="${content?.first_name || 'contact'}.vcf"`);
         return res.send(vcard);

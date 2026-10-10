@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Check, X, Zap, Crown, Building2, Loader2, ExternalLink } from 'lucide-react';
 import { apiFetch } from '../lib/api';
+import { formatPrice } from '../lib/plans';
 
 const PLANS = [
   {
@@ -96,7 +97,7 @@ export default function Pricing() {
     try {
       const data = await apiFetch('/api/billing/checkout', {
         method: 'POST',
-        body: JSON.stringify({ plan: planId })
+        body: JSON.stringify({ plan: planId, interval: 'monthly' })
       });
 
       // Build PayHere checkout form and submit
@@ -172,7 +173,7 @@ export default function Pricing() {
               <p className="text-xs text-zinc-500 mb-4">{plan.description}</p>
 
               <div className="flex items-baseline gap-0.5 mb-5">
-                <span className="text-3xl font-bold text-white">${plan.price}</span>
+                <span className="text-3xl font-bold text-white">{plan.id === 'free' ? 'Free' : formatPrice(plan.id as 'pro' | 'team', 'LKR', 'monthly')}</span>
                 <span className="text-sm text-zinc-500">{plan.cycle}</span>
               </div>
 
