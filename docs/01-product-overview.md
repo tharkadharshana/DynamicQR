@@ -2,112 +2,84 @@
 
 ## What the product is
 
-Scnr is a hosted QR-code platform for small businesses. The founder's target market is Sri Lankan SMEs. See the separate [SCNR Business Model and Monetization Assessment](SCNR%20Business%20Model%20and%20Monetization%20Assessment.md).
+Scnr is a hosted QR-code service for Sri Lankan small businesses, restaurants first. It sells three things:
 
-It sells three things:
+1. **QR creation and styling.** Colours, dot and corner shapes, a centre logo, and PNG/SVG export up to 1200 px.
+2. **Dynamic QR codes.** The printed code points at a permanent short link (`scnr.tharkak.com/<slug>`). The destination can change after printing, and gate rules control who gets through.
+3. **Scan statistics.** Scans over time, unique visitors, country, device, OS, browser and recent scans.
 
-1. **QR creation and styling.** Colours, dot and corner shapes, a centre logo, and PNG/SVG export.
-2. **Dynamic QR codes.** The printed code points at a short link the business owns. The destination can change after printing, and gate rules control who gets through.
-3. **Scan analytics.** Scans over time, unique visitors, country, device, OS, browser and a recent-scan feed.
+Its edge over global tools: **LKR billing**, Sinhala and Tamil guest pages (Phase 2), WhatsApp destinations and support, and local onboarding. It makes marketing, menu and campaign codes; **it is not a LANKAQR payment replacement**.
 
 ## Users and roles
 
-There is one role: the **account owner**. Users sign in with Google only, through Supabase OAuth. The product has no teams, workspaces, members, sharing or admin console, although the Pricing page advertises "shared workspaces" for the Team plan.
+There is one role, the **account owner**, who signs in with Google (Supabase OAuth). Team seats are planned for the Team plan (Phase 4).
 
 ## Feature inventory (as built)
 
-Legend: ✅ works as described · ⚠️ partly works or has a known bug · ❌ advertised but not built
+Legend: ✅ works · ⚠️ works with a known limit · 🗓 planned (phase) · ❌ not offered
 
 ### QR creation — [CreateQR.tsx](../src/pages/CreateQR.tsx)
 
 | Feature | Status | Notes |
 |---|---|---|
-| Content types: URL, vCard, WiFi, Text, Email | ✅ static / URL-only dynamic | Non-URL types are stored as static until the Worker renders them (Phase 2). See [doc 03](03-scan-flow-and-gate-engine.md#non-url-types). |
-| SMS type | ❌ | Mentioned in the old README only |
-| Static vs dynamic toggle | ✅ | Dynamic needs a Pro plan, a Team plan or an active trial |
-| Foreground and background colours, presets | ✅ | |
-| Dot styles: square, dots, rounded, diamond, star | ✅ | Map to the `qr-code-styling` types `square`, `dots`, `rounded`, `classy`, `classy-rounded` |
-| Corner styles: square, dot, rounded | ✅ | |
-| Centre logo upload (≤1 MB, error correction set to H automatically) | ⚠️ | The logo is stored as a base64 data URL inside `style`. The API body limit is 100 KB, so logos above about 70 KB fail to save. |
-| Error correction L/M/Q/H | ✅ | |
-| Output size 400/800/1200 | ❌ | The setting is stored but ignored. Downloads are always 180 px. |
-| Download PNG / SVG | ⚠️ | Works, but at 180 px |
-| "Print PDF" | ❌ | Downloads a PNG |
-| Live preview | ✅ | |
-| Edit existing QR | ⚠️ | Title, destination and style save. Content data (vCard fields and so on) cannot change. Option changes hit the dotted-key bug. See [doc 11](11-review-findings.md). |
-| Delete QR | ✅ | Also purges the Worker cache and scan events |
+| Content types: URL, vCard, Wi-Fi, Text, Email | ✅ static · URL dynamic | Non-URL types are static until the Worker renders them (🗓 Phase 2) |
+| Static vs dynamic toggle | ✅ | Dynamic counts against the plan's `dynamic_qr_codes` (Free: 1) |
+| Colours, dot styles, corner styles | ✅ | `stylingOptions()` in [qrContent.ts](../src/lib/qrContent.ts) is used by the editor, downloads and the viewer |
+| Centre logo | ✅ | Resized on the device to ≤256 px (`resizeLogo`), so saves stay under the API body limit. Error correction switches to H. |
+| Downloads | ✅ | PNG and SVG at the chosen output size (400/800/1200 px). There is no PDF; print-ready table tents arrive in 🗓 Phase 2. |
+| Viewer modal | ✅ | Same renderer as the editor; 1200 px PNG download |
+| Edit after printing | ✅ | Title, destination, style, gates. Content of non-URL types becomes editable in 🗓 Phase 2. |
+| Delete | ✅ | Purges the edge cache and scan events |
 
 ### Gates on dynamic codes — [worker.js](../worker/worker.js)
 
 | Gate | Status | Behaviour |
 |---|---|---|
-| Active toggle | ✅ | Inactive returns a 410 page. Edits purge the edge cache, so they apply on the next scan. |
-| Expiry date | ✅ | Returns 410 after the date. The DB row is not deactivated. |
-| Scan limit (total scans) | ⚠️ | Returns 410 and deactivates the code once the count passes the limit. The count is per edge cache, so it is approximate. |
-| Password / PIN | ✅ | The Worker serves a PIN page and remembers success for 24 h per visitor. 5 wrong PINs lock that visitor out for 15 minutes. |
-| Visitor Guard (N scans per visitor per window) | ✅ | Free owners are fixed at 5 scans per hour |
-| Monthly scan quota per plan | ✅ | Account-wide, decided by `/internal/slug` (can lag by up to 5 minutes) |
-| iOS / Android device routing | ❌ | Not implemented |
-| UTM tagging | ❌ | Not implemented |
+| Active toggle | ✅ | Inactive codes show a 410 page; edits purge the edge cache |
+| Lapse pause | ✅ | After a plan or trial ends plus a 30-day grace period, dynamic codes above the allowance show a "paused by its owner" page. Never deleted. |
+| Expiry date | ✅ | 410 page after the date |
+| Monthly quota | ✅ | Account-wide, from the cached config (can lag by up to 5 min) |
+| Visitor Guard | ✅ | N scans per visitor per window; owners without the feature are fixed at 5 per hour |
+| PIN | ✅ | PIN page, 24 h unlock, lockout after 5 wrong PINs in 15 min |
+| Scan limit | ⚠️ | Approximate across edges; deactivates the code when reached |
+| iOS/Android routing, UTM | ❌ | Not planned until a customer asks |
 
-### Analytics — [Analytics.tsx](../src/pages/Analytics.tsx), [AccountAnalytics.tsx](../src/pages/AccountAnalytics.tsx), [Dashboard.tsx](../src/pages/Dashboard.tsx)
+### Statistics — [Analytics.tsx](../src/pages/Analytics.tsx), [AccountAnalytics.tsx](../src/pages/AccountAnalytics.tsx), [Dashboard.tsx](../src/pages/Dashboard.tsx)
 
 | Feature | Status |
 |---|---|
-| Total scans, unique visitors (daily unique per visitor per QR) | ✅ |
-| Daily time series, last N days or custom range | ✅ (unique-per-day is estimated) |
-| Countries, devices, OS, browsers | ✅ |
-| Recent scans feed | ✅ (refreshes only on page load) |
-| Multi-QR comparison (select several codes) | ✅ |
-| Referrers | ❌ always empty: nothing writes them |
-| "Advanced" (regions, ISPs, languages, hours, TLS, EU) | ❌ always empty: those columns do not exist |
-| City-level location, peak-hours heatmap | ❌ advertised on the Landing page only |
-| "↑ 0% vs last month" deltas | ❌ hard-coded text |
-| "Live" badge | ❌ no polling or realtime |
+| Total scans, unique visitors (daily unique per visitor per code) | ✅ |
+| Daily time series (last N days, capped by plan, or a custom range) | ✅ (unique per day is estimated until 🗓 Phase 3) |
+| Countries, devices, OS, browsers | ✅ all-time |
+| Recent scans | ✅ (loads with the page) |
+| Peak hours, weekly digest, CSV export | 🗓 Phase 3 |
 
 ### Account and billing
 
 | Feature | Status |
 |---|---|
-| Google sign-in, 14-day trial on first login | ✅ |
-| Profile (company, job title, country, timezone) | ✅ |
-| Revoke all sessions | ✅ |
-| Export my data (JSON) | ✅ |
-| Deactivate all QR codes | ✅ (purges the Worker cache) |
-| Delete account | ✅ |
-| Upgrade from the Billing page (monthly or annual, LKR) | ✅ annual adds 12 months. See [doc 07](07-plans-billing-payhere.md). |
-| Upgrade from the Pricing page | ✅ (monthly) |
-| Add-ons (extra scans / extra QR codes) | removed in Phase 0 |
-| Invoice history | ✅ (from `subscriptions`) |
-| REST API v1, API keys, webhooks | ❌ the docs page exists, no backend |
-| Custom domain, white-label, bulk generation, workspaces | ❌ advertised on Pricing |
-| Notifications, preferences, connected apps | ❌ the UI is commented out in Settings |
+| Google sign-in, 14-day trial | ✅ |
+| Profile, revoke sessions, export data, deactivate all, delete account | ✅ |
+| Pay in LKR (PayHere) or USD (Polar card, falling back to PayHere USD) | ✅ monthly or yearly |
+| Invoices | ✅ |
+| Cancel | ✅ keeps the plan until the paid period ends |
+| Restaurant Kit, guest pages, WhatsApp code type, "Book setup on WhatsApp" | 🗓 Phase 2 |
+| Bulk CSV, team seats, API keys, one custom domain (Team) | 🗓 Phase 4 |
 
 ## Plans (from [src/lib/plans.ts](../src/lib/plans.ts))
 
 | | Free | Trial (14 days) | Pro | Team |
 |---|---|---|---|---|
-| Price (PayHere, LKR) | Free | Free | LKR 2,290/mo or 22,900/yr | LKR 9,490/mo or 94,900/yr |
-| Price (USD, Polar from Phase 1) | | | $7/mo or $70/yr | $29/mo or $290/yr |
-| QR codes | 3 | 3 | Unlimited | Unlimited |
+| Price, LKR (PayHere) | Free | Free | 2,290/mo · 22,900/yr | 9,490/mo · 94,900/yr |
+| Price, USD (card) | | | $7/mo · $70/yr | $29/mo · $290/yr |
+| QR codes (active) | 3 | 3 | 100 | 600 |
+| Dynamic codes | **1 (forever)** | 3 | 100 | 600 |
 | Monthly scans | 1,000 | 75,000 | 75,000 | 500,000 |
-| Dynamic QR | No | Yes | Yes | Yes |
-| Password / expiry / scan limit / Visitor Guard | No | Yes | Yes | Yes |
-| Analytics history | 7 days | 90 days | 90 days | 365 days |
-| API access, custom domain (flags only) | No | No | No | Yes |
+| PIN / expiry / scan limit / Visitor Guard | No | Yes | Yes | Yes |
+| Statistics history | 7 days | 365 days | 365 days | 730 days |
 
-A free user can only make static codes. Static codes never touch the platform when scanned, so the "7-day analytics" on Free shows nothing. [Doc 07](07-plans-billing-payhere.md) covers this.
+No plan is "unlimited". Yearly = 10× monthly (2 months free).
 
-## Names and domains in the code
+## Names and domains
 
-| Name / domain | Where it appears |
-|---|---|
-| **Scnr**, `scnr.tharkak.com` | Current brand: index.html meta, sidebar, CreateQR preview, robots/sitemap |
-| `scnr.app` | Placeholder content for an empty static QR preview |
-| `dynamicqr.app` | API Docs examples (the Worker's quota page now links to its own origin) |
-| DynamicQR | Repo name, API docs page, export file name |
-| qik.app | Dead `Layout.tsx` component |
-| MLQR / mlqr.app | Root README |
-| "Multi Layered QR Code Platform" | metadata.json (AI Studio leftover) |
-
-Pick one brand and domain and replace the others. Customers print these URLs, so the domain must never change after launch.
+The product is **Scnr**. The permanent short domain is `VITE_SHORT_DOMAIN` (`https://scnr.tharkak.com`); it must never change after codes are printed. Business identity (legal name, address, support email and WhatsApp, status page, demo code) comes from `VITE_*` variables read by [src/lib/site.ts](../src/lib/site.ts). The old names (DynamicQR, qik.app, MLQR, dynamicqr.app, scnr.app) were removed in Phase 1, except the repository name.

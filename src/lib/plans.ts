@@ -1,7 +1,8 @@
 export type PlanId = 'free' | 'pro' | 'team';
 
 export interface PlanLimits {
-  qr_codes: number;
+  qr_codes: number;          // active codes (static + dynamic). No plan is unlimited.
+  dynamic_qr_codes: number;  // active dynamic codes; Free keeps 1 pilot forever
   monthly_scans: number;
   dynamic_qr: boolean;
   password_protect: boolean;
@@ -32,8 +33,9 @@ export function formatPrice(plan: 'pro' | 'team', currency: Currency, interval: 
 export const PLANS: Record<PlanId, PlanLimits> = {
   free: {
     qr_codes: 3,
+    dynamic_qr_codes: 1,  // permanent free dynamic pilot
     monthly_scans: 1000,
-    dynamic_qr: false,
+    dynamic_qr: true,
     password_protect: false,
     expiry_gate: false,
     scan_limit_gate: false,
@@ -43,37 +45,43 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     api_access: false,
   },
   pro: {
-    qr_codes: Infinity,
+    qr_codes: 100,
+    dynamic_qr_codes: 100,
     monthly_scans: 75000,
     dynamic_qr: true,
     password_protect: true,
     expiry_gate: true,
     scan_limit_gate: true,
     visitor_guard_gate: true,
-    analytics_days: 90,
+    analytics_days: 365,  // 12 months on the mid tier
     custom_domain: false,
     api_access: false,
   },
   team: {
-    qr_codes: Infinity,
+    qr_codes: 600,
+    dynamic_qr_codes: 600,
     monthly_scans: 500000,
     dynamic_qr: true,
     password_protect: true,
     expiry_gate: true,
     scan_limit_gate: true,
     visitor_guard_gate: true,
-    analytics_days: 365,
+    analytics_days: 730,
     custom_domain: true,
     api_access: true,
   },
 };
 
-// Trial gets all Pro features but capped at Free's QR code limit.
+// Trial gets all Pro features but capped at Free's QR code count.
 // This is the conversion hook: users see Pro features but must upgrade to create more QRs.
 export const TRIAL_LIMITS: PlanLimits = {
   ...PLANS.pro,
-  qr_codes: PLANS.free.qr_codes, // 3 QRs max during trial
+  qr_codes: PLANS.free.qr_codes,
+  dynamic_qr_codes: PLANS.free.qr_codes,
 };
+
+// Lapsed trial or plan: dynamic codes above the allowance keep working this long, then pause.
+export const GRACE_DAYS = 30;
 
 export interface UserAddons {
   extra_scans: number;

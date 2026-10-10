@@ -3,13 +3,16 @@ import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../supabase';
 import { apiFetch } from '../lib/api';
 import { useUI } from '../shared/UIContext';
-import { formatPrice } from '../lib/plans';
+import { formatPrice, Currency } from '../lib/plans';
+import { startCheckout } from '../lib/checkout';
+import { SITE } from '../lib/site';
 
 export default function Billing() {
   const { planData } = useOutletContext<{ planData: any }>();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loadingInvoices, setLoadingInvoices] = useState(true);
   const [isAnnual, setIsAnnual] = useState(false);
+  const [currency, setCurrency] = useState<Currency>('LKR');
   const [error, setError] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [planTimeout, setPlanTimeout] = useState(false);
@@ -56,39 +59,19 @@ export default function Billing() {
 
   const { plan, plan_expires_at, monthly_scans_used, limits, is_trial, is_expired, plan_since, email } = planData;
   const trialEnded = plan === 'free' && !is_trial && !is_expired;
-  // Checkout is charged in LKR through PayHere.
-  const cur = 'LKR' as const;
+  // LKR → PayHere; USD → Polar card checkout (or PayHere in USD when Polar is off).
+  const cur: Currency = currency;
   const expiryDate = plan_expires_at ? new Date(plan_expires_at).toLocaleDateString() : 'N/A';
   const planSince = plan_since
     ? new Date(plan_since).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     : '—';
   const billingEmail = email || userEmail || '—';
 
-  const handleCheckout = async (targetPlan: string) => {
+  const handleCheckout = async (targetPlan: 'pro' | 'team') => {
     try {
-      const data = await apiFetch('/api/billing/checkout', {
-        method: 'POST',
-        body: JSON.stringify({ plan: targetPlan, interval: isAnnual ? 'annual' : 'monthly' })
-      });
-      if (data.hash) {
-        // Submit hidden form to PayHere
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = planData.is_sandbox ? 'https://sandbox.payhere.lk/pay/checkout' : 'https://www.payhere.lk/pay/checkout';
-        
-        Object.entries(data).forEach(([key, value]) => {
-          const input = document.createElement('input');
-          input.type = 'hidden';
-          input.name = key;
-          input.value = value as string;
-          form.appendChild(input);
-        });
-        
-        document.body.appendChild(form);
-        form.submit();
-      }
-    } catch (err) {
-      showToast('error', 'Failed to initiate checkout');
+      await startCheckout(targetPlan, isAnnual ? 'annual' : 'monthly', cur, planData);
+    } catch (err: any) {
+      showToast('error', err?.message || 'Failed to start checkout');
     }
   };
 
@@ -151,8 +134,17 @@ export default function Billing() {
           </div>
         )}
 
-        {/* Billing Cycle Toggle */}
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
+        {/* Billing Cycle + currency toggles */}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '24px' }}>
+          <div style={{ background: 'var(--surface2)', padding: '4px', borderRadius: '30px', display: 'flex', gap: '4px', border: '1px solid var(--border)' }}>
+            {(['LKR', 'USD'] as Currency[]).map(c => (
+              <button key={c} onClick={() => setCurrency(c)} aria-pressed={currency === c}
+                style={{ padding: '8px 16px', borderRadius: '26px', border: 'none', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                  background: currency === c ? 'white' : 'transparent', color: currency === c ? '#111' : 'var(--text3)' }}>
+                {c === 'LKR' ? 'LKR · PayHere' : 'USD · card'}
+              </button>
+            ))}
+          </div>
           <div style={{ background: 'var(--surface2)', padding: '4px', borderRadius: '30px', display: 'flex', gap: '4px', border: '1px solid var(--border)' }}>
             <button
               onClick={() => setIsAnnual(false)}
@@ -193,7 +185,7 @@ export default function Billing() {
             </div>
             <div className="billing-plan-name">{plan.charAt(0).toUpperCase() + plan.slice(1)} — {plan === 'free' ? 'Free' : `${formatPrice(plan, cur, 'monthly')} / month`}</div>
             <div className="billing-plan-desc">
-              {plan === 'free' ? 'Basic QR creation & standard security' : plan === 'pro' ? 'Unlimited Dynamic QRs · 75k Scans · full Analytics' : 'Heavy volume scans · All features unlocked'}
+              {plan === 'free' ? '3 codes (1 dynamic) · 1,000 scans/month · 7-day statistics' : plan === 'pro' ? '100 codes · 75,000 scans/month · 12 months of statistics' : '600 codes · 500,000 scans/month · 24 months of statistics'}
             </div>
             <div className="billing-next">
               <span className="billing-next-dot"></span>
@@ -202,13 +194,15 @@ export default function Billing() {
             {plan !== 'free' && plan_expires_at && (
               <div className="billing-next" style={{ marginTop: '4px' }}>
                 <span className="billing-next-dot" style={{ background: 'var(--blue)' }}></span>
-                Next billing: <strong style={{ color: 'var(--text)' }}>{expiryDate}</strong> · Auto-renews via PayHere
+                Paid until: <strong style={{ color: 'var(--text)' }}>{expiryDate}</strong> · renews automatically unless cancelled
               </div>
             )}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end' }}>
-            <button className="btn btn-primary" onClick={() => showToast('info', 'PayHere portal can be accessed via your receipt email')}>Manage billing →</button>
-            <a href="mailto:support@tharkak.com?subject=Cancellation Request" className="btn btn-ghost btn-sm" style={{ color: 'var(--text3)', fontSize: '11px' }}>Cancel subscription</a>
+            {planData.polar_portal_url
+              ? <a className="btn btn-primary" href={planData.polar_portal_url} target="_blank" rel="noreferrer">Manage card subscription →</a>
+              : <button className="btn btn-primary" onClick={() => showToast('info', 'PayHere subscriptions are managed from the link in your receipt email.')}>Manage billing →</button>}
+            <span style={{ color: 'var(--text3)', fontSize: '11px' }}>To cancel: {SITE.email}</span>
           </div>
         </div>
 
@@ -253,15 +247,14 @@ export default function Billing() {
                 </tr>
               </thead>
               <tbody>
-                <tr><td>Total QR codes</td><td>3 (Static)</td><td>Unlimited</td><td>Unlimited</td></tr>
+                <tr><td>QR codes</td><td>3 (1 dynamic)</td><td>100</td><td>600</td></tr>
                 <tr><td>Monthly Scans</td><td>1,000</td><td>75,000</td><td>500,000</td></tr>
-                <tr><td>Dynamic destinations</td><td>—</td><td>✓</td><td>✓</td></tr>
-                <tr><td>Scan analytics</td><td>—</td><td>✓</td><td>✓</td></tr>
-                <tr><td>Analytics history</td><td>7 days</td><td>90 days</td><td>365 days</td></tr>
+                <tr><td>Dynamic destinations</td><td>1 code</td><td>✓</td><td>✓</td></tr>
+                <tr><td>Scan statistics</td><td>✓</td><td>✓</td><td>✓</td></tr>
+                <tr><td>Statistics history</td><td>7 days</td><td>12 months</td><td>24 months</td></tr>
                 <tr><td>Password protection</td><td>—</td><td>✓</td><td>✓</td></tr>
                 <tr><td>Expiry dates</td><td>—</td><td>✓</td><td>✓</td></tr>
                 <tr><td>Visitor Guard</td><td>5 scans/hr</td><td>Configurable</td><td>Configurable</td></tr>
-                <tr><td>Overage scans</td><td>—</td><td>$10 / 100k</td><td>$10 / 100k</td></tr>
                 <tr>
                   <td style={{ fontWeight: 600, color: 'var(--text)' }}>Price</td>
                   <td style={{ fontWeight: 600 }}>Free</td>

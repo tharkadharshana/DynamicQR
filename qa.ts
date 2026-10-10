@@ -30,7 +30,9 @@
  *  20. Security: RLS (anon + signed-in), no password_hash in responses
  *  21. Edit persistence (rate_limit) + /internal/slug policy fields
  *  22. Billing: PayHere order + signed notify (tamper, replay, amount, annual, stop, chargeback)
- *  23. Cleanup
+ *  23. Billing USD: PayHere fallback + Polar signed webhooks (active, replay, canceled, revoked)
+ *  24. Plan limits (caps, 365-day history), free dynamic pilot, lapse grace → pause (API + Worker)
+ *  25. Cleanup
  */
 import 'dotenv/config';
 import crypto from 'crypto';
@@ -241,9 +243,7 @@ async function run() {
       [`/api/analytics/${testSlug}/countries`,  b => Array.isArray(b),                               'countries array'],
       [`/api/analytics/${testSlug}/os`,         b => Array.isArray(b),                               'os array'],
       [`/api/analytics/${testSlug}/browsers`,   b => Array.isArray(b),                               'browsers array'],
-      [`/api/analytics/${testSlug}/referrers`,  b => Array.isArray(b),                               'referrers array'],
       [`/api/analytics/${testSlug}/recent`,     b => Array.isArray(b),                               'recent array'],
-      [`/api/analytics/${testSlug}/advanced`,   b => 'regions' in b && 'hours' in b,                 'advanced shape'],
     ];
     for (const [route, validate, label] of analyticsRoutes) {
       const r = await api(route, { token });
@@ -262,7 +262,6 @@ async function run() {
       `/api/analytics/account/${uid}/countries`,
       `/api/analytics/account/${uid}/browsers`,
       `/api/analytics/account/${uid}/os`,
-      `/api/analytics/account/${uid}/referrers`,
       `/api/analytics/account/${uid}/summary`,
       `/api/analytics/account/${uid}/recent`,
       `/api/analytics/account/${uid}/performance`,
@@ -623,10 +622,10 @@ async function run() {
 
   // ── 15b. Worker gate engine (in-process) ─────────────────────────────────────
   // Runs worker/worker.js directly in Node against this API, with an in-memory KV.
-  section('15b. Worker gate engine (in-process, fake KV)');
-  {
+  // Worker test helpers (also used by section 24): run worker.js in-process against this API with a fake KV.
     const runWorker = async (path: string, opts: { kv?: Map<string, string>; ua?: string; method?: string; form?: Record<string, string>; apiUrl?: string } = {}) => {
       const kv = opts.kv || new Map<string, string>();
+      if (/\/(undefined)?$/.test(path)) return { status: 0, location: null, body: 'no slug (QR create failed)', kv };
       const env = {
         API_URL: opts.apiUrl || API,
         INTERNAL_SECRET,
@@ -654,10 +653,13 @@ async function run() {
     };
     const mkQR = async (body: any) => {
       const r = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'url', is_dynamic: true, ...body }) });
+      if (!r.body?.slug) check(`create "${body.title}" for worker test`, false, `status=${r.status} ${JSON.stringify(r.body)}`);
       return r.body?.slug as string | undefined;
     };
     const del = (slug?: string) => slug && api(`/api/qr/${slug}`, { method: 'DELETE', token });
 
+  section('15b. Worker gate engine (in-process, fake KV)');
+  {
     // Active URL code: origin lookup → 302, config cached, analytics recorded
     if (testSlug) {
       const before = (await api(`/api/analytics/${testSlug}/summary`, { token })).body?.total_scans ?? 0;
@@ -941,7 +943,7 @@ async function run() {
 
       const inv = await api('/api/billing/invoices', { token });
       check('Invoices: paid rows listed in LKR', Array.isArray(inv.body) && inv.body.length >= 1 && inv.body.every((r: any) => r.currency === 'LKR' && r.status === 'active'),
-        JSON.stringify(inv.body?.map((r: any) => `${r.currency}:${r.status}`)));
+        Array.isArray(inv.body) ? JSON.stringify(inv.body.map((r: any) => `${r.currency}:${r.status}`)) : `status=${inv.status}`);
 
       // Annual adds 12 months on top of the current expiry.
       const before = (await planNow())?.plan_expires_at;
@@ -965,8 +967,111 @@ async function run() {
     }
   }
 
-  // ── 23. Cleanup ──────────────────────────────────────────────────────────────
-  section('23. Cleanup');
+  // ── 23. Billing — USD: PayHere fallback + Polar webhook ──────────────────────
+  section('23. Billing — USD via PayHere fallback, Polar signed webhooks');
+  {
+    const usd = await api('/api/billing/checkout', { method: 'POST', token, body: JSON.stringify({ plan: 'pro', interval: 'monthly', currency: 'USD' }) });
+    check('PayHere USD fallback: $7.00 in USD', usd.status === 200 && usd.body?.currency === 'USD' && usd.body?.amount === '7.00', `${usd.status} ${usd.body?.currency} ${usd.body?.amount}`);
+
+    if (!process.env.POLAR_ACCESS_TOKEN) {
+      const pc = await api('/api/billing/polar/checkout', { method: 'POST', token, body: JSON.stringify({ plan: 'pro', interval: 'monthly' }) });
+      check('Polar checkout without token → 503 (card payments off)', pc.status === 503, `got ${pc.status}`);
+    }
+
+    const SECRET = process.env.POLAR_WEBHOOK_SECRET || '';
+    const PRODUCT = process.env.POLAR_PRODUCT_PRO_MONTHLY || '';
+    check('Polar QA env set (POLAR_WEBHOOK_SECRET, POLAR_PRODUCT_PRO_MONTHLY)', !!SECRET && !!PRODUCT);
+    const polar = async (event: any, opts: { badSig?: boolean; id?: string } = {}) => {
+      const body = JSON.stringify(event);
+      const id = opts.id || `msg_${crypto.randomUUID()}`;
+      const ts = String(Math.floor(Date.now() / 1000));
+      const sig = crypto.createHmac('sha256', Buffer.from(SECRET, 'utf8')).update(`${id}.${ts}.${body}`).digest('base64');
+      const res = await fetch(`${API}/api/billing/polar/webhook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'webhook-id': id, 'webhook-timestamp': ts, 'webhook-signature': `v1,${opts.badSig ? 'AAAA' + sig.slice(4) : sig}` },
+        body,
+      });
+      return { status: res.status, body: await res.text() };
+    };
+    if (SECRET && PRODUCT) {
+      // Start from free, with a pending Polar order (what /polar/checkout would write).
+      await admin.from('profiles').update({ plan: 'free', plan_expires_at: null }).eq('id', uid);
+      const orderId = `POLAR_${uid}_${Date.now()}`;
+      await admin.from('subscriptions').insert({ uid, plan: 'pro', interval: 'monthly', order_id: orderId, amount: '7.00', currency: 'USD', provider: 'polar', status: 'pending' });
+      const periodEnd = new Date(Date.now() + 30 * 86400000).toISOString();
+      const sub = { id: `sub_qa_${Date.now()}`, status: 'active', product_id: PRODUCT, current_period_end: periodEnd, metadata: { uid, order_id: orderId } };
+
+      const bad = await polar({ type: 'subscription.active', data: sub }, { badSig: true });
+      check('Polar webhook bad signature → 401', bad.status === 401, `got ${bad.status}`);
+      const ok = await polar({ type: 'subscription.active', data: sub });
+      const p1 = (await api('/api/user/plan', { token })).body;
+      check('Polar subscription.active → 200, plan pro', ok.status === 200 && p1?.plan === 'pro', `status=${ok.status} plan=${p1?.plan}`);
+      check('Polar: plan_expires_at = current_period_end', p1?.plan_expires_at && new Date(p1.plan_expires_at).getTime() === new Date(periodEnd).getTime(), `${p1?.plan_expires_at} vs ${periodEnd}`);
+      const replay = await polar({ type: 'subscription.updated', data: sub });
+      const p2 = (await api('/api/user/plan', { token })).body;
+      check('Polar same period replay → no change', replay.status === 200 && p2?.plan_expires_at === p1?.plan_expires_at, `${p2?.plan_expires_at}`);
+      const { data: rows } = await admin.from('subscriptions').select('status, payment_id').eq('provider', 'polar').eq('order_id', orderId);
+      check('Polar: pending order claimed (1 active row)', (rows || []).length === 1 && rows?.[0]?.status === 'active', JSON.stringify(rows));
+      const cancel = await polar({ type: 'subscription.canceled', data: { ...sub, status: 'active' } });
+      const p3 = (await api('/api/user/plan', { token })).body;
+      check('Polar subscription.canceled → plan kept until period end', cancel.status === 200 && p3?.plan === 'pro', `plan=${p3?.plan}`);
+      const revoke = await polar({ type: 'subscription.revoked', data: { ...sub, status: 'canceled' } });
+      const p4 = (await api('/api/user/plan', { token })).body;
+      check('Polar subscription.revoked → plan free', revoke.status === 200 && p4?.plan === 'free', `plan=${p4?.plan}`);
+      const unknownProduct = await polar({ type: 'subscription.active', data: { ...sub, id: 'sub_other', product_id: 'prod_unknown' } });
+      check('Polar unknown product → 400', unknownProduct.status === 400, `got ${unknownProduct.status}`);
+    }
+  }
+
+  // ── 24. Plan limits, free dynamic pilot, lapse → pause ───────────────────────
+  section('24. Plan limits (caps, history), free dynamic pilot, lapse grace → pause');
+  if (testSlug) {
+    const month = 30 * 86400000;
+    // Pro limits
+    await admin.from('profiles').update({ plan: 'pro', plan_expires_at: new Date(Date.now() + month).toISOString(), is_trial: false }).eq('id', uid);
+    const pro = (await api('/api/user/plan', { token })).body;
+    check('Pro: 100 QR codes (no unlimited)', pro?.limits?.qr_codes === 100, `got ${pro?.limits?.qr_codes}`);
+    check('Pro: 365 days of statistics', pro?.limits?.analytics_days === 365, `got ${pro?.limits?.analytics_days}`);
+    const ts = await api(`/api/analytics/${testSlug}/timeseries?days=500`, { token });
+    check('Pro: timeseries capped at 365 days', Array.isArray(ts.body) && ts.body.length === 365, `got ${ts.body?.length}`);
+
+    // Second dynamic code while on Pro, then the plan lapses past the grace period.
+    // Reactivate and clear section 21's scan limit so only the lapse rule decides below.
+    await api(`/api/qr/${testSlug}`, { method: 'PUT', token, body: JSON.stringify({ is_active: true, options: { scan_limit_enabled: false } }) });
+    const d2 = await mkQR({ destination_url: 'https://example.com/second', title: 'QA second dynamic' });
+    check('Pro: 2nd dynamic code → 201', !!d2);
+    await admin.from('profiles').update({
+      plan: 'free', is_trial: false,
+      plan_expires_at: new Date(Date.now() - 40 * 86400000).toISOString(),
+      trial_expires_at: new Date(Date.now() - 60 * 86400000).toISOString(),
+    }).eq('id', uid);
+
+    const lapsed = (await api('/api/user/plan', { token })).body;
+    check('Lapsed: Free limits = 3 codes, 1 dynamic', lapsed?.limits?.qr_codes === 3 && lapsed?.limits?.dynamic_qr_codes === 1, JSON.stringify(lapsed?.limits));
+    check('Lapsed: pause_on set, 1 dynamic code over allowance', !!lapsed?.pause_on && lapsed?.dynamic_over_allowance === 1, `pause_on=${lapsed?.pause_on} over=${lapsed?.dynamic_over_allowance}`);
+
+    const older = await api(`/internal/slug/${testSlug}`, { internal: true });
+    const newer = await api(`/internal/slug/${d2}`, { internal: true });
+    check('Lapse: oldest dynamic code stays live (paused=false)', older.body?.paused === false, `got ${older.body?.paused}`);
+    check('Lapse: newer dynamic code paused, title included', newer.body?.paused === true && newer.body?.title === 'QA second dynamic', JSON.stringify({ p: newer.body?.paused, t: newer.body?.title }));
+    const wOld = await runWorker(`/${testSlug}`, { ua: 'QA-lapse-1' });
+    const wNew = await runWorker(`/${d2}`, { ua: 'QA-lapse-2' });
+    check('Worker: live code → 302 after lapse', wOld.status === 302, `got ${wOld.status}`);
+    check('Worker: paused code → holding page (not deleted)', wNew.status === 410 && wNew.body.includes('paused by its owner') && wNew.body.includes('QA second dynamic'), `got ${wNew.status}`);
+    const still = await api(`/api/qr/${d2}`, { token });
+    check('Lapse: paused code still exists in the account', still.status === 200, `got ${still.status}`);
+
+    // Free dynamic pilot: no new dynamic code while 2 are active.
+    const blocked = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ destination_url: 'https://example.com/x', title: 'QA blocked', qr_type: 'url', is_dynamic: true }) });
+    check('Free: new dynamic code over allowance → 403 LIMIT_DYNAMIC_QR', blocked.status === 403 && blocked.body?.code === 'LIMIT_DYNAMIC_QR', `status=${blocked.status} code=${blocked.body?.code}`);
+    await del(d2);
+    // Exactly at the pilot allowance: grace no longer shown.
+    const atAllowance = (await api('/api/user/plan', { token })).body;
+    check('Free at allowance: no pause warning', atAllowance?.pause_on === null && atAllowance?.dynamic_over_allowance === 0, `pause_on=${atAllowance?.pause_on}`);
+  }
+
+  // ── 25. Cleanup ──────────────────────────────────────────────────────────────
+  section('25. Cleanup');
   {
     const del = await api('/api/user/account', { method: 'DELETE', token });
     check('DELETE /api/user/account → 200', del.status === 200, `status=${del.status} ${JSON.stringify(del.body)}`);

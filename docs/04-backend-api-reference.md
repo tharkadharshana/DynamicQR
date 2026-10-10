@@ -15,8 +15,8 @@ All routes live in [server.ts](../server.ts). The routes below are the **only** 
 
 | Limiter | Window | Max | Applied to |
 |---|---|---|---|
-| global | 15 min | 300 | every route |
-| write | 15 min | 60 | profile, revoke, deactivate-all, delete account, checkout, create QR, delete QR |
+| global | 15 min | 300 (`RATE_LIMIT_MAX`) | every route |
+| write | 15 min | 60 (`RATE_LIMIT_WRITE_MAX`) | profile, revoke, deactivate-all, delete account, checkouts, create QR, delete QR |
 | webhook | 1 min | 30 | `/api/billing/notify` |
 
 On Vercel each serverless instance keeps its own counters, so these limits are soft. `PUT /api/qr/:slug` has **no** write limiter.
@@ -26,6 +26,7 @@ On Vercel each serverless instance keeps its own counters, so these limits are s
 | `code` | When |
 |---|---|
 | `LIMIT_QR_CODES` | active QR count ≥ plan limit (also returns `limit` and `current`) |
+| `LIMIT_DYNAMIC_QR` | active dynamic codes ≥ `limits.dynamic_qr_codes` (Free: 1) |
 | `FEATURE_DYNAMIC_QR` | `is_dynamic` without the dynamic feature |
 | `FEATURE_PASSWORD` | `password_protect` without the feature |
 | `FEATURE_EXPIRY` | `expiry_date_enabled` without the feature |
@@ -63,14 +64,17 @@ On Vercel each serverless instance keeps its own counters, so these limits are s
               "expiry_gate": false, "scan_limit_gate": false, "visitor_guard_gate": false,
               "analytics_days": 7, "custom_domain": false, "api_access": false },
   "addons": { "extra_scans": 0, "extra_qr_codes": 0, "custom_domain": false, "api_access": false },
-  "remaining_qr": 2 | -1, "monthly_scans_used": 12,
+  "remaining_qr": 2, "monthly_scans_used": 12,
+  "active_dynamic": 1, "dynamic_over_allowance": 0,
+  "pause_on": "ISO" | null,            // when codes above the allowance pause (lapse rule)
+  "polar_enabled": false, "polar_portal_url": null,
   "total_qrs": 1, "total_scans": 12, "days_active": 3, "countries_count": 2,
   "profile": { "company": "", "jobTitle": "", "country": "LK", "timezone": "Asia/Colombo" },
   "is_sandbox": false
 }
 ```
 
-`-1` means unlimited. It is used because `Infinity` serialises to `null`.
+`limits` also carries `dynamic_qr_codes`. No plan is unlimited any more.
 
 ## QR codes
 
@@ -134,9 +138,7 @@ All of these read the single `qr_stats` row, except `recent`, which reads `scan_
 | `/api/analytics/:slug/countries` | | top 10 `[{country, scans, unique_visitors: 0}]` |
 | `/api/analytics/:slug/os` | | `[{os, count, pct}]` |
 | `/api/analytics/:slug/browsers` | | `[{browser, count, pct}]` |
-| `/api/analytics/:slug/referrers` | | always `[]` (no `referrers` column) |
 | `/api/analytics/:slug/recent` | | last 10 events `[{id, scanned_at, country, city:'Unknown', device_type, os, browser, referrer, is_unique}]` |
-| `/api/analytics/:slug/advanced` | | `{regions:[], isps:[], languages:[], hours:[], os_versions:[], tls_protocols:[], eu_scans:0}`, always empty |
 
 ## Analytics: whole account (user, `:uid` must equal the caller)
 
@@ -151,7 +153,6 @@ Every route accepts `?slugs=a,b,c` to filter to some of the user's codes. Each o
 | `…/countries` | top 10 `[{country, scans, unique_visitors:0}]` |
 | `…/browsers` | `[{browser, count}]` |
 | `…/os` | `[{os, count}]` |
-| `…/referrers` | always `[]` |
 | `…/recent` | the 20 newest events across the codes (20 per chunk, then merged) |
 | `…/performance` | `[{id, slug, title, total_scans, unique_scans}]` sorted by scans. N+1 queries (one per QR). |
 
@@ -159,7 +160,9 @@ Every route accepts `?slugs=a,b,c` to filter to some of the user's codes. Each o
 
 | Method / path | Auth | Purpose |
 |---|---|---|
-| `POST /api/billing/checkout` | user, write | Body `{plan:'pro'|'team', interval:'monthly'|'annual'}`. Both are required, otherwise 400. Writes a pending order and returns signed PayHere form fields, charged in **LKR**. |
+| `POST /api/billing/checkout` | user, write | Body `{plan:'pro'|'team', interval:'monthly'|'annual', currency?:'LKR'|'USD'}`. Writes a pending order and returns signed PayHere form fields. LKR by default; USD is the fallback when Polar is off. |
+| `POST /api/billing/polar/checkout` | user, write | Body `{plan, interval}`. Writes a pending Polar order and returns `{url}` of a Polar card checkout. 503 when `POLAR_ACCESS_TOKEN` or the product id is missing. |
+| `POST /api/billing/polar/webhook` | Standard Webhooks signature | Polar events: `subscription.active/updated/uncanceled` (apply the period), `subscription.canceled` (keep until expiry), `subscription.revoked` / `order.refunded` (downgrade). Idempotent per `subscription id + period end`. |
 | `GET /api/billing/invoices` | user | Up to 12 non-pending, non-failed `subscriptions` rows, newest first, with `date`, `currency` and `amount` |
 | `POST /api/billing/notify` | PayHere `md5sig` (form-urlencoded) | Webhook. It trusts only the server order, checks the amount and currency, and is idempotent per `payment_id`. See [doc 07](07-plans-billing-payhere.md). |
 
@@ -169,7 +172,7 @@ The add-on checkout was removed in Phase 0: there was no UI and the webhook bran
 
 | Method / path | Auth | Purpose |
 |---|---|---|
-| `GET /internal/slug/:slug` | secret | Compact gate config including the policy fields `quota_exceeded`, `visitor_guard` and the resolved `visitor_rate_limit` ([doc 03](03-scan-flow-and-gate-engine.md#3-config-lookup)) |
+| `GET /internal/slug/:slug` | secret | Compact gate config including the policy fields `quota_exceeded`, `paused` (lapse rule), `title`, `visitor_guard` and the resolved `visitor_rate_limit` ([doc 03](03-scan-flow-and-gate-engine.md#3-config-lookup)) |
 | `POST /internal/scan` | secret | Records the scan only (the quota is enforced by the Worker from the config). Returns `OK` or `404`. |
 
 Vercel routes `/internal/*` to the function (added in Phase 0).

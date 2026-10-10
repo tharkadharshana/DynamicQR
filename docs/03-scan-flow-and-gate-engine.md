@@ -48,6 +48,8 @@ Config shape, built by `/internal/slug` from the owner's **license** (`getLicens
   "visitor_rate_period": 3600,
   "visitor_guard": true,            // plan feature flag
   "quota_exceeded": false,          // account-wide monthly scans >= plan limit
+  "paused": false,                  // lapse rule: grace over and this code is above the dynamic allowance
+  "title": "Menu",                  // shown on the paused page (HTML-escaped)
   "owner_plan": "free|pro|team",    // effective plan (informational)
   "scan_count": 42                  // added by the Worker
 }
@@ -58,6 +60,7 @@ Config shape, built by `/internal/slug` from the owner's **license** (`getLicens
 | # | Gate | Check | Result on trigger |
 |---|---|---|---|
 | 1 | Active | `!is_active` | 410 page "This QR code is inactive" |
+| 1b | Paused | `paused` | 410 page with the code's title: "paused by its owner". The code is kept. |
 | 2 | Expiry | `new Date(expiry_date) < now` | 410 page "has expired" |
 | 3 | Monthly quota | `quota_exceeded` | 429 page "Monthly limit reached", with an upgrade link to `{origin}/pricing` |
 | 4 | No destination | `!destination_url` (legacy dynamic non-URL rows) | 404 page "Nothing to open yet" |
@@ -153,5 +156,5 @@ For a dynamic code the Worker can only redirect. A dynamic vCard, Text or Email 
 - **Quota lag.** The quota decision comes from a config cached for up to 300 s, so an owner can go over by up to 5 minutes of traffic. That is the price of not waiting on the analytics write.
 - **KV write volume.** A successful scan does 1–3 `put`s. The free tier allows 1,000 writes a day, and KV allows 1 write per second per key, so a very busy code will hit KV limits.
 - **Bots are counted at the edge.** The server drops bots from analytics, but the Worker has already incremented `scan_count` and the visitor counters.
-- **Lapsed plans.** Dynamic codes keep redirecting after a trial or plan ends. The 30-day-grace-then-pause rule arrives in Phase 1.
+- **Lapse rule.** When a trial or plan ends, every code keeps working for `GRACE_DAYS` (30). After that, `/internal/slug` counts the owner's *older* active dynamic codes; when that count is at or above `limits.dynamic_qr_codes`, the code is `paused`. The oldest codes stay live up to the allowance (Free keeps 1). Upgrading un-pauses on the next config refresh (≤ 5 min, or immediately after an edit).
 - **Expiry time zone.** `datetime-local` has no zone, so the Worker compares it as UTC.

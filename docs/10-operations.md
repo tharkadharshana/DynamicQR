@@ -49,6 +49,10 @@ QR codes made while the dashboard runs on localhost encode `http://localhost…/
 | `NODE_ENV` | | `production` on Vercel |
 | `PORT` | | default 3000 |
 | `LOG_LEVEL` | | `error` / `warn` / `info` / `debug`. Default: `info` in prod, `debug` in dev. |
+| `POLAR_ACCESS_TOKEN`, `POLAR_WEBHOOK_SECRET`, `POLAR_SANDBOX` | for USD card payments | Without the token, USD checkouts fall back to PayHere in USD. Webhook URL to register in Polar: `{APP_URL}/api/billing/polar/webhook`. |
+| `POLAR_PRODUCT_PRO_MONTHLY`, `…_PRO_ANNUAL`, `…_TEAM_MONTHLY`, `…_TEAM_ANNUAL` | for Polar | Product ids created in the Polar dashboard ($7, $70, $29, $290) |
+| `POLAR_PORTAL_URL` | optional | Customer portal link shown on Billing |
+| `RATE_LIMIT_MAX`, `RATE_LIMIT_WRITE_MAX` | QA only | Override the per-IP limits (default 300 / 60 per 15 min). CI raises them because QA runs every call from one IP. |
 | `VERCEL` | auto | Set by Vercel. Skips `listen()` and static serving. |
 
 ### SPA (build time, Vercel env)
@@ -57,6 +61,9 @@ QR codes made while the dashboard runs on localhost encode `http://localhost…/
 |---|---|
 | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Browser Supabase client. The anon key is public by design, so RLS must be correct ([doc 09](09-security.md)). |
 | `VITE_SHORT_DOMAIN` | Permanent short-link domain encoded into every dynamic QR. Default `https://scnr.tharkak.com`. It must be the domain the Worker fronts. **Never change it after codes are printed.** |
+| `VITE_LEGAL_NAME`, `VITE_BUSINESS_ADDRESS`, `VITE_SUPPORT_EMAIL` | Business identity on Landing and the legal pages |
+| `VITE_SUPPORT_WHATSAPP`, `VITE_SUPPORT_HOURS` | WhatsApp support and "Book setup" buttons (digits with country code, e.g. `94771234567`) |
+| `VITE_STATUS_URL`, `VITE_DEMO_SLUG`, `VITE_FOUNDER_NAME` | Public status page, the live demo code on Landing, the founder's name in the trust strip |
 
 ### Worker (Wrangler secrets)
 
@@ -123,6 +130,8 @@ Phase 0 added these sections:
 - **20, Security.** RLS checks for anon and signed-in users (read and write, including self-upgrade), and no `password_hash` in API responses.
 - **21, Edit persistence.** A PUT with `options` persists `rate_limit` and the Visitor Guard settings. `/internal/slug` returns the policy fields.
 - **22, Billing.** A PayHere order plus signed notifies, testing tampered `custom_2`, replay, wrong amount or currency, unknown order, annual (+12 months), recurring stopped, and chargeback.
+- **23, USD billing.** PayHere USD fallback, Polar checkout disabled without a token, and Polar Standard-Webhooks events (bad signature, active, same-period replay, canceled, revoked, unknown product). CI uses a dummy `POLAR_WEBHOOK_SECRET` and product id.
+- **24, Plan limits and lapse.** Pro caps (100 codes, 365 days, timeseries capped), the Free dynamic pilot (`LIMIT_DYNAMIC_QR`), and the lapse rule end to end: `pause_on`, `/internal/slug` paused flags, and the Worker serving the holding page while the oldest code stays live.
 
 Not covered yet: the frontend (no browser tests) and real Cloudflare KV behaviour (eventual consistency, TTLs).
 

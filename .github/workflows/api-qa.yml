@@ -20,6 +20,12 @@ jobs:
       # Dummy PayHere merchant: the QA signs notify payloads with the same secret the server checks.
       PAYHERE_MERCHANT_ID: qa-merchant
       PAYHERE_SECRET: qa-secret
+      # Dummy Polar webhook secret + product id: QA signs Standard Webhooks payloads with them.
+      POLAR_WEBHOOK_SECRET: qa-polar-secret
+      POLAR_PRODUCT_PRO_MONTHLY: prod_qa_pro_monthly
+      # QA runs every request from one IP; production keeps the defaults (300 / 60 per 15 min).
+      RATE_LIMIT_MAX: '5000'
+      RATE_LIMIT_WRITE_MAX: '1000'
       NODE_ENV: test
       APP_URL: http://localhost:3000
       PORT: 3000

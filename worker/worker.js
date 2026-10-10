@@ -17,6 +17,8 @@ const page = (title, bodyHtml, status, accent = '#E85D3A') => new Response(`<!DO
 <body><div class="card">${bodyHtml}</div></body>
 </html>`, { status, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
 const sha256Hex = async (s) => {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -102,6 +104,11 @@ export default {
     // --- GATE ENGINE ---
     if (!config.is_active) {
       return page('QR inactive', '<h2>This QR code is inactive</h2><p>The owner has switched this code off.</p>', 410);
+    }
+
+    if (config.paused) {
+      // Owner's trial/plan lapsed past the grace period and this code is above the plan's allowance.
+      return page('QR paused', `<h2>${esc(config.title) || 'QR code'}</h2><p>This QR code is paused by its owner. Please contact the business that displayed it.</p>`, 410);
     }
 
     if (config.expiry_date && new Date(config.expiry_date) < new Date()) {

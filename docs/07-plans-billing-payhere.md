@@ -12,7 +12,23 @@ PRICES = {
 formatPrice('pro', 'LKR', 'monthly') // "LKR 2,290"
 ```
 
-Annual = 10 × monthly, so 2 months are free. **PayHere charges LKR.** USD is reserved for Polar (Phase 1). The checkout, Pricing and Billing pages read `PRICES` and `formatPrice`. Landing still shows USD until its Phase 1 rewrite.
+Annual = 10 × monthly, so 2 months are free. **The currency picks the provider:** LKR → PayHere, USD → Polar (card), with PayHere in USD as the fallback when Polar is not configured. Checkout, Pricing, Billing and Landing all read `PRICES` and `formatPrice`; every page has an LKR/USD switch.
+
+### Limits and the free pilot
+
+- No plan is unlimited: Pro 100 codes, Team 600 (`qr_codes`), Free 3.
+- `dynamic_qr_codes` caps active dynamic codes: Free **1, forever** (the pilot), trial 3, Pro 100, Team 600. `POST /api/qr` returns `403 LIMIT_DYNAMIC_QR` above it.
+- History: Free 7 days, Pro 365, Team 730.
+
+### Lapse rule (grace, then pause)
+
+`getLicense` returns `graceEndsAt = max(trial_expires_at, plan_expires_at) + GRACE_DAYS (30)` whenever the account is on Free limits. After it:
+
+- `/internal/slug` marks a dynamic code `paused` when the owner has at least `dynamic_qr_codes` *older* active dynamic codes.
+- The Worker shows the "paused by its owner" page with the code's title.
+- Nothing is deleted, and upgrading un-pauses.
+
+`/api/user/plan` returns `pause_on` and `dynamic_over_allowance`, and the layout banner warns the owner. The terms state the same rule.
 
 Limits by plan are in [doc 01](01-product-overview.md#plans-from-srclibplansts).
 
@@ -94,9 +110,29 @@ The QA signs payloads with the same merchant secret the server uses. CI uses dum
 - `RECURRING_STOPPED` keeps the plan and the expiry
 - a chargeback gives `free`
 
+## Polar (USD card payments)
+
+Enabled when `POLAR_ACCESS_TOKEN` is set. Polar is the merchant of record and runs renewals; we mirror its period end.
+
+```
+SPA ── POST /api/billing/polar/checkout {plan, interval}
+        → pending subscriptions row {provider:'polar', currency:'USD', order_id POLAR_…}
+        → POST {polar}/v1/checkouts/ {products:[id], metadata:{uid, order_id}, success_url, customer_email}
+        ← {url}  → browser goes to Polar
+Polar ── POST /api/billing/polar/webhook   (Standard Webhooks signature)
+        subscription.active|updated|uncanceled (status active)
+            → applyPayment({ plan/interval from product id, expiresAt: current_period_end,
+                             paymentId: `${subscription.id}:${current_period_end}` })   // one grant per period
+        subscription.canceled → rows cancelled, plan kept until expiry
+        subscription.revoked | order.refunded → downgrade to free
+```
+
+- **Signature:** base64 HMAC-SHA256 of `${webhook-id}.${webhook-timestamp}.${rawBody}`, keyed with the UTF-8 bytes of `POLAR_WEBHOOK_SECRET`. Timestamps older than 5 minutes are rejected. The raw body is kept by the `express.json` `verify` hook.
+- **Products:** `POLAR_PRODUCT_PRO_MONTHLY`, `…_PRO_ANNUAL`, `…_TEAM_MONTHLY`, `…_TEAM_ANNUAL`. An unknown product returns 400.
+- **Sandbox:** `POLAR_SANDBOX=true` uses `sandbox-api.polar.sh`.
+- **Before going live:** confirm Polar can pay out to a Sri Lankan seller, and check the event names and fields against Polar's current docs.
+
 ## Still open
 
 - **PayHere field names for recurring installments** (`payment_id`, `message_type`) must be confirmed against the sandbox before relying on renewals. This is marked `ponytail:` in the code.
-- **Polar (USD) and the LKR/USD switch** arrive in Phase 1, behind the payout-country check.
 - **Add-ons were removed** (no UI, and the write path was broken). `profiles.addons` is still read by `getLicense` and is harmless.
-- The trial UI gating (`plan === 'free'`) is fixed in Phase 1.

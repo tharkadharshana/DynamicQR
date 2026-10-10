@@ -1,44 +1,37 @@
 import React, { useEffect, useRef } from 'react';
-import QRCode from 'qrcode';
+import QRCodeStyling from 'qr-code-styling';
 import { useUI } from '../shared/UIContext';
-import { getQRContent, SHORT_HOST } from '../lib/qrContent';
+import { getQRContent, stylingOptions, SHORT_HOST } from '../lib/qrContent';
 
 export { getQRContent };
 
+const VIEW_SIZE = 280;
+
 export default function QRViewerModal({ qr, onClose }: { qr: any; onClose: () => void }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
+  const qrRef = useRef<QRCodeStyling | null>(null);
   const { showToast } = useUI();
   const shortUrl = `${SHORT_HOST}/${qr.slug}`;
   const content = getQRContent(qr);
 
+  // Same renderer and options as the editor, so the viewer matches the printed design (dots, corners, logo).
   useEffect(() => {
-    if (!canvasRef.current) return;
-    QRCode.toCanvas(canvasRef.current, content, {
-      width: 280,
-      margin: 2,
-      color: {
-        dark: qr.style?.dot_color || '#000000',
-        light: qr.style?.bg_color || '#FFFFFF',
-      },
-    }).catch(console.error);
+    if (!hostRef.current) return;
+    qrRef.current = new QRCodeStyling({ ...stylingOptions(qr.style, content, VIEW_SIZE), margin: 8, type: 'canvas' });
+    hostRef.current.innerHTML = '';
+    qrRef.current.append(hostRef.current);
   }, [content, qr.style]);
 
   const handleDownload = async () => {
+    const q = qrRef.current;
+    if (!q) return;
     try {
-      const dataUrl = await QRCode.toDataURL(content, {
-        width: 1024,
-        margin: 2,
-        color: {
-          dark: qr.style?.dot_color || '#000000',
-          light: qr.style?.bg_color || '#FFFFFF',
-        },
-      });
-      const a = document.createElement('a');
-      a.href = dataUrl;
-      a.download = `${(qr.title || qr.slug).replace(/[^a-z0-9]/gi, '_')}-qr.png`;
-      a.click();
+      q.update({ width: 1200, height: 1200 });
+      await q.download({ name: `${(qr.title || qr.slug).replace(/[^a-z0-9]/gi, '_')}-qr`, extension: 'png' });
     } catch {
       showToast('error', 'Failed to generate download');
+    } finally {
+      q.update({ width: VIEW_SIZE, height: VIEW_SIZE });
     }
   };
 
@@ -72,7 +65,7 @@ export default function QRViewerModal({ qr, onClose }: { qr: any; onClose: () =>
 
         {/* QR Canvas */}
         <div style={{ display: 'flex', justifyContent: 'center', background: qr.style?.bg_color || '#FFFFFF', borderRadius: '12px', padding: '16px', marginBottom: '20px' }}>
-          <canvas ref={canvasRef} width={280} height={280} style={{ display: 'block', borderRadius: '4px' }} />
+          <div ref={hostRef} style={{ width: VIEW_SIZE, height: VIEW_SIZE, borderRadius: '4px', overflow: 'hidden' }} />
         </div>
 
         {/* Actions */}
