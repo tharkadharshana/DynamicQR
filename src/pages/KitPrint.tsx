@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
 import QRCodeStyling from 'qr-code-styling';
 import { apiFetch } from '../lib/api';
-import { getQRContent, stylingOptions, SHORT_HOST } from '../lib/qrContent';
+import { getQRContent, stylingOptions, shortHost } from '../lib/qrContent';
 
 // A6 table tent. Printing uses the browser's own print-to-PDF (no PDF library).
 const PRINT_CSS = `
@@ -14,7 +14,7 @@ const PRINT_CSS = `
   .no-print { display: none !important; }
 }`;
 
-function StyledQR({ qr, size }: { qr: any; size: number }) {
+export function StyledQR({ qr, size }: { qr: any; size: number }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!ref.current || !qr) return;
@@ -63,7 +63,7 @@ export default function KitPrint() {
             <div style={{ fontSize: '9pt', textAlign: 'left' }}><b>Wi-Fi</b><br />{wifi.content_data?.ssid}<br />Scan to join</div>
           </div>
         )}
-        <div style={{ fontSize: '7pt', opacity: .6, marginTop: 'auto' }}>{SHORT_HOST}/{qr.slug}</div>
+        <div style={{ fontSize: '7pt', opacity: .6, marginTop: 'auto' }}>{shortHost()}/{qr.slug}</div>
       </div>
     </div>
   );

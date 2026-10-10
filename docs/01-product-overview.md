@@ -12,7 +12,7 @@ Its edge over global tools: **LKR billing**, Sinhala and Tamil guest pages, What
 
 ## Users and roles
 
-There is one role, the **account owner**, who signs in with Google (Supabase OAuth). Team seats are planned for the Team plan (Phase 4).
+Every account has an **owner**, who signs in with Google (Supabase OAuth). On the Team plan the owner can invite up to 4 **members** by email, for 5 users in all. A member who signs in with Google using that email works in the owner's workspace (codes, kits, analytics). Billing, members, API keys, domains, profile changes and account deletion stay **owner-only**.
 
 ## Feature inventory (as built)
 
@@ -66,7 +66,7 @@ Legend: ✅ works · ⚠️ works with a known limit · 🗓 planned (phase) · 
 | Cancel | ✅ keeps the plan until the paid period ends |
 | Restaurant Kit, guest pages, WhatsApp code type, "Book setup on WhatsApp" (Landing, Billing, Kit) | ✅ |
 | Activation funnel (`events`: created, printed, first scan, offer changed, paid) | ✅ with founder queries in [migrations/queries.sql](../migrations/queries.sql) |
-| Bulk CSV, team seats, API keys, one custom domain (Team) | 🗓 Phase 4 |
+| Team: bulk CSV creation and a print sheet ([Bulk.tsx](../src/pages/Bulk.tsx)), client folders, 5 seats, API keys and `/api/v1` ([ApiDocs.tsx](../src/pages/ApiDocs.tsx)), one custom short domain, white-label report branding | ✅ (Settings → Team section) |
 
 ## Plans (from [src/lib/plans.ts](../src/lib/plans.ts))
 
@@ -79,6 +79,8 @@ Legend: ✅ works · ⚠️ works with a known limit · 🗓 planned (phase) · 
 | Monthly scans | 1,000 | 75,000 | 75,000 | 500,000 |
 | PIN / expiry / scan limit / Visitor Guard | No | Yes | Yes | Yes |
 | Statistics history | 7 days | 365 days | 365 days | 730 days |
+| Users (seats) | 1 | 1 | 1 | 5 |
+| Bulk CSV, API, custom domain, white-label | No | No | No | Yes |
 
 No plan is "unlimited". Yearly = 10× monthly (2 months free).
 

@@ -85,6 +85,9 @@ async function startServer() {
   }));
 
   // Keep the raw bytes too: webhook signatures (Polar) are computed over the exact body.
+  // Public REST API (Team): /api/v1/* are the same routes as /api/*.
+  app.use((req, _res, next) => { if (req.url.startsWith('/api/v1/')) req.url = '/api/' + req.url.slice(8); next(); });
+
   app.use(express.json({ limit: '100kb', verify: (req, _res, buf) => { (req as any).rawBody = buf; } }));
 
   // ── Rate Limiting ────────────────────────────────────────────────────────────
@@ -143,6 +146,22 @@ async function startServer() {
   });
   // ──────────────────────────────────────────────────────────────────────────
 
+  const sha256 = (v: string) => crypto.createHash('sha256').update(v).digest('hex');
+
+  // Owner uid when this user is a member of a Team workspace (invite claimed on first sign-in).
+  // ponytail: one indexed query per authenticated request; cache per token if it shows up in latency.
+  async function workspaceOwner(user: any): Promise<string | null> {
+    const email = String(user.email || '').toLowerCase().replace(/"/g, '');
+    const { data, error } = await supabase.from('workspace_members').select('id, owner_uid, member_uid')
+      .or(`member_uid.eq.${user.id},member_email.eq."${email}"`).limit(1);
+    const m = !error && data?.[0];
+    if (!m || m.owner_uid === user.id) return null;
+    const license = await getLicense(m.owner_uid);
+    if (license.limits.seats <= 1) return null; // owner no longer on a multi-seat plan
+    if (!m.member_uid) await supabase.from('workspace_members').update({ member_uid: user.id }).eq('id', m.id);
+    return m.owner_uid;
+  }
+
   // Middlewares
   const authenticate = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     try {
@@ -155,9 +174,23 @@ async function startServer() {
         return res.status(401).send('Unauthorized');
       }
       const token = authHeader.split('Bearer ')[1];
+
+      // API key (Team): acts as the key's owner; never for billing/team/keys (see sessionOwner).
+      if (token.startsWith('sk_live_')) {
+        const { data: key } = await supabase.from('api_keys').select('id, uid').eq('key_hash', sha256(token)).is('revoked_at', null).maybeSingle();
+        if (!key) return res.status(401).json({ error: 'Invalid or revoked API key' });
+        const license = await getLicense(key.uid);
+        if (!license.limits.api_access) return res.status(403).json({ error: 'API access requires the Team plan', code: 'FEATURE_API' });
+        (req as any).user = { uid: key.uid, realUid: key.uid, email: null, viaApiKey: true };
+        supabase.from('api_keys').update({ last_used_at: nowIso() }).eq('id', key.id).then(() => {});
+        return next();
+      }
+
       const { data: { user }, error } = await supabase.auth.getUser(token);
       if (error || !user) throw error || new Error("User not found");
-      (req as any).user = { uid: user.id, email: user.email, ...user };
+      // Team members act on the owner's workspace (uid); realUid is who signed in.
+      const owner = await workspaceOwner(user);
+      (req as any).user = { ...user, uid: owner || user.id, realUid: user.id, email: user.email, isMember: !!owner };
       next();
     } catch (error: any) {
       logger.error(`Auth error for ${req.path}:`, { 
@@ -167,6 +200,14 @@ async function startServer() {
       });
       res.status(401).send(`Unauthorized: ${error.message || 'Invalid token'}`);
     }
+  };
+
+  // Owner-only actions: never through an API key, never by a team member.
+  const sessionOwner = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const u = (req as any).user;
+    if (u?.viaApiKey) return res.status(403).json({ error: 'Not available with an API key', code: 'SESSION_ONLY' });
+    if (u?.isMember) return res.status(403).json({ error: 'Only the account owner can do this', code: 'OWNER_ONLY' });
+    next();
   };
 
   const requireOwnership = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -234,6 +275,12 @@ async function startServer() {
       critical_missing: criticalMissing
     });
   });
+
+  // Verified custom short domain (Team), or null. Missing table (before migration 004) → null.
+  async function activeDomain(uid: string): Promise<string | null> {
+    const { data } = await supabase.from('custom_domains').select('hostname, status').eq('uid', uid).maybeSingle();
+    return data?.status === 'active' ? data.hostname : null;
+  }
 
   async function getLicense(uid: string): Promise<{
     effectivePlan: PlanId;
@@ -367,7 +414,11 @@ async function startServer() {
           country: userDoc?.country || 'LK',
           timezone: userDoc?.timezone || 'Asia/Colombo',
           digestOptOut: !!userDoc?.digest_opt_out,
+          agencyName: userDoc?.agency_name || '',
+          agencyLogo: userDoc?.agency_logo || '',
         },
+        is_member: !!(req as any).user.isMember,
+        custom_domain: await activeDomain(uid),
         active_dynamic: activeDynamic,
         dynamic_over_allowance: dynamicOverAllowance,
         pause_on,
@@ -387,7 +438,7 @@ async function startServer() {
   });
 
   // User Profile Update API
-  app.put('/api/user/profile', writeLimiter, authenticate, async (req, res) => {
+  app.put('/api/user/profile', writeLimiter, authenticate, sessionOwner, async (req, res) => {
     try {
       const uid = (req as any).user.uid;
       const { company, jobTitle, country, timezone } = req.body;
@@ -397,6 +448,9 @@ async function startServer() {
         country: country || 'LK',
         timezone: timezone || 'Asia/Colombo',
         ...(typeof req.body.digestOptOut === 'boolean' ? { digest_opt_out: req.body.digestOptOut } : {}),
+        ...(typeof req.body.agencyName === 'string' ? { agency_name: req.body.agencyName.slice(0, 80) } : {}),
+        ...(typeof req.body.agencyLogo === 'string' && req.body.agencyLogo.length <= 65536 && (req.body.agencyLogo === '' || req.body.agencyLogo.startsWith('data:image/'))
+          ? { agency_logo: req.body.agencyLogo } : {}),
         updated_at: nowIso(),
       }).eq('id', uid);
       if (error) throw error;
@@ -465,7 +519,7 @@ async function startServer() {
   });
 
   // Deactivate All QR Codes API
-  app.put('/api/user/deactivate-all', writeLimiter, authenticate, async (req, res) => {
+  app.put('/api/user/deactivate-all', writeLimiter, authenticate, sessionOwner, async (req, res) => {
     try {
       const uid = (req as any).user.uid;
       const { data, error } = await supabase.from('qr_codes')
@@ -482,7 +536,7 @@ async function startServer() {
   });
 
   // Delete Account API
-  app.delete('/api/user/account', writeLimiter, authenticate, async (req, res) => {
+  app.delete('/api/user/account', writeLimiter, authenticate, sessionOwner, async (req, res) => {
     try {
       const uid = (req as any).user.uid;
       
@@ -559,7 +613,7 @@ async function startServer() {
   }
 
   // Billing Checkout API
-  app.post('/api/billing/checkout', writeLimiter, authenticate, async (req, res) => {
+  app.post('/api/billing/checkout', writeLimiter, authenticate, sessionOwner, async (req, res) => {
     try {
       const user = (req as any).user;
       const { plan, interval } = req.body;
@@ -737,7 +791,7 @@ async function startServer() {
     return String(sigHeader).split(' ').some(part => safeEqual(part.split(',')[1] || '', expected));
   };
 
-  app.post('/api/billing/polar/checkout', writeLimiter, authenticate, async (req, res) => {
+  app.post('/api/billing/polar/checkout', writeLimiter, authenticate, sessionOwner, async (req, res) => {
     try {
       const user = (req as any).user;
       const { plan, interval } = req.body;
@@ -846,7 +900,7 @@ async function startServer() {
   app.post('/api/qr', writeLimiter, authenticate, async (req, res) => {
     try {
       const user = (req as any).user;
-      const { destination_url, title, style, is_dynamic: requestedDynamic, qr_type, content_data, options } = req.body;
+      const { destination_url, title, style, is_dynamic: requestedDynamic, qr_type, content_data, options, client } = req.body;
       const type = qr_type || 'url';
       if (!QR_TYPES.includes(type)) {
         return res.status(400).json({ error: `qr_type must be one of ${QR_TYPES.join(', ')}` });
@@ -960,6 +1014,8 @@ async function startServer() {
         user_uid: user.uid,
         destination_url: destination_url || '',
         qr_type: type,
+        // Only written when set, so creates keep working before migration 004 adds the column.
+        ...(typeof client === 'string' && client.trim() ? { client: client.trim().slice(0, 60) } : {}),
         content_data: content_data || null,
         is_dynamic,
         title: title || 'My QR',
@@ -1043,8 +1099,9 @@ async function startServer() {
   }, async (req, res) => {
     try {
       const { slug } = req.params;
-      const { destination_url, title, style, is_active, options, content_data } = req.body;
+      const { destination_url, title, style, is_active, options, content_data, client } = req.body;
       const updateData: any = {};
+      if (client !== undefined) updateData.client = typeof client === 'string' && client.trim() ? client.trim().slice(0, 60) : null;
       if (content_data !== undefined) {
         if (JSON.stringify(content_data).length > CONTENT_MAX) {
           return res.status(400).json({ error: 'content_data is too large (max 20 KB)' });
@@ -1159,7 +1216,7 @@ async function startServer() {
       if (error) throw error;
       qrs = data || [];
     } else {
-      if (req.params.uid !== uid) { res.status(403).send('Forbidden'); return null; }
+      if (req.params.uid !== uid && req.params.uid !== (req as any).user.realUid) { res.status(403).send('Forbidden'); return null; }
       const { data, error } = await supabase.from('qr_codes').select('slug, title, is_active, created_at').eq('user_uid', uid);
       if (error) throw error;
       const only = typeof req.query.slugs === 'string' ? req.query.slugs.split(',') : null;
@@ -1301,6 +1358,126 @@ async function startServer() {
       logger.error('CSV export error', { message: error.message });
       res.status(500).json({ error: 'Failed to export scans' });
     }
+  });
+
+  // ── Team plan: API keys, seats, custom domain ──────────────────────────────
+  app.get('/api/keys', authenticate, sessionOwner, async (req, res) => {
+    const { data, error } = await supabase.from('api_keys').select('id, name, prefix, created_at, last_used_at, revoked_at')
+      .eq('uid', (req as any).user.uid).order('created_at', { ascending: false });
+    if (error) return res.status(500).json({ error: 'Failed to list keys' });
+    res.json(data || []);
+  });
+
+  app.post('/api/keys', writeLimiter, authenticate, sessionOwner, async (req, res) => {
+    try {
+      const uid = (req as any).user.uid;
+      const license = await getLicense(uid);
+      if (!license.limits.api_access) return res.status(403).json({ error: 'API access requires the Team plan', code: 'FEATURE_API' });
+      const key = `sk_live_${crypto.randomBytes(24).toString('base64url')}`;
+      const name = typeof req.body?.name === 'string' && req.body.name.trim() ? req.body.name.trim().slice(0, 60) : 'API key';
+      const { data, error } = await supabase.from('api_keys')
+        .insert({ uid, name, prefix: key.slice(0, 12), key_hash: sha256(key) }).select('id, name, prefix, created_at').single();
+      if (error) throw error;
+      res.status(201).json({ ...data, key }); // the only time the full key is shown
+    } catch (error: any) {
+      logger.error('API key create error', { message: error.message });
+      res.status(500).json({ error: 'Failed to create key' });
+    }
+  });
+
+  app.delete('/api/keys/:id', writeLimiter, authenticate, sessionOwner, async (req, res) => {
+    const { error } = await supabase.from('api_keys').update({ revoked_at: nowIso() })
+      .eq('id', req.params.id).eq('uid', (req as any).user.uid);
+    if (error) return res.status(500).json({ error: 'Failed to revoke key' });
+    res.json({ success: true });
+  });
+
+  app.get('/api/team', authenticate, async (req, res) => {
+    const { data, error } = await supabase.from('workspace_members').select('id, member_email, member_uid, role, created_at')
+      .eq('owner_uid', (req as any).user.uid).order('created_at');
+    if (error) return res.status(500).json({ error: 'Failed to list members' });
+    res.json((data || []).map(m => ({ ...m, joined: !!m.member_uid })));
+  });
+
+  app.post('/api/team', writeLimiter, authenticate, sessionOwner, async (req, res) => {
+    try {
+      const uid = (req as any).user.uid;
+      const email = String(req.body?.email || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Enter a valid email' });
+      if (email === String((req as any).user.email || '').toLowerCase()) return res.status(400).json({ error: 'You are already the owner' });
+      const license = await getLicense(uid);
+      const { count } = await supabase.from('workspace_members').select('id', { count: 'exact', head: true }).eq('owner_uid', uid);
+      if ((count || 0) + 1 >= license.limits.seats) {
+        return res.status(403).json({ error: `Your plan includes ${license.limits.seats} user${license.limits.seats === 1 ? '' : 's'}`, code: 'LIMIT_SEATS', limit: license.limits.seats });
+      }
+      const { data, error } = await supabase.from('workspace_members').insert({ owner_uid: uid, member_email: email }).select('id, member_email').single();
+      if (error?.code === '23505') return res.status(409).json({ error: 'Already invited' });
+      if (error) throw error;
+      res.status(201).json(data);
+    } catch (error: any) {
+      logger.error('Team invite error', { message: error.message });
+      res.status(500).json({ error: 'Failed to invite' });
+    }
+  });
+
+  app.delete('/api/team/:id', writeLimiter, authenticate, sessionOwner, async (req, res) => {
+    const { error } = await supabase.from('workspace_members').delete().eq('id', req.params.id).eq('owner_uid', (req as any).user.uid);
+    if (error) return res.status(500).json({ error: 'Failed to remove member' });
+    res.json({ success: true });
+  });
+
+  // One custom short domain per Team account, through Cloudflare for SaaS custom hostnames.
+  const cf = async (path: string, init: RequestInit = {}) => {
+    const r = await fetch(`https://api.cloudflare.com/client/v4/zones/${process.env.CF_ZONE_ID}${path}`, {
+      ...init,
+      headers: { Authorization: `Bearer ${process.env.CF_API_TOKEN}`, 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    });
+    return { ok: r.ok, body: await r.json().catch(() => ({})) as any };
+  };
+  const cfStatus = (h: any) => (h?.status === 'active' && h?.ssl?.status === 'active' ? 'active' : h?.status === 'blocked' ? 'failed' : 'pending');
+
+  app.get('/api/domains', authenticate, async (req, res) => {
+    try {
+      const d = await row('custom_domains', 'uid', (req as any).user.uid);
+      if (d && d.status === 'pending' && d.cf_id && process.env.CF_API_TOKEN) {
+        const r = await cf(`/custom_hostnames/${d.cf_id}`);
+        const status = cfStatus(r.body?.result);
+        if (status !== d.status) await supabase.from('custom_domains').update({ status }).eq('id', d.id);
+        d.status = status;
+      }
+      res.json(d ? { hostname: d.hostname, status: d.status, cname_target: process.env.CF_CNAME_TARGET || null } : null);
+    } catch (error: any) {
+      res.status(500).json({ error: 'Failed to load domain' });
+    }
+  });
+
+  app.post('/api/domains', writeLimiter, authenticate, sessionOwner, async (req, res) => {
+    try {
+      const uid = (req as any).user.uid;
+      const license = await getLicense(uid);
+      if (!license.limits.custom_domain) return res.status(403).json({ error: 'A custom domain is part of the Team plan', code: 'FEATURE_CUSTOM_DOMAIN' });
+      const hostname = String(req.body?.hostname || '').trim().toLowerCase();
+      if (!/^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/.test(hostname)) return res.status(400).json({ error: 'Enter a hostname like qr.yourbusiness.lk' });
+      if (await row('custom_domains', 'uid', uid)) return res.status(409).json({ error: 'Remove your current domain first (1 per account)' });
+      if (!process.env.CF_API_TOKEN || !process.env.CF_ZONE_ID) return res.status(503).json({ error: 'Custom domains are not enabled yet' });
+      const r = await cf('/custom_hostnames', { method: 'POST', body: JSON.stringify({ hostname, ssl: { method: 'http', type: 'dv' } }) });
+      if (!r.ok) return res.status(400).json({ error: r.body?.errors?.[0]?.message || 'Cloudflare rejected this hostname' });
+      const { error } = await supabase.from('custom_domains').insert({ uid, hostname, cf_id: r.body.result.id, status: cfStatus(r.body.result) });
+      if (error) throw error;
+      res.status(201).json({ hostname, status: cfStatus(r.body.result), cname_target: process.env.CF_CNAME_TARGET || null });
+    } catch (error: any) {
+      logger.error('Custom domain error', { message: error.message });
+      res.status(500).json({ error: 'Failed to add domain' });
+    }
+  });
+
+  app.delete('/api/domains', writeLimiter, authenticate, sessionOwner, async (req, res) => {
+    const d = await row('custom_domains', 'uid', (req as any).user.uid);
+    if (!d) return res.json({ success: true });
+    if (d.cf_id && process.env.CF_API_TOKEN) await cf(`/custom_hostnames/${d.cf_id}`, { method: 'DELETE' });
+    await supabase.from('custom_domains').delete().eq('id', d.id);
+    res.json({ success: true });
   });
 
   // ── Cron (vercel.json "crons"; Vercel sends Authorization: Bearer $CRON_SECRET) ──

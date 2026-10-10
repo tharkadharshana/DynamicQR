@@ -7,6 +7,9 @@ import DynamicQRLayout from './components/DynamicQRLayout';
 import Dashboard from './pages/Dashboard';
 import CreateQR from './pages/CreateQR';
 import Kit from './pages/Kit';
+import Bulk from './pages/Bulk';
+import ApiDocs from './pages/ApiDocs';
+import { setShortDomain } from './lib/qrContent';
 import KitPrint from './pages/KitPrint';
 import Analytics from './pages/Analytics';
 import AccountAnalytics from './pages/AccountAnalytics';
@@ -35,7 +38,7 @@ export default function App() {
 
       if (session?.user) {
         apiFetch('/api/user/plan')
-          .then(setPlanData)
+          .then(d => { setShortDomain(d?.custom_domain); setPlanData(d); })
           .catch(err => console.error('Failed to fetch plan:', err));
       } else {
         setPlanData(null);
@@ -94,6 +97,8 @@ export default function App() {
                 <Route index element={<Dashboard />} />
                 <Route path="create" element={<CreateQR />} />
                 <Route path="kit" element={<Kit />} />
+                <Route path="bulk" element={<Bulk />} />
+                <Route path="api-docs" element={<ApiDocs />} />
                 <Route path="kit/print/:slug" element={<KitPrint />} />
                 <Route path="edit/:id" element={<CreateQR />} />
                 <Route path="analytics" element={<AccountAnalytics />} />

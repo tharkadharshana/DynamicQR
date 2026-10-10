@@ -780,7 +780,9 @@ select.form-input{cursor:pointer}
 .alert-icon{flex-shrink:0;font-size:14px}
 
 /* Print report: just the page content */
+.print-only { display: none; }
 @media print {
+  .print-only { display: flex !important; }
   .sidebar, .topbar, .no-print { display: none !important; }
   .main, .content { height: auto !important; overflow: visible !important; }
   body { background: #fff !important; }

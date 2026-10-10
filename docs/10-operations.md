@@ -54,6 +54,7 @@ QR codes made while the dashboard runs on localhost encode `http://localhost…/
 | `POLAR_PORTAL_URL` | optional | Customer portal link shown on Billing |
 | `CRON_SECRET` | ✅ for crons | Vercel sends it as `Authorization: Bearer …` to `/api/cron/*`. Set it in Vercel env; CI uses a dummy. |
 | `RESEND_API_KEY`, `DIGEST_FROM` | for the weekly digest | Resend API key and sender (e.g. `Scnr <digest@yourdomain>`, on a domain verified in Resend). Without the key the digest cron skips. |
+| `CF_API_TOKEN`, `CF_ZONE_ID`, `CF_CNAME_TARGET` | for custom domains (Team) | A Cloudflare API token with SSL and Certificates edit plus custom hostnames on the zone, the zone id, and the fallback hostname customers CNAME to. Without them, adding a domain returns 503. |
 | `RATE_LIMIT_MAX`, `RATE_LIMIT_WRITE_MAX` | QA only | Override the per-IP limits (default 300 / 60 per 15 min). CI raises them because QA runs every call from one IP. |
 | `VERCEL` | auto | Set by Vercel. Skips `listen()` and static serving. |
 
@@ -75,6 +76,7 @@ QR codes made while the dashboard runs on localhost encode `http://localhost…/
 | `INTERNAL_SECRET` | Same value as the API |
 | `HASH_SALT` | Visitor fingerprint salt |
 | KV binding `QR_CACHE` | id in [wrangler.toml](../worker/wrangler.toml) |
+| `MAIN_HOST` (var) | The main app host (`scnr.tharkak.com`). On customer custom domains, paths that aren't codes redirect here. |
 
 ## Deployment
 
@@ -135,6 +137,13 @@ Phase 0 added these sections:
 - **23, USD billing.** PayHere USD fallback, Polar checkout disabled without a token, and Polar Standard-Webhooks events (bad signature, active, same-period replay, canceled, revoked, unknown product). CI uses a dummy `POLAR_WEBHOOK_SECRET` and product id.
 - **25, Restaurant Kit.** Guest page rendering through the in-process Worker: EN/SI/TA, escaping, unsafe links dropped, the WhatsApp link, branding for Free, language switch not counted. Dynamic vCard/Text/Email/Wi-Fi at the edge, `content_data` edits and the 20 KB cap, activation events (needs migration 002), `/api/events` allowlist, `waLink`.
 - **26, Retention.** 10 concurrent scans count exactly 10, real per-day uniques, hours, `events.csv`, range clamp, cron auth, digest dry run and opt-out, `record_scan` not callable with the anon key, no `password_hash` in the list (needs migration 003).
+- **27, Team plan.**
+  - Keys: API keys through `/api/v1` (create, use, scope limits, revoke, downgrade → 403).
+  - Seats, with a second real test user: member sees the owner's workspace, can't pay or invite, the seat cap holds, and removal works.
+  - Client folders through the API.
+  - Custom domain: validation, 503 without Cloudflare, the Worker redirect on a custom host, and QR content using the domain.
+  - Also covered: white-label branding and the CSV parser.
+  - Needs migration 004.
 - **24, Plan limits and lapse.** Pro caps (100 codes, 365 days, timeseries capped), the Free dynamic pilot (`LIMIT_DYNAMIC_QR`), and the lapse rule end to end: `pause_on`, `/internal/slug` paused flags, and the Worker serving the holding page while the oldest code stays live.
 
 Not covered yet: the frontend (no browser tests) and real Cloudflare KV behaviour (eventual consistency, TTLs).

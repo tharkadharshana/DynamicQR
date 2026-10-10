@@ -2,6 +2,28 @@
 
 One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-review-findings.md](11-review-findings.md).
 
+## Phase 4: Team plan for printers and agencies (branch `feat/phase4-agency`)
+
+**Run before merging:** [migrations/004_phase4.sql](../migrations/004_phase4.sql).
+
+- **API keys and the REST API.**
+  - `sk_live_` keys are shown once and stored as SHA-256. They are created, listed and revoked in Settings.
+  - `/api/v1/*` is the dashboard's own routes, using a one-line rewrite.
+  - Keys act as the owner and stop working when the plan loses API access.
+  - The API Docs page is back, documenting only real endpoints.
+- **5 seats.**
+  - Invite by email. The invite is claimed on the member's first Google sign-in (`workspaceOwner()`), and the member then works in the owner's workspace.
+  - Billing, members, keys, domains, profile and account deletion are owner-only (`sessionOwner`: `SESSION_ONLY` / `OWNER_ONLY`).
+- **Client folders.** `qr_codes.client`, a Dashboard filter, and a CreateQR field.
+- **Bulk CSV creation** (`/bulk`) with an RFC-4180 parser (`src/lib/csv.ts`, self-checked) and a print sheet.
+- **One custom short domain.**
+  - Uses Cloudflare for SaaS custom hostnames (`/api/domains`), with status refresh and CNAME guidance.
+  - New codes encode the verified domain (`setShortDomain()`).
+  - The Worker redirects non-code paths on custom hosts to `MAIN_HOST`.
+- **White-label reports.** Agency name and logo on printed Analytics reports.
+- **Pre-migration safety.** `client` is only written when set, so creating codes keeps working before 004.
+- **QA section 27** covers keys, seats with a second real user, folders, domains, branding and the CSV parser.
+
 ## Phase 3: Retention and trustworthy numbers (branch `feat/phase3-retention`)
 
 **Run before merging:** [migrations/003_phase3.sql](../migrations/003_phase3.sql). It needs 002.

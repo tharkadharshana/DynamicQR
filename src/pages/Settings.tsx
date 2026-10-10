@@ -3,6 +3,7 @@ import { useNavigate, useOutletContext } from 'react-router-dom';
 import { supabase, logout } from '../supabase';
 import { apiFetch, formatNumber } from '../lib/api';
 import { useUI } from '../shared/UIContext';
+import TeamSettings from '../components/TeamSettings';
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -332,6 +333,8 @@ export default function Settings() {
                 </div>
               </div>
             </div>
+
+            <TeamSettings planData={planData} />
 
             <div className="settings-section" style={{ borderColor: 'rgba(255,87,87,0.2)' }}>
               <div className="settings-header" style={{ borderColor: 'rgba(255,87,87,0.2)' }}><span className="settings-title" style={{ color: 'var(--red)' }}>Danger zone</span></div>

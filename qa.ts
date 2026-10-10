@@ -36,13 +36,18 @@
  *      vCard/Text/Email/Wi-Fi at the edge, content_data edits + size cap, activation events, waLink
  *  26. Retention: atomic record_scan (10 concurrent), real per-day uniques, hours, events.csv,
  *      range clamp, cron auth, digest dry run + opt-out, RPC not callable by anon, list hygiene
- *  27. Cleanup
+ *  27. Team plan: API keys + /api/v1 (scopes, revoke, downgrade), seats with a 2nd real user
+ *      (member access, owner-only actions, seat cap, removal), client folders, custom domain
+ *      (validation, edge redirect, QR content), white-label branding, CSV parser
+ *  28. Cleanup
  */
 import 'dotenv/config';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import worker from './worker/worker.js';
 import { waLink } from './src/lib/site.ts';
+import { getQRContent, setShortDomain } from './src/lib/qrContent.ts';
+import { csvToObjects } from './src/lib/csv.ts';
 
 // ─── config ──────────────────────────────────────────────────────────────────
 const API             = process.env.QA_API_URL || 'http://localhost:3000';
@@ -630,13 +635,14 @@ async function run() {
   // ── 15b. Worker gate engine (in-process) ─────────────────────────────────────
   // Runs worker/worker.js directly in Node against this API, with an in-memory KV.
   // Worker test helpers (also used by section 24): run worker.js in-process against this API with a fake KV.
-    const runWorker = async (path: string, opts: { kv?: Map<string, string>; ua?: string; method?: string; form?: Record<string, string>; apiUrl?: string } = {}) => {
+    const runWorker = async (path: string, opts: { kv?: Map<string, string>; ua?: string; method?: string; form?: Record<string, string>; apiUrl?: string; mainHost?: string } = {}) => {
       const kv = opts.kv || new Map<string, string>();
       if (/\/(undefined)?$/.test(path)) return { status: 0, location: null, body: 'no slug (QR create failed)', kv };
       const env = {
         API_URL: opts.apiUrl || API,
         INTERNAL_SECRET,
         HASH_SALT: process.env.HASH_SALT || 'qa-salt',
+        MAIN_HOST: opts.mainHost,
         QR_CACHE: {
           get: async (k: string, o?: { type?: string }) => {
             const v = kv.get(k);
@@ -1209,8 +1215,103 @@ async function run() {
     check('GET /api/qr list: no password_hash on any row', Array.isArray(list.body) && list.body.every((q: any) => !('password_hash' in q)));
   }
 
-  // ── 27. Cleanup ──────────────────────────────────────────────────────────────
-  section('27. Cleanup');
+  // ── 27. Team plan: API keys, seats, client folders, custom domain, white-label ─
+  section('27. Team plan — API keys + /api/v1, team seats, client folders, custom domain, branding');
+  if (testSlug) {
+    await admin.from('profiles').update({ plan: 'team', plan_expires_at: new Date(Date.now() + 30 * 86400000).toISOString(), is_trial: false }).eq('id', uid);
+    const team = (await api('/api/user/plan', { token })).body;
+    check('Team limits: 5 seats, bulk, API, custom domain', team?.limits?.seats === 5 && team?.limits?.bulk_create === true && team?.limits?.api_access === true && team?.limits?.custom_domain === true, JSON.stringify(team?.limits));
+
+    // v1 alias with a session token
+    const v1 = await api('/api/v1/qr', { token });
+    check('/api/v1/qr with session token → 200', v1.status === 200 && Array.isArray(v1.body), `got ${v1.status}`);
+
+    // API keys
+    const k = await api('/api/keys', { method: 'POST', token, body: JSON.stringify({ name: 'QA key' }) });
+    const key = k.body?.key as string;
+    check('Create API key → 201, sk_live_ shown once', k.status === 201 && /^sk_live_/.test(key || ''), `status=${k.status}`);
+    if (key) {
+      const list = await api('/api/v1/qr', { token: key });
+      check('API key: GET /api/v1/qr → 200 with codes', list.status === 200 && list.body?.some((q: any) => q.slug === testSlug), `got ${list.status}`);
+      const sum = await api(`/api/v1/analytics/${testSlug}/summary`, { token: key });
+      check('API key: analytics summary → 200', sum.status === 200 && typeof sum.body?.total_scans === 'number', `got ${sum.status}`);
+      const created = await api('/api/v1/qr', { method: 'POST', token: key, body: JSON.stringify({ title: 'QA via API', destination_url: 'https://example.com/api', qr_type: 'url', is_dynamic: true, client: 'API Client' }) });
+      check('API key: create code with client folder → 201', created.status === 201 && created.body?.client === 'API Client', `status=${created.status} client=${created.body?.client}`);
+      const moved = await api(`/api/qr/${created.body?.slug}`, { method: 'PUT', token, body: JSON.stringify({ client: 'Moved Client' }) });
+      const after = await api(`/api/qr/${created.body?.slug}`, { token });
+      check('PUT client → folder changed', moved.status === 200 && after.body?.client === 'Moved Client', `client=${after.body?.client}`);
+      await del(created.body?.slug);
+      const bill = await api('/api/billing/checkout', { method: 'POST', token: key, body: JSON.stringify({ plan: 'pro', interval: 'monthly' }) });
+      const keys2 = await api('/api/keys', { token: key });
+      check('API key cannot reach billing or key management → 403', bill.status === 403 && keys2.status === 403, `${bill.status}/${keys2.status}`);
+      const keyList = (await api('/api/keys', { token })).body;
+      check('Key list shows prefix, never the key', Array.isArray(keyList) && keyList.length >= 1 && !JSON.stringify(keyList).includes(key), '');
+      await api(`/api/keys/${k.body.id}`, { method: 'DELETE', token });
+      const revoked = await api('/api/v1/qr', { token: key });
+      check('Revoked key → 401', revoked.status === 401, `got ${revoked.status}`);
+    }
+
+    // Team seats: invite a second real user, who then sees the owner's workspace.
+    const memberEmail = `qa-member-${Date.now()}@test.dynamicqr.local`;
+    const { data: mUser } = await admin.auth.admin.createUser({ email: memberEmail, password: TEST_PASS, email_confirm: true });
+    const inv = await api('/api/team', { method: 'POST', token, body: JSON.stringify({ email: memberEmail }) });
+    check('Invite member → 201', inv.status === 201, `got ${inv.status} ${JSON.stringify(inv.body)}`);
+    const member = createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false } });
+    const { data: ms } = await member.auth.signInWithPassword({ email: memberEmail, password: TEST_PASS });
+    const mToken = ms?.session?.access_token || '';
+    if (mToken) {
+      const mp = (await api('/api/user/plan', { token: mToken })).body;
+      check('Member sees the owner\'s Team plan (is_member)', mp?.is_member === true && mp?.plan === 'team', JSON.stringify({ m: mp?.is_member, p: mp?.plan }));
+      const mq = (await api('/api/qr', { token: mToken })).body;
+      check('Member lists the owner\'s codes', Array.isArray(mq) && mq.some((q: any) => q.slug === testSlug), `n=${mq?.length}`);
+      const ma = await api(`/api/analytics/account/${mUser?.user?.id}/summary`, { token: mToken });
+      check('Member account analytics (own id in URL) → 200', ma.status === 200, `got ${ma.status}`);
+      const mb = await api('/api/billing/checkout', { method: 'POST', token: mToken, body: JSON.stringify({ plan: 'pro', interval: 'monthly' }) });
+      const mt = await api('/api/team', { method: 'POST', token: mToken, body: JSON.stringify({ email: 'x@y.lk' }) });
+      check('Member cannot pay or invite → 403 OWNER_ONLY', mb.status === 403 && mt.status === 403 && mb.body?.code === 'OWNER_ONLY', `${mb.status}/${mt.status}`);
+    } else check('Member sign-in', false, 'no session');
+    for (let i = 0; i < 3; i++) await api('/api/team', { method: 'POST', token, body: JSON.stringify({ email: `qa-seat-${i}-${Date.now()}@test.dynamicqr.local` }) });
+    const over = await api('/api/team', { method: 'POST', token, body: JSON.stringify({ email: `qa-seat-over-${Date.now()}@test.dynamicqr.local` }) });
+    check('6th user (owner + 5 invites) → 403 LIMIT_SEATS', over.status === 403 && over.body?.code === 'LIMIT_SEATS', `status=${over.status}`);
+    const teamList = (await api('/api/team', { token })).body;
+    const members = Array.isArray(teamList) ? teamList : [];
+    for (const m of members) await api(`/api/team/${m.id}`, { method: 'DELETE', token });
+    if (mToken) {
+      const gone = (await api('/api/user/plan', { token: mToken })).body;
+      check('Removed member no longer acts on the workspace', gone?.is_member === false, `is_member=${gone?.is_member}`);
+    }
+    if (mUser?.user?.id) await admin.auth.admin.deleteUser(mUser.user.id);
+
+    // Custom domain: validation, gating, and edge behaviour on a customer hostname.
+    const badHost = await api('/api/domains', { method: 'POST', token, body: JSON.stringify({ hostname: 'not a host' }) });
+    check('Custom domain: invalid hostname → 400', badHost.status === 400, `got ${badHost.status}`);
+    if (!process.env.CF_API_TOKEN) {
+      const noCf = await api('/api/domains', { method: 'POST', token, body: JSON.stringify({ hostname: 'qr.example.lk' }) });
+      check('Custom domain without Cloudflare env → 503', noCf.status === 503, `got ${noCf.status}`);
+    }
+    const onCustom = await runWorker('/pricing', { mainHost: 'scnr.tharkak.com' });
+    check('Worker: non-code path on a custom host → 302 to main site', onCustom.status === 302 && (onCustom.location || '').startsWith('https://scnr.tharkak.com/pricing'), `${onCustom.status} ${onCustom.location}`);
+    const codeOnCustom = await runWorker(`/${testSlug}`, { mainHost: 'scnr.tharkak.com', ua: 'QA-custom-host' });
+    check('Worker: code on a custom host still served', codeOnCustom.status === 302 && codeOnCustom.location !== null && !codeOnCustom.location.includes('scnr.tharkak.com'), `${codeOnCustom.status} ${codeOnCustom.location}`);
+    setShortDomain('qr.example.lk');
+    check('getQRContent uses the verified custom domain', getQRContent({ slug: 'abcdefg' }) === 'https://qr.example.lk/abcdefg');
+    setShortDomain(null);
+
+    // White-label report branding + bulk CSV parsing.
+    await api('/api/user/profile', { method: 'PUT', token, body: JSON.stringify({ company: 'QA Corp', agencyName: 'Lanka Print Studio' }) });
+    const br = (await api('/api/user/plan', { token })).body;
+    check('Agency name saved for white-label reports', br?.profile?.agencyName === 'Lanka Print Studio', `got ${br?.profile?.agencyName}`);
+    const parsed = csvToObjects('title,destination_url,client\n"Menu, main",https://a.lk,"Café ""L"""');
+    check('CSV import parser: quotes, commas, escaped quotes', parsed[0]?.title === 'Menu, main' && parsed[0]?.client === 'Café "L"');
+
+    // Downgrade: keys stop working when the plan loses API access.
+    await admin.from('profiles').update({ plan: 'pro' }).eq('id', uid);
+    const noApi = await api('/api/keys', { method: 'POST', token, body: JSON.stringify({ name: 'x' }) });
+    check('Pro: creating an API key → 403 FEATURE_API', noApi.status === 403 && noApi.body?.code === 'FEATURE_API', `got ${noApi.status}`);
+  }
+
+  // ── 28. Cleanup ──────────────────────────────────────────────────────────────
+  section('28. Cleanup');
   {
     const del = await api('/api/user/account', { method: 'DELETE', token });
     check('DELETE /api/user/account → 200', del.status === 200, `status=${del.status} ${JSON.stringify(del.body)}`);

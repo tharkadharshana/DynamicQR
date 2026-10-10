@@ -4,7 +4,7 @@ import { supabase } from '../supabase';
 import QRCodeStyling from 'qr-code-styling';
 import { apiFetch } from '../lib/api';
 import { useUI } from '../shared/UIContext';
-import { getQRContent, stylingOptions, resizeLogo, SHORT_DOMAIN, SHORT_HOST } from '../lib/qrContent';
+import { getQRContent, stylingOptions, resizeLogo, SHORT_DOMAIN, shortHost } from '../lib/qrContent';
 import { waLink } from '../lib/site';
 
 const PREVIEW_SIZE = 180;
@@ -21,6 +21,7 @@ export default function CreateQR() {
   
   const [formData, setFormData] = useState({
     title: '',
+    client: '',
     destination_url: '',
     qr_type: 'url',
     content_data: {} as any,
@@ -79,6 +80,7 @@ export default function CreateQR() {
           setIsDynamic(data.is_dynamic !== false);
           setFormData({
             title: data.title || '',
+            client: data.client || '',
             destination_url: data.destination_url || '',
             qr_type: data.qr_type || 'url',
             content_data: data.content_data || {},
@@ -283,6 +285,13 @@ export default function CreateQR() {
                   required
                 />
               </div>
+              {planData?.limits?.bulk_create && (
+                <div className="form-section">
+                  <label className="form-label" htmlFor="qr-client">Client / folder <span style={{ color: 'var(--text3)', fontWeight: 'normal' }}>(optional)</span></label>
+                  <input id="qr-client" type="text" className="form-input" placeholder="e.g. Café Lagoon" value={formData.client}
+                    onChange={(e) => setFormData({ ...formData, client: e.target.value })} />
+                </div>
+              )}
 
               {/* QR type selector */}
               <div className="card mb16">
@@ -712,6 +721,7 @@ export default function CreateQR() {
                   setIsDynamic(true);
                   setFormData({
                     title: '',
+                    client: '',
                     destination_url: '',
                     slug: '',
                     qr_type: 'url',
@@ -761,7 +771,7 @@ export default function CreateQR() {
               <div ref={canvasRef} id="preview-canvas"></div>
             </div>
             <div className="qr-preview-slug" id="preview-slug">
-              {isDynamic ? `${SHORT_HOST}/${formData.slug || '———'}` : 'Static QR'}
+              {isDynamic ? `${shortHost()}/${formData.slug || '———'}` : 'Static QR'}
             </div>
             <div style={{ marginBottom: '16px' }}>
               <div style={{ fontSize: '11px', color: 'var(--text3)', marginBottom: '4px' }}>Destination</div>

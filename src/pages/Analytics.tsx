@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import { supabase } from '../supabase';
 import { apiFetch } from '../lib/api';
-import { SHORT_HOST } from '../lib/qrContent';
+import { shortHost } from '../lib/qrContent';
 import QRViewerModal from '../components/QRViewerModal';
 
 const COLORS = ['#1A1916', '#E85D3A', '#4D9EFF', '#3DCC7E', '#9B7FFF', '#F5A623', '#D0021B'];
@@ -179,6 +179,14 @@ export default function Analytics() {
   return (
     <div className="content" style={{ padding: '28px', overflow: 'auto', height: '100%' }}>
       <div className="page active">
+        {/* Printed report header: the agency's own name/logo on Team (white-label), else Scnr. */}
+        <div className="print-only" style={{ alignItems: 'center', gap: '12px', marginBottom: '16px', color: '#16171b' }}>
+          {planData?.profile?.agencyLogo && <img src={planData.profile.agencyLogo} alt="" style={{ height: '40px' }} />}
+          <div>
+            <div style={{ fontSize: '18px', fontWeight: 700 }}>{planData?.profile?.agencyName || 'Scnr'} · scan report</div>
+            <div style={{ fontSize: '12px' }}>{new Date().toLocaleDateString()}</div>
+          </div>
+        </div>
         <div className="no-print" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginBottom: '8px' }}>
           <button className="btn btn-ghost btn-sm" onClick={downloadCsv}>Download CSV</button>
           <button className="btn btn-ghost btn-sm" onClick={() => window.print()}>Print report</button>
@@ -192,7 +200,7 @@ export default function Analytics() {
               </div>
               {selectedSlugs.length === 1 && (
                 <div style={{ fontSize: '12px', color: 'var(--text3)', marginTop: '2px' }}>
-                  {SHORT_HOST}/{selectedSlugs[0]}
+                  {shortHost()}/{selectedSlugs[0]}
                 </div>
               )}
             </div>

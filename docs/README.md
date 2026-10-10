@@ -28,7 +28,7 @@ Scnr is a SaaS that creates static and dynamic QR codes. A **dynamic** QR code e
 
 ## Status at a glance
 
-Phases 0–3 (safe, credible, Restaurant Kit, retention) are merged. The change log is in [CHANGELOG.md](CHANGELOG.md).
+All five phases are merged: safe and working, credible, Restaurant Kit, retention, and the Team plan. The change log is in [CHANGELOG.md](CHANGELOG.md).
 
 - **Redirects fixed.** `vercel.json` now routes `/internal/*` to Express, so the Worker's origin lookup works ([doc 11, C1](11-review-findings.md#c1)). The Worker never crashes: origin failures show a branded 503 page.
 - **RLS closed** by [migrations/001_phase0.sql](../migrations/001_phase0.sql). It must be run in the Supabase SQL editor; QA section 20 fails until it has been.
@@ -36,6 +36,8 @@ Phases 0–3 (safe, credible, Restaurant Kit, retention) are merged. The change 
 - **Credible (Phase 1):** honest Landing, SaaS legal pages, capped plans (Pro 100 / Team 600 codes), a free dynamic pilot, the 30-day grace then pause rule, LKR/USD with Polar for cards, print-ready downloads.
 - **Restaurant Kit (Phase 2):** one table code opens a hosted guest page (menu, reviews, WhatsApp, Wi-Fi, today's offer) in English, Sinhala and Tamil, plus an A6 print view. "Swap today's offer" from the dashboard, the WhatsApp code type, dynamic vCard/Text/Email/Wi-Fi, and activation events (migration 002).
 - **Retention (Phase 3):** atomic scan recording (`record_scan`, migration 003), real per-day uniques, a busiest-hours chart, CSV export and a print report, a weekly email digest, and 400-day retention. The Firestore shim is gone (server.ts went from 2,457 to about 1,600 lines).
+- **Team plan (Phase 4):** API keys and `/api/v1`, 5 seats (invite by email), client folders, bulk CSV creation with a print sheet, one custom short domain (Cloudflare for SaaS), and white-label report branding (migration 004).
+- Run the migrations in order: 001 → 002 → 003 → 004 ([doc 10](10-operations.md#deployment)).
 - The phase plan is in [doc 11](11-review-findings.md#recommended-order-of-work).
 
 ## Source map
