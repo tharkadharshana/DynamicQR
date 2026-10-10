@@ -19,7 +19,7 @@ import { customAlphabet } from 'nanoid';
 import QRCode from 'qrcode';
 import logger from "./logger.js";
 import fs from 'fs';
-import { vcardText } from './src/lib/qrContent.js';
+import { renderGuestPage, pickLang } from './src/lib/guestPage.js';
 import { PLANS, TRIAL_LIMITS, GRACE_DAYS, DEFAULT_ADDONS, PRICES, PlanId, UserAddons, Currency, BillingInterval } from './src/lib/plans.js';
 
 // Shim to keep existing call patterns working backed by Supabase
@@ -339,6 +339,16 @@ async function startServer() {
     }
   };
 
+  const QR_TYPES = ['url', 'vcard', 'wifi', 'text', 'email', 'page'];
+  const CONTENT_MAX = 20_000;
+
+  // Activation funnel (see migrations/queries.sql). Never blocks or fails the request.
+  const logEvent = (uid: string, name: string, slug: string | null) => {
+    supabase.from('events').insert({ uid, name, slug }).then(({ error }) => {
+      if (error) logger.warn('Event write failed', { name, code: error.code });
+    });
+  };
+
   // Never send the PIN hash to a browser.
   const publicQr = ({ password_hash, ...qr }: any) => ({ ...qr, has_password: !!password_hash });
 
@@ -594,6 +604,15 @@ async function startServer() {
     }
   });
 
+  // Client-reported funnel events (allowlisted names only).
+  app.post('/api/events', authenticate, async (req, res) => {
+    const { name, slug } = req.body || {};
+    if (!['print_opened', 'kit_started'].includes(name)) return res.status(400).json({ error: 'Unknown event' });
+    const { error } = await supabase.from('events').insert({ uid: (req as any).user.uid, name, slug: typeof slug === 'string' ? slug.slice(0, 32) : null });
+    if (error) return res.status(500).json({ error: 'Failed to record event' });
+    res.json({ success: true });
+  });
+
   // Export User Data API
   app.get('/api/user/export', authenticate, async (req, res) => {
     try {
@@ -749,6 +768,7 @@ async function startServer() {
       updated_at: now,
     }).eq('id', p.uid);
     if (error) throw error;
+    logEvent(p.uid, 'paid', null);
     return true;
   }
 
@@ -1048,8 +1068,15 @@ async function startServer() {
     try {
       const user = (req as any).user;
       const { destination_url, title, style, is_dynamic: requestedDynamic, qr_type, content_data, options } = req.body;
-      // Only URL codes can be dynamic until the Worker renders the other types (Phase 2).
-      const is_dynamic = requestedDynamic !== false && (qr_type || 'url') === 'url';
+      const type = qr_type || 'url';
+      if (!QR_TYPES.includes(type)) {
+        return res.status(400).json({ error: `qr_type must be one of ${QR_TYPES.join(', ')}` });
+      }
+      if (content_data !== undefined && JSON.stringify(content_data).length > CONTENT_MAX) {
+        return res.status(400).json({ error: 'content_data is too large (max 20 KB)' });
+      }
+      // Guest pages only exist as dynamic codes; every other type can be either.
+      const is_dynamic = type === 'page' || requestedDynamic !== false;
       const uid = user.uid;
 
       // Input validation
@@ -1160,7 +1187,7 @@ async function startServer() {
         slug,
         user_uid: user.uid,
         destination_url: destination_url || '',
-        qr_type: qr_type || 'url',
+        qr_type: type,
         content_data: content_data || null,
         is_dynamic,
         title: title || 'My QR',
@@ -1198,6 +1225,7 @@ async function startServer() {
         throw new Error(`Database save failed: ${err.message}`);
       }
 
+      logEvent(uid, 'qr_created', slug);
       res.status(201).json(qrDoc);
     } catch (error: any) {
       logger.error('QR creation error details:', {
@@ -1275,8 +1303,14 @@ async function startServer() {
   }, async (req, res) => {
     try {
       const { slug } = req.params;
-      const { destination_url, title, style, is_active, options } = req.body;
+      const { destination_url, title, style, is_active, options, content_data } = req.body;
       const updateData: any = {};
+      if (content_data !== undefined) {
+        if (JSON.stringify(content_data).length > CONTENT_MAX) {
+          return res.status(400).json({ error: 'content_data is too large (max 20 KB)' });
+        }
+        updateData.content_data = content_data;
+      }
 
       // Input validation
       if (title !== undefined && (typeof title !== 'string' || title.length > 120)) {
@@ -1339,6 +1373,12 @@ async function startServer() {
       }
       
       updateData.updated_at = new Date().toISOString();
+      if (content_data !== undefined && (req as any).user) {
+        const { data: before } = await supabase.from('qr_codes').select('content_data').eq('slug', slug).maybeSingle();
+        if ((before?.content_data?.offer?.text || '') !== (content_data?.offer?.text || '')) {
+          logEvent((req as any).user.uid, 'offer_changed', slug);
+        }
+      }
       await updateDoc(doc(db, 'qr_codes', slug), updateData);
       await purgeEdge(slug);
       res.json({ success: true, slug });
@@ -2157,6 +2197,9 @@ async function startServer() {
         quota_exceeded: license.monthlyUsed >= license.limits.monthly_scans,
         paused,
         title: qr.title || '',
+        qr_type: qr.qr_type || 'url',
+        content_data: qr.qr_type && qr.qr_type !== 'url' ? qr.content_data || {} : undefined,
+        branding: license.effectivePlan === 'free' && !license.isTrial, // "Made with Scnr" on Free guest pages
         owner_plan: license.effectivePlan,
       };
 
@@ -2195,25 +2238,19 @@ async function startServer() {
         logger.error('Analytics capture background error', { error: err.message });
       });
 
-      // 3. Handle different QR types
-      if (qrData.qr_type === 'vcard') {
-        const content = qrData.content_data;
-        const vcard = vcardText(content);
-        res.setHeader('Content-Type', 'text/vcard');
-        res.setHeader('Content-Disposition', `attachment; filename="${content?.first_name || 'contact'}.vcf"`);
-        return res.send(vcard);
-      } else if (qrData.qr_type === 'text') {
-        const text = qrData.content_data?.text || '';
-        return res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="font-family: sans-serif; padding: 20px; white-space: pre-wrap; word-break: break-word;">${escapeHtml(text)}</body></html>`);
-      } else if (qrData.qr_type === 'email') {
-        const content = qrData.content_data;
-        const mailto = `mailto:${content?.email || ''}?subject=${encodeURIComponent(content?.subject || '')}&body=${encodeURIComponent(content?.body || '')}`;
-        return res.redirect(302, mailto);
-      } else if (qrData.qr_type === 'wifi') {
-        // WiFi should ideally be static, but if dynamic, just show the details
-        const content = qrData.content_data;
-        return res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="font-family: sans-serif; padding: 20px;"><h2>WiFi Network</h2><p><strong>SSID:</strong> ${escapeHtml(content?.ssid || '')}</p><p><strong>Password:</strong> ${escapeHtml(content?.password || '')}</p><p><strong>Security:</strong> ${escapeHtml(content?.encryption || '')}</p></body></html>`);
+      // 3. Non-URL types render the same guest page / vCard / mailto as the Worker.
+      const rendered = renderGuestPage(
+        { ...qrData, branding: false },
+        pickLang((req.query.lang as string) || null, req.headers['accept-language'] || null),
+        `${req.protocol}://${req.headers.host}${req.originalUrl}`,
+      );
+      if (rendered?.kind === 'vcard') {
+        res.setHeader('Content-Type', 'text/vcard; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${rendered.filename}"`);
+        return res.send(rendered.body);
       }
+      if (rendered?.kind === 'redirect') return res.redirect(302, rendered.location);
+      if (rendered?.kind === 'html') return res.type('html').send(rendered.body);
 
       const destination = qrData.destination_url;
       if (!destination) {
@@ -2336,6 +2373,10 @@ async function captureAnalyticsFromPayload(payload: any, qrOwnerUid?: string) {
 
   if (isUnique) {
     statsUpdate.unique_scans = (currentStats?.unique_scans || 0) + 1;
+  }
+
+  if (!currentStats?.total_scans && qrOwnerUid) {
+    supabase.from('events').insert({ uid: qrOwnerUid, name: 'first_scan', slug }).then(() => {});
   }
 
   await setDoc(doc(db, 'qr_stats', slug), statsUpdate, { merge: true });

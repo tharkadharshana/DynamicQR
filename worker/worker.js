@@ -1,3 +1,6 @@
+// Guest pages + vCard/Text/Email/Wi-Fi rendering, shared with the dev server (Wrangler bundles the TS import).
+import { renderGuestPage, pickLang } from '../src/lib/guestPage';
+
 // Small branded HTML page for every non-redirect outcome. Never show a bare error on a printed code.
 const page = (title, bodyHtml, status, accent = '#E85D3A') => new Response(`<!DOCTYPE html>
 <html>
@@ -119,8 +122,8 @@ export default {
       return page('Limit reached', `<h2>Monthly limit reached</h2><p>This QR code's owner has used this month's scans. Please try again later.</p><a class="btn" href="${url.origin}/pricing">I'm the owner: upgrade</a>`, 429, '#991b1b');
     }
 
-    if (!config.destination_url) {
-      // Old dynamic vCard/Text/Email rows: no URL to send the scanner to yet.
+    const qrType = config.qr_type || 'url';
+    if (qrType === 'url' && !config.destination_url) {
       return page('QR not available', '<h2>Nothing to open yet</h2><p>This QR code has no destination.</p>', 404);
     }
 
@@ -184,10 +187,13 @@ export default {
       }
     }
 
+    // Switching language on a guest page reloads with ?lang= — not a new scan.
+    const isLangSwitch = qrType !== 'url' && url.searchParams.has('lang');
+
     // --- SCAN LIMIT CHECK (only after the other gates pass) ---
     // ponytail: count lives in a per-edge KV copy refreshed from the DB every 300s; can overshoot under bursty multi-region traffic.
-    config.scan_count++;
-    if (config.scan_limit !== null && config.scan_limit !== undefined && config.scan_count > config.scan_limit) {
+    if (!isLangSwitch) config.scan_count++;
+    if (!isLangSwitch && config.scan_limit !== null && config.scan_limit !== undefined && config.scan_count > config.scan_limit) {
       ctx.waitUntil(fetch(`${apiUrl}/api/qr/${slug}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'x-internal-secret': internalSecret },
@@ -196,13 +202,13 @@ export default {
       }).then(() => env.QR_CACHE.delete(slug)).catch(err => console.error(`Deactivate failed: ${err.message}`)));
       return page('Scan limit reached', '<h2>Scan limit reached</h2><p>This QR code has been scanned the maximum number of times.</p>', 410);
     }
-    ctx.waitUntil(env.QR_CACHE.put(slug, JSON.stringify(config), { expirationTtl: 300 }));
+    if (!isLangSwitch) ctx.waitUntil(env.QR_CACHE.put(slug, JSON.stringify(config), { expirationTtl: 300 }));
 
-    if (effectiveLimit > 0) {
+    if (effectiveLimit > 0 && !isLangSwitch) {
       ctx.waitUntil(env.QR_CACHE.put(rateLimitKey, String(visitorCount + 1), { expirationTtl: config.visitor_rate_period || 3600 }));
     }
 
-    if (isUnique) {
+    if (isUnique && !isLangSwitch) {
       const now = new Date();
       const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
       const ttl = Math.floor((endOfDay.getTime() - now.getTime()) / 1000);
@@ -211,7 +217,7 @@ export default {
 
     // --- ANALYTICS --- never on the redirect's critical path.
     // ponytail: quota is decided from the 300s-cached config, so an owner can overshoot by <= 5 min of traffic.
-    if (apiUrl) {
+    if (apiUrl && !isLangSwitch) {
       ctx.waitUntil(fetch(`${apiUrl}/internal/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-internal-secret': internalSecret },
@@ -231,6 +237,16 @@ export default {
       }).catch(err => console.error(`Analytics sync error: ${err.message}`)));
     }
 
+    const rendered = renderGuestPage(config, pickLang(url.searchParams.get('lang'), request.headers.get('Accept-Language')), request.url);
+    if (rendered?.kind === 'html') {
+      return new Response(rendered.body, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+    }
+    if (rendered?.kind === 'vcard') {
+      return new Response(rendered.body, { headers: { 'Content-Type': 'text/vcard; charset=utf-8', 'Content-Disposition': `attachment; filename="${rendered.filename}"` } });
+    }
+    if (rendered?.kind === 'redirect') {
+      return new Response(null, { status: 302, headers: { Location: rendered.location } });
+    }
     return Response.redirect(config.destination_url, 302);
   }
 };
