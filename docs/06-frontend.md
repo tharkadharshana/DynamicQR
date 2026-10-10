@@ -16,6 +16,8 @@ Stack: React 19, React Router 7 (`BrowserRouter`), Vite 6, Recharts 3, `qr-code-
 | `/create`, `/edit/:id` | | CreateQR (guest-page codes redirect to the kit) |
 | `/kit`, `/kit?edit=:slug` | | Restaurant Kit wizard |
 | `/kit/print/:slug` | | A6 table tent print view |
+| `/bulk` | | Bulk CSV create and print sheet (Team) |
+| `/api-docs` | | REST API docs (shown in the nav on Team) |
 | `/analytics` | | AccountAnalytics |
 | `/analytics/:slug` | | Analytics (one or more codes) |
 | `/billing`, `/pricing`, `/settings` | | Billing, Pricing, Settings |
@@ -31,6 +33,8 @@ Signed-in routes render inside [DynamicQRLayout](../src/components/DynamicQRLayo
 | [lib/qrContent.ts](../src/lib/qrContent.ts) | `getQRContent()` (what a code encodes), `vcardText()`, `stylingOptions()` (qr-code-styling options), `resizeLogo()`, `SHORT_DOMAIN` / `SHORT_HOST`. Shared with server.ts. |
 | [lib/checkout.ts](../src/lib/checkout.ts) | `startCheckout(plan, interval, currency, planData)`: LKR → PayHere form post; USD → Polar card checkout when `planData.polar_enabled`, else PayHere in USD |
 | [lib/guestPage.ts](../src/lib/guestPage.ts) | `renderGuestPage()` and `pickLang()`: the HTML, vCard or mailto a scan of a non-URL code returns. Shared by the Worker and the dev server. Has an assert self-check (`npx tsx src/lib/guestPage.ts`). |
+| [lib/csv.ts](../src/lib/csv.ts) | `parseCsv()` / `csvToObjects()`: an RFC-4180 parser for bulk import (quotes, escaped quotes, newlines, BOM). Self-check: `npx tsx src/lib/csv.ts`. |
+| [components/TeamSettings.tsx](../src/components/TeamSettings.tsx) | Settings → Team: API keys (create, shown once, revoke), members (invite, remove, seat count), custom domain (add, status, CNAME target, remove), report branding (agency name and logo) |
 | [lib/site.ts](../src/lib/site.ts) | `SITE` (legal name, location, support email, WhatsApp, hours, status URL, demo slug, founder) from `VITE_*` env, and `waLink(phone, text)` |
 | [supabase.ts](../src/supabase.ts) | Browser client, `loginWithGoogle`, `logout` |
 | [shared/UIContext.tsx](../src/shared/UIContext.tsx) | `useUI()`: modals, toasts, theme |
@@ -94,9 +98,13 @@ The print view lays out an A6 tent: the name, a trilingual "scan for menu" line,
 
 Three plan cards with real limits, a currency switch and an interval switch (both feed `startCheckout()`), and an FAQ covering the lapse rule, refunds, payment methods and "not a payment QR".
 
+### Bulk create — [Bulk.tsx](../src/pages/Bulk.tsx)
+
+Team only (`limits.bulk_create`). Takes a CSV with `title, destination_url, client`, from a file, paste, or the sample. It previews the rows, then creates each code through `POST /api/qr`, stopping at a plan cap. The print sheet is a grid of styled QRs with title and client, printed through the browser.
+
 ### Settings — [Settings.tsx](../src/pages/Settings.tsx)
 
-Plan usage, profile, **weekly scan digest** toggle (`digestOptOut`), security (revoke sessions), danger zone (export, deactivate all, delete account).
+Plan usage, profile, **weekly scan digest** toggle (`digestOptOut`), the **Team section** (`TeamSettings`), security (revoke sessions), danger zone (export, deactivate all, delete account). Members see a short note instead of the owner's Team controls. Printed Analytics reports show the agency's name and logo (white-label) when set.
 
 ### Legal pages
 
@@ -108,7 +116,7 @@ SaaS-specific [Terms](../src/pages/TermsConditions.tsx), [Privacy](../src/pages/
 
 ## QR content and the short domain
 
-Every QR image is built with `getQRContent()` and `stylingOptions()`. Dynamic codes encode `${VITE_SHORT_DOMAIN}/${slug}`, never `window.location.origin`. Slug labels use `SHORT_HOST`. `VITE_SHORT_DOMAIN` must never change after codes are printed.
+Every QR image is built with `getQRContent()` and `stylingOptions()`. Dynamic codes encode `${activeDomain}/${slug}`: the account's **verified custom domain** (Team) when `/api/user/plan` returns one (`setShortDomain()` in App.tsx), otherwise `VITE_SHORT_DOMAIN`. Never `window.location.origin`. In-app slug labels use `shortHost()`; Landing uses the public `SHORT_HOST`. Codes printed earlier keep whatever domain they were printed with, and both domains keep resolving. `VITE_SHORT_DOMAIN` must never change after codes are printed.
 
 ## Removed in Phase 1
 

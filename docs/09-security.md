@@ -8,6 +8,8 @@
 | Signed-in user | Supabase JWT (browser localStorage) | `/api/*` (with ownership checks). Direct Supabase access is limited to reading their own `profiles` row. |
 | Worker | `INTERNAL_SECRET` header | `/internal/*`, `PUT /api/qr/:slug` (as any owner) |
 | PayHere | `md5sig` (merchant secret) | `/api/billing/notify` |
+| API key (Team) | `sk_live_…` (SHA-256 stored) | the owner's `/api/*` (also `/api/v1/*`), but not billing, members, keys or domains |
+| Team member | Supabase JWT | the owner's workspace, but not owner-only actions |
 | Backend | `SUPABASE_SERVICE_ROLE_KEY` | everything, bypasses RLS |
 
 ## Controls that exist

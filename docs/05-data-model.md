@@ -94,6 +94,16 @@ Columns the code **reads but which do not exist**: `referrers`, `regions`, `isps
 
 `id, uid → profiles, name, slug, created_at`. Names: `qr_created`, `print_opened`, `first_scan`, `offer_changed`, `paid`, `kit_started`. The API writes them (they never fail a request), and RLS denies direct access. Founder queries live in [migrations/queries.sql](../migrations/queries.sql): the per-account funnel, stuck accounts, funnel totals, and revenue by month.
 
+### Team tables (migration 004)
+
+| Table | Columns | Notes |
+|---|---|---|
+| `workspace_members` | `owner_uid, member_email (lower-case), member_uid, role, created_at`, unique `(owner_uid, member_email)` | `member_uid` is filled when the invite is claimed on the member's first sign-in (`workspaceOwner()` in `authenticate`) |
+| `api_keys` | `uid, name, prefix, key_hash (unique), created_at, last_used_at, revoked_at` | Only the SHA-256 is stored |
+| `custom_domains` | `uid, hostname (unique), cf_id, status` | One per account; Cloudflare for SaaS custom hostname id |
+
+Also: `qr_codes.client` (folder name, indexed with `user_uid`), and `profiles.agency_name` / `profiles.agency_logo` (≤64 KB data URL) for white-label printed reports.
+
 ### `scan_events`, one per scan (bots excluded)
 
 | Column | Written | Notes |

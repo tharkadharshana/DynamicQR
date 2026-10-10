@@ -17,6 +17,7 @@ Every type can be dynamic. URL codes redirect; the others are rendered at the ed
   - anything containing `.`
   - anything starting with `api`, `internal`, `assets` or `_`
   - anything that does not match the slug alphabet `^[23456789a-km-zA-HJ-NP-Z…]{5,12}$` (no 0/1/i/l/o/I/O)
+- **Custom short domains (Team).** On a host other than `MAIN_HOST` (a Worker var), anything that isn't a slug is redirected `302` to `https://MAIN_HOST{path}`, before the pass-through. Slugs resolve the same on every host.
 
 ### 2. Visitor fingerprint
 

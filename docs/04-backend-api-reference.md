@@ -161,6 +161,26 @@ One set of views is served in two scopes:
 | `GET /api/cron/cleanup` | `30 21 * * *` (03:00 Colombo) | Deletes `scan_events` older than 400 days. Returns `{deleted}`. |
 | `GET /api/cron/digest` | `30 2 * * 1` (Mon 08:00 Colombo) | Emails every opted-in owner who has codes: last 7 days' scans, the busiest hour in their time zone, and the top code (`buildDigest()` in [src/lib/digest.ts](../src/lib/digest.ts), sent through Resend). `?dry=1` builds without sending, `?uid=` limits to one account. With no `RESEND_API_KEY` it returns `skipped`. |
 
+## Team plan
+
+| Method / path | Auth | Purpose |
+|---|---|---|
+| `GET /api/keys` | owner session | Keys: `{id, name, prefix, created_at, last_used_at, revoked_at}` |
+| `POST /api/keys` | owner session, write | `{name?}` → `201 {…, key}`. The full `sk_live_…` key is returned **only here**; it is stored as SHA-256. Needs `api_access` (`403 FEATURE_API`). |
+| `DELETE /api/keys/:id` | owner session, write | Revoke |
+| `GET /api/team` | user | Members `{id, member_email, joined}` |
+| `POST /api/team` | owner session, write | `{email}` invite. `403 LIMIT_SEATS` when owner + members ≥ `limits.seats` (Team: 5). `409` if already invited. |
+| `DELETE /api/team/:id` | owner session, write | Remove a member |
+| `GET /api/domains` | user | `{hostname, status: pending|active|failed, cname_target}` or `null`. A pending status is refreshed from Cloudflare. |
+| `POST /api/domains` | owner session, write | `{hostname}`. Needs `custom_domain` (Team). One per account. Registers a Cloudflare for SaaS custom hostname. `503` until `CF_API_TOKEN` / `CF_ZONE_ID` are set. |
+| `DELETE /api/domains` | owner session, write | Remove it from Cloudflare and the account |
+
+**Owner-only** (`sessionOwner`): checkouts, profile changes, deactivate-all, account deletion, keys, members and domains. These return `403 SESSION_ONLY` for an API key, or `403 OWNER_ONLY` for a member.
+
+### Public REST API (`/api/v1`)
+
+`/api/v1/<path>` is rewritten to `/api/<path>` before routing, so the API *is* the dashboard's own routes. Authenticate with `Authorization: Bearer sk_live_…`. A key acts as its owner, and it only works while the owner's plan has `api_access`. `POST/PUT /api/qr` also accept `client` (a folder name, ≤60 chars). The in-app page is [ApiDocs.tsx](../src/pages/ApiDocs.tsx). There are no webhooks yet.
+
 ## Billing
 
 | Method / path | Auth | Purpose |
