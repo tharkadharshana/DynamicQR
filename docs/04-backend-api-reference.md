@@ -84,9 +84,9 @@ On Vercel each serverless instance keeps its own counters, so these limits are s
 {
   "title": "Menu",                       // ≤120 chars
   "destination_url": "https://…",        // must parse with new URL(), or ''
-  "qr_type": "url|vcard|wifi|text|email",
+  "qr_type": "url|vcard|wifi|text|email|page",   // anything else → 400
   "is_dynamic": true,
-  "content_data": { … },                 // type-specific (see doc 05)
+  "content_data": { … },                 // type-specific (see doc 05), max 20 KB
   "style": { "dot_color", "bg_color", "dot_style", "corner_style",
              "error_correction", "output_size", "logo_url" },
   "options": {
@@ -101,7 +101,8 @@ On Vercel each serverless instance keeps its own counters, so these limits are s
 The route returns `201` with the stored `qr_codes` row.
 
 - Without the Visitor Guard feature, the visitor limit is forced to 5 per 3600 s.
-- **Only `qr_type:'url'` can be dynamic.** Any other type is stored with `is_dynamic:false`, until Phase 2 adds Worker rendering.
+- `page` codes are always dynamic; every other type follows `is_dynamic`.
+- Writes a `qr_created` event.
 
 ### `GET /api/qr` (user)
 
@@ -116,7 +117,8 @@ Returns the `qr_codes` row with `password_hash` removed and `has_password: boole
 Accepts `destination_url`, `title`, `style`, `is_active`, and `options` (same shape as create).
 
 - `options` are applied only for user calls. Gates are re-checked against the license.
-- Fields not handled: `qr_type`, `content_data`, `is_dynamic`. These cannot change after creation (`content_data` becomes editable in Phase 2).
+- `content_data` is editable (max 20 KB). A change to `offer.text` writes an `offer_changed` event.
+- `qr_type` and `is_dynamic` cannot change after creation.
 - The scan limit is written as one `rate_limit` jsonb value `{enabled, max_scans, period:'total'}`.
 - Sets `updated_at`, then calls `purgeEdge(slug)`, so the edit applies on the next scan.
 
@@ -125,6 +127,10 @@ Returns `{ success: true, slug }`.
 ### `DELETE /api/qr/:slug` (user and owner, write)
 
 Deletes `qr_codes` and `qr_stats`. Then, without waiting, it calls `purgeEdge(slug)` (`{APP_URL}/internal/purge/{slug}`, handled by the Worker) and deletes `scan_events` in batches of 500.
+
+### `POST /api/events` (user)
+
+Body `{ name: 'print_opened' | 'kit_started', slug? }`. Records a client-side funnel event. An unknown name returns 400. Server-side events (`qr_created`, `first_scan`, `offer_changed`, `paid`) are written automatically.
 
 ## Analytics: one QR (user and owner)
 
@@ -172,7 +178,7 @@ The add-on checkout was removed in Phase 0: there was no UI and the webhook bran
 
 | Method / path | Auth | Purpose |
 |---|---|---|
-| `GET /internal/slug/:slug` | secret | Compact gate config including the policy fields `quota_exceeded`, `paused` (lapse rule), `title`, `visitor_guard` and the resolved `visitor_rate_limit` ([doc 03](03-scan-flow-and-gate-engine.md#3-config-lookup)) |
+| `GET /internal/slug/:slug` | secret | Compact gate config including the policy fields `quota_exceeded`, `paused` (lapse rule), `title`, `visitor_guard`, the resolved `visitor_rate_limit`, and for non-URL codes `qr_type`, `content_data` and `branding` ([doc 03](03-scan-flow-and-gate-engine.md#3-config-lookup)) |
 | `POST /internal/scan` | secret | Records the scan only (the quota is enforced by the Worker from the config). Returns `OK` or `404`. |
 
 Vercel routes `/internal/*` to the function (added in Phase 0).

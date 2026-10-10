@@ -8,6 +8,35 @@ import { useUI } from '../shared/UIContext';
 import QRViewerModal from '../components/QRViewerModal';
 import { getQRContent, SHORT_DOMAIN, SHORT_HOST } from '../lib/qrContent';
 
+// "Swap today's offer": edit a guest page's offer in place; live on the next scan, no reprint.
+function OfferSwap({ qr, onSaved }: { qr: any; onSaved: (qr: any) => void }) {
+  const { showToast } = useUI();
+  const [text, setText] = useState(qr.content_data?.offer?.text || '');
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    setSaving(true);
+    try {
+      const content_data = { ...qr.content_data, offer: text ? { ...(qr.content_data?.offer || {}), text } : undefined };
+      if (content_data.kit) content_data.kit = { ...content_data.kit, offerText: text };
+      await apiFetch(`/api/qr/${qr.slug}`, { method: 'PUT', body: JSON.stringify({ content_data }) });
+      onSaved({ ...qr, content_data });
+      showToast('success', 'Offer is live on the next scan. No reprint needed.');
+    } catch (err: any) {
+      showToast('error', err?.message || 'Could not save the offer');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+      <span style={{ fontWeight: 600, minWidth: '140px' }}>{qr.title}</span>
+      <input aria-label={`Today's offer for ${qr.title}`} className="form-input" style={{ flex: 1, minWidth: '200px' }} value={text}
+        placeholder="e.g. Kottu night: 20% off after 7pm" onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') save(); }} />
+      <button className="btn btn-primary btn-sm" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Make live'}</button>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [qrCodes, setQrCodes] = useState<any[]>([]);
   const [viewQR, setViewQR] = useState<any | null>(null);
@@ -161,6 +190,26 @@ export default function Dashboard() {
   return (
     <div className="content" style={{ padding: '28px', overflow: 'auto', height: '100%' }}>
       <div className="page active">
+        {/* Today's offer on guest pages (Restaurant Kit) */}
+        {qrCodes.some(q => q.qr_type === 'page') ? (
+          <div className="card mb16">
+            <div className="card-title">Today's offer</div>
+            <div style={{ display: 'grid', gap: '10px' }}>
+              {qrCodes.filter(q => q.qr_type === 'page').map(q => (
+                <OfferSwap key={q.slug} qr={q} onSaved={u => setQrCodes(prev => prev.map(p => p.slug === u.slug ? u : p))} />
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="card mb16" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <div>
+              <div className="card-title" style={{ marginBottom: '4px' }}>Restaurant Kit</div>
+              <div style={{ fontSize: '13px', color: 'var(--text3)' }}>One table QR for your menu, reviews, WhatsApp, Wi-Fi and today's offer — in English, Sinhala and Tamil.</div>
+            </div>
+            <button className="btn btn-primary btn-sm" onClick={() => navigate('/kit')}>Set up the kit →</button>
+          </div>
+        )}
+
         {/* Stats */}
         <div className="stats-row">
           <div className="stat-card">

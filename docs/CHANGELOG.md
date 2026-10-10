@@ -2,6 +2,21 @@
 
 One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-review-findings.md](11-review-findings.md).
 
+## Phase 2: Restaurant Kit (branch `feat/phase2-restaurant-kit`)
+
+**Run before merging:** [migrations/002_phase2.sql](../migrations/002_phase2.sql) (the `events` table).
+
+- **Guest pages (`qr_type: 'page'`).**
+  - A hosted mobile page with the menu, review, WhatsApp, phone and extra links, Wi-Fi with a copy button, today's offer and a brand colour, in **English, Sinhala and Tamil** (`?lang=` or `Accept-Language`).
+  - It is rendered at the edge by the shared `renderGuestPage()`. All text is escaped, unsafe link schemes are dropped, and Free owners get "Made with Scnr".
+  - A language switch is not counted as a scan.
+- **All types can be dynamic again** (C6). vCard downloads a `.vcf`, Text and Wi-Fi render pages, Email redirects to `mailto:`. The dev server uses the same renderer.
+- **Restaurant Kit wizard** (`/kit`, editable with `?edit=`) and an **A6 table tent** print view (`/kit/print/:slug`, browser print-to-PDF), plus an optional static Wi-Fi code.
+- **"Swap today's offer"** on the Dashboard. `PUT /api/qr/:slug` accepts `content_data` (max 20 KB, M9).
+- **WhatsApp code type** in CreateQR (`waLink()`), and **"Book setup on WhatsApp"** on Billing and in the Kit (Landing already had it).
+- **Activation events** (`qr_created`, `print_opened`, `first_scan`, `offer_changed`, `paid`) through `logEvent()` and `POST /api/events`. Founder SQL is in `migrations/queries.sql`.
+- **QA section 25** covers guest pages, dynamic types at the edge, content edits, events and `waLink`. Sections 15b were updated for dynamic non-URL types.
+
 ## Phase 1: Credible (branch `feat/phase1-credible`)
 
 No new migration.

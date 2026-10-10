@@ -13,7 +13,9 @@ Stack: React 19, React Router 7 (`BrowserRouter`), Vite 6, Recharts 3, `qr-code-
 | `/legal/privacy-policy`, `/legal/terms-and-conditions`, `/legal/refund-policy` | ✅ | ✅ |
 | `/login` | Landing | redirect to `/` |
 | `/` | redirect to `/login` | Dashboard |
-| `/create`, `/edit/:id` | | CreateQR |
+| `/create`, `/edit/:id` | | CreateQR (guest-page codes redirect to the kit) |
+| `/kit`, `/kit?edit=:slug` | | Restaurant Kit wizard |
+| `/kit/print/:slug` | | A6 table tent print view |
 | `/analytics` | | AccountAnalytics |
 | `/analytics/:slug` | | Analytics (one or more codes) |
 | `/billing`, `/pricing`, `/settings` | | Billing, Pricing, Settings |
@@ -28,6 +30,7 @@ Signed-in routes render inside [DynamicQRLayout](../src/components/DynamicQRLayo
 | [lib/plans.ts](../src/lib/plans.ts) | `PLANS`, `TRIAL_LIMITS`, `PRICES`, `formatPrice()`, `GRACE_DAYS`. Shared with server.ts. |
 | [lib/qrContent.ts](../src/lib/qrContent.ts) | `getQRContent()` (what a code encodes), `vcardText()`, `stylingOptions()` (qr-code-styling options), `resizeLogo()`, `SHORT_DOMAIN` / `SHORT_HOST`. Shared with server.ts. |
 | [lib/checkout.ts](../src/lib/checkout.ts) | `startCheckout(plan, interval, currency, planData)`: LKR → PayHere form post; USD → Polar card checkout when `planData.polar_enabled`, else PayHere in USD |
+| [lib/guestPage.ts](../src/lib/guestPage.ts) | `renderGuestPage()` and `pickLang()`: the HTML, vCard or mailto a scan of a non-URL code returns. Shared by the Worker and the dev server. Has an assert self-check (`npx tsx src/lib/guestPage.ts`). |
 | [lib/site.ts](../src/lib/site.ts) | `SITE` (legal name, location, support email, WhatsApp, hours, status URL, demo slug, founder) from `VITE_*` env, and `waLink(phone, text)` |
 | [supabase.ts](../src/supabase.ts) | Browser client, `loginWithGoogle`, `logout` |
 | [shared/UIContext.tsx](../src/shared/UIContext.tsx) | `useUI()`: modals, toasts, theme |
@@ -51,16 +54,28 @@ The fake logos, customer counts, testimonials, city and heatmap claims, and tick
 
 ### Dashboard — [Dashboard.tsx](../src/pages/Dashboard.tsx)
 
-Stat cards, a time series, the code table (thumbnail, status, View / Stats / Edit / Delete), device split, top countries, recent scans. There are no fake deltas or "live" labels: data loads when the page opens.
+A "Today's offer" card with one input per guest page ("Make live" PUTs `content_data`, so the change is live on the next scan), or a Restaurant Kit prompt when there is none. Then stat cards, a time series, the code table (thumbnail, status, View / Stats / Edit / Delete), device split, top countries, recent scans. There are no fake deltas or "live" labels: data loads when the page opens.
 
 ### CreateQR — [CreateQR.tsx](../src/pages/CreateQR.tsx)
 
 Form cards (name and type, style, options, Visitor Guard) plus a live preview.
 
-- Only URL codes can be dynamic; other types force static.
+- Types: URL, vCard, Wi-Fi, Text, Email, **WhatsApp** (a URL code built with `waLink()`), and a link to the Restaurant Kit. All can be dynamic; Wi-Fi defaults to static so phones join directly.
 - **Feature toggles are gated on plan limits** through `locked(feature)`, not on the plan name, so trial users get their Pro features.
 - Downloads render at the chosen output size, then the preview returns to 180 px. Logos are resized on the device before saving.
 - On a 403 (`LIMIT_QR_CODES`, `LIMIT_DYNAMIC_QR`, `FEATURE_*`) it shows a toast and goes to `/billing`.
+
+### Restaurant Kit — [Kit.tsx](../src/pages/Kit.tsx) and [KitPrint.tsx](../src/pages/KitPrint.tsx)
+
+The wizard has three steps:
+
+1. The business: name, subtitle, brand colour.
+2. Links: menu, Google review, WhatsApp number and message, phone, Wi-Fi, an extra button.
+3. Today's offer and optional Sinhala and Tamil wording. Button labels are translated automatically.
+
+`toContent()` turns the form into the guest page `content_data`, and stores the form under `kit` so it can be edited later. Create makes one dynamic `page` code and, when a Wi-Fi name is given, a static Wi-Fi code. It then opens the print view.
+
+The print view lays out an A6 tent: the name, a trilingual "scan for menu" line, the styled QR at 250 px, the offer, the Wi-Fi QR and the short link. `@page { size: A6 }` with `window.print()` gives a PDF without any library. Opening it records `print_opened`.
 
 ### Analytics and AccountAnalytics
 

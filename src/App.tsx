@@ -6,6 +6,8 @@ import { apiFetch } from './lib/api';
 import DynamicQRLayout from './components/DynamicQRLayout';
 import Dashboard from './pages/Dashboard';
 import CreateQR from './pages/CreateQR';
+import Kit from './pages/Kit';
+import KitPrint from './pages/KitPrint';
 import Analytics from './pages/Analytics';
 import AccountAnalytics from './pages/AccountAnalytics';
 import Billing from './pages/Billing';
@@ -91,6 +93,8 @@ export default function App() {
               <Route path="/" element={<DynamicQRLayout planData={planData} />}>
                 <Route index element={<Dashboard />} />
                 <Route path="create" element={<CreateQR />} />
+                <Route path="kit" element={<Kit />} />
+                <Route path="kit/print/:slug" element={<KitPrint />} />
                 <Route path="edit/:id" element={<CreateQR />} />
                 <Route path="analytics" element={<AccountAnalytics />} />
                 <Route path="analytics/:slug" element={<Analytics />} />

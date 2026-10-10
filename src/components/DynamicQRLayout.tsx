@@ -37,6 +37,9 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
     { name: 'Dashboard', path: '/', icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="4" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="7" width="6" height="8" rx="1"/></svg>
     ) },
+    { name: 'Restaurant Kit', path: '/kit', icon: (
+      <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 2v5a2 2 0 004 0V2M5 2v12M11 2c-1.5 1-2 3-2 5h2v7"/></svg>
+    ) },
     { name: 'Analytics', path: '/analytics', icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M1 12l4-4 3 3 4-5 3 2V14H1v-2z" opacity="0.4"/><path d="M1 10l4-4 3 3 4-5 3 2"/><circle cx="1" cy="10" r="1"/><circle cx="5" cy="6" r="1"/><circle cx="8" cy="9" r="1"/><circle cx="12" cy="4" r="1"/><circle cx="15" cy="6" r="1"/></svg>
     ) },
@@ -76,6 +79,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
       case '/': return { title: 'Dashboard', sub: 'Your codes and scans' };
       case '/analytics': return { title: 'Analytics', sub: 'Detailed scan insights' };
       case '/create': return { title: 'Create QR', sub: 'Generate a new QR code' };
+      case '/kit': return { title: 'Restaurant Kit', sub: 'Menu, reviews, Wi-Fi and offers on one code' };
       case '/settings': return { title: 'Profile & Settings', sub: 'Manage your account' };
       case '/billing': return { title: 'Billing', sub: 'Subscription & invoices' };
       case '/pricing': return { title: 'Pricing', sub: 'Choose your plan' };

@@ -28,12 +28,13 @@ Scnr is a SaaS that creates static and dynamic QR codes. A **dynamic** QR code e
 
 ## Status at a glance
 
-Phases 0 (safe and working) and 1 (credible) are merged. The change log is in [CHANGELOG.md](CHANGELOG.md).
+Phases 0 (safe and working), 1 (credible) and 2 (Restaurant Kit) are merged. The change log is in [CHANGELOG.md](CHANGELOG.md).
 
 - **Redirects fixed.** `vercel.json` now routes `/internal/*` to Express, so the Worker's origin lookup works ([doc 11, C1](11-review-findings.md#c1)). The Worker never crashes: origin failures show a branded 503 page.
 - **RLS closed** by [migrations/001_phase0.sql](../migrations/001_phase0.sql). It must be run in the Supabase SQL editor; QA section 20 fails until it has been.
 - **Billing is correct.** Server-side orders, amount and currency checks, idempotent payments, interval-aware expiry, LKR pricing ([doc 07](07-plans-billing-payhere.md)).
 - **Credible (Phase 1):** honest Landing, SaaS legal pages, capped plans (Pro 100 / Team 600 codes), a free dynamic pilot, the 30-day grace then pause rule, LKR/USD with Polar for cards, print-ready downloads.
+- **Restaurant Kit (Phase 2):** one table code opens a hosted guest page (menu, reviews, WhatsApp, Wi-Fi, today's offer) in English, Sinhala and Tamil, plus an A6 print view. "Swap today's offer" from the dashboard, the WhatsApp code type, dynamic vCard/Text/Email/Wi-Fi, and activation events (migration 002).
 - The phase plan is in [doc 11](11-review-findings.md#recommended-order-of-work).
 
 ## Source map

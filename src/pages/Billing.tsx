@@ -5,7 +5,7 @@ import { apiFetch } from '../lib/api';
 import { useUI } from '../shared/UIContext';
 import { formatPrice, Currency } from '../lib/plans';
 import { startCheckout } from '../lib/checkout';
-import { SITE } from '../lib/site';
+import { SITE, waLink } from '../lib/site';
 
 export default function Billing() {
   const { planData } = useOutletContext<{ planData: any }>();
@@ -286,7 +286,13 @@ export default function Billing() {
             <div className="card card-sm">
               <div className="card-title">Payment method</div>
               <div style={{ fontSize: '12px', color: 'var(--text3)', padding: '8px 0' }}>
-                Payments are processed securely via PayHere. You can manage your card details through the link sent in your subscription email.
+                LKR payments go through PayHere; USD payments by international card. You can manage a PayHere subscription from the link in your receipt email.
+                {SITE.whatsapp && (
+                  <div style={{ marginTop: '10px' }}>
+                    Want us to design, set up and help print your codes?{' '}
+                    <a href={waLink(SITE.whatsapp, `Hi, I'd like setup help for my QR codes (${billingEmail}).`)} target="_blank" rel="noreferrer">Book setup on WhatsApp →</a>
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -8,7 +8,7 @@ Scnr is a hosted QR-code service for Sri Lankan small businesses, restaurants fi
 2. **Dynamic QR codes.** The printed code points at a permanent short link (`scnr.tharkak.com/<slug>`). The destination can change after printing, and gate rules control who gets through.
 3. **Scan statistics.** Scans over time, unique visitors, country, device, OS, browser and recent scans.
 
-Its edge over global tools: **LKR billing**, Sinhala and Tamil guest pages (Phase 2), WhatsApp destinations and support, and local onboarding. It makes marketing, menu and campaign codes; **it is not a LANKAQR payment replacement**.
+Its edge over global tools: **LKR billing**, Sinhala and Tamil guest pages, WhatsApp destinations and support, and local onboarding. It makes marketing, menu and campaign codes; **it is not a LANKAQR payment replacement**.
 
 ## Users and roles
 
@@ -22,13 +22,14 @@ Legend: ✅ works · ⚠️ works with a known limit · 🗓 planned (phase) · 
 
 | Feature | Status | Notes |
 |---|---|---|
-| Content types: URL, vCard, Wi-Fi, Text, Email | ✅ static · URL dynamic | Non-URL types are static until the Worker renders them (🗓 Phase 2) |
+| Content types: URL, vCard, Wi-Fi, Text, Email, WhatsApp, Guest page | ✅ | Every type can be dynamic. The Worker renders non-URL types with `renderGuestPage()` ([guestPage.ts](../src/lib/guestPage.ts)). WhatsApp is a URL code pointing at `wa.me` with a ready message. |
+| Restaurant Kit ([Kit.tsx](../src/pages/Kit.tsx)) | ✅ | A 3-step wizard that makes one dynamic guest page (menu, Google review, WhatsApp, phone, extra link, Wi-Fi, today's offer, brand colour; EN/SI/TA) plus an optional static Wi-Fi code. Prints an A6 table tent ([KitPrint.tsx](../src/pages/KitPrint.tsx)) through the browser's print-to-PDF. |
 | Static vs dynamic toggle | ✅ | Dynamic counts against the plan's `dynamic_qr_codes` (Free: 1) |
 | Colours, dot styles, corner styles | ✅ | `stylingOptions()` in [qrContent.ts](../src/lib/qrContent.ts) is used by the editor, downloads and the viewer |
 | Centre logo | ✅ | Resized on the device to ≤256 px (`resizeLogo`), so saves stay under the API body limit. Error correction switches to H. |
 | Downloads | ✅ | PNG and SVG at the chosen output size (400/800/1200 px). There is no PDF; print-ready table tents arrive in 🗓 Phase 2. |
 | Viewer modal | ✅ | Same renderer as the editor; 1200 px PNG download |
-| Edit after printing | ✅ | Title, destination, style, gates. Content of non-URL types becomes editable in 🗓 Phase 2. |
+| Edit after printing | ✅ | Title, destination, style, gates and content (`content_data`). Guest pages are edited in the kit, and "today's offer" straight from the Dashboard. |
 | Delete | ✅ | Purges the edge cache and scan events |
 
 ### Gates on dynamic codes — [worker.js](../worker/worker.js)
@@ -63,7 +64,8 @@ Legend: ✅ works · ⚠️ works with a known limit · 🗓 planned (phase) · 
 | Pay in LKR (PayHere) or USD (Polar card, falling back to PayHere USD) | ✅ monthly or yearly |
 | Invoices | ✅ |
 | Cancel | ✅ keeps the plan until the paid period ends |
-| Restaurant Kit, guest pages, WhatsApp code type, "Book setup on WhatsApp" | 🗓 Phase 2 |
+| Restaurant Kit, guest pages, WhatsApp code type, "Book setup on WhatsApp" (Landing, Billing, Kit) | ✅ |
+| Activation funnel (`events`: created, printed, first scan, offer changed, paid) | ✅ with founder queries in [migrations/queries.sql](../migrations/queries.sql) |
 | Bulk CSV, team seats, API keys, one custom domain (Team) | 🗓 Phase 4 |
 
 ## Plans (from [src/lib/plans.ts](../src/lib/plans.ts))
