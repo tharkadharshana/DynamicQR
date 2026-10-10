@@ -36,7 +36,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
   const navItems: NavItem[] = [
     { name: 'Dashboard', path: '/', icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="4" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="7" width="6" height="8" rx="1"/></svg>
-    ), badge: <span className="nav-badge green">Live</span> },
+    ) },
     { name: 'Analytics', path: '/analytics', icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M1 12l4-4 3 3 4-5 3 2V14H1v-2z" opacity="0.4"/><path d="M1 10l4-4 3 3 4-5 3 2"/><circle cx="1" cy="10" r="1"/><circle cx="5" cy="6" r="1"/><circle cx="8" cy="9" r="1"/><circle cx="12" cy="4" r="1"/><circle cx="15" cy="6" r="1"/></svg>
     ) },
@@ -52,9 +52,6 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
     { name: 'Billing', path: '/billing', icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M2 6h12"/><path d="M5 10h2"/></svg>
     ), badge: <span className={`nav-badge ${currentPlan === 'free' ? '' : 'amber'}`}>{isTrial ? 'Trial' : planLabel}</span> },
-    { name: 'API Docs', path: '/api-docs', icon: (
-      <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M5 4l-3 4 3 4M11 4l3 4-3 4M9 3l-2 10"/></svg>
-    ) }
   ];
 
   const legalItems: NavItem[] = [
@@ -76,13 +73,12 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
 
   const getPageTitle = () => {
     switch (location.pathname) {
-      case '/': return { title: 'Dashboard', sub: 'Live · Updated just now' };
+      case '/': return { title: 'Dashboard', sub: 'Your codes and scans' };
       case '/analytics': return { title: 'Analytics', sub: 'Detailed scan insights' };
       case '/create': return { title: 'Create QR', sub: 'Generate a new QR code' };
       case '/settings': return { title: 'Profile & Settings', sub: 'Manage your account' };
       case '/billing': return { title: 'Billing', sub: 'Subscription & invoices' };
       case '/pricing': return { title: 'Pricing', sub: 'Choose your plan' };
-      case '/api-docs': return { title: 'API Docs', sub: 'Team plan · REST API v1' };
       case '/legal/privacy-policy': return { title: 'Privacy Policy', sub: 'Legal documentation' };
       case '/legal/terms-and-conditions': return { title: 'Terms & Conditions', sub: 'Legal documentation' };
       case '/legal/refund-policy': return { title: 'Refund Policy', sub: 'Legal documentation' };
@@ -212,7 +208,6 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
             </button>
             <span className="page-title" id="page-title">{title}</span>
-            {location.pathname === '/' && <span className="live-dot" id="live-indicator" style={{ marginLeft: '12px' }}></span>}
             <span className="page-sub hidden sm:inline" id="page-sub" style={{ marginLeft: '12px' }}>{sub}</span>
           </div>
           <div className="topbar-right">
@@ -259,7 +254,9 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
               </svg>
               <span style={{ fontSize: '13px', color: bannerIsExpired ? 'var(--red, #ef4444)' : 'var(--amber, #f59e0b)', fontWeight: 500 }}>
                 {bannerIsExpired ? 'Your subscription has expired.' : 'Your free trial has ended.'}{' '}
-                Dynamic QR codes and advanced features are locked.{' '}
+                {planData.pause_on
+                  ? `${planData.dynamic_over_allowance} dynamic code${planData.dynamic_over_allowance === 1 ? '' : 's'} above the Free plan ${new Date(planData.pause_on) > new Date() ? 'pause on' : 'paused on'} ${new Date(planData.pause_on).toLocaleDateString()}. Nothing is deleted.`
+                  : 'Free keeps 3 codes, 1 of them dynamic.'}{' '}
                 <Link to="/billing" style={{ color: 'inherit', fontWeight: 700, textDecoration: 'underline' }}>
                   Upgrade to Pro →
                 </Link>

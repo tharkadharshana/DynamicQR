@@ -20,7 +20,7 @@ import QRCode from 'qrcode';
 import logger from "./logger.js";
 import fs from 'fs';
 import { vcardText } from './src/lib/qrContent.js';
-import { PLANS, TRIAL_LIMITS, DEFAULT_ADDONS, PRICES, PlanId, UserAddons, Currency, BillingInterval } from './src/lib/plans.js';
+import { PLANS, TRIAL_LIMITS, GRACE_DAYS, DEFAULT_ADDONS, PRICES, PlanId, UserAddons, Currency, BillingInterval } from './src/lib/plans.js';
 
 // Shim to keep existing call patterns working backed by Supabase
 class SupabaseRef {
@@ -234,13 +234,15 @@ async function startServer() {
     allowedHeaders: ['Content-Type', 'Authorization', 'x-internal-secret']
   }));
 
-  app.use(express.json({ limit: '100kb' }));
+  // Keep the raw bytes too: webhook signatures (Polar) are computed over the exact body.
+  app.use(express.json({ limit: '100kb', verify: (req, _res, buf) => { (req as any).rawBody = buf; } }));
 
   // ── Rate Limiting ────────────────────────────────────────────────────────────
   // Global: applied to all routes
+  // Limits per IP per window. Overridable for the QA suite, which runs everything from one IP.
   const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 300,
+    max: Number(process.env.RATE_LIMIT_MAX) || 300,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests, please try again later.' },
@@ -250,7 +252,7 @@ async function startServer() {
   // Tighter limit for write operations (create/delete/billing)
   const writeLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 60,
+    max: Number(process.env.RATE_LIMIT_WRITE_MAX) || 60,
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests, please try again later.' },
@@ -381,11 +383,12 @@ async function startServer() {
     isExpired: boolean;
     addons: UserAddons;
     monthlyUsed: number;
+    graceEndsAt: Date | null;  // set when on Free after a trial/plan ended; excess dynamic codes pause after it
   }> {
     const userSnap = await getDoc(doc(db, 'profiles', uid));
-    
+
     if (!userSnap.exists()) {
-      return { effectivePlan: 'free', limits: PLANS.free, isTrial: false, isExpired: false, addons: DEFAULT_ADDONS, monthlyUsed: 0 };
+      return { effectivePlan: 'free', limits: PLANS.free, isTrial: false, isExpired: false, addons: DEFAULT_ADDONS, monthlyUsed: 0, graceEndsAt: null };
     }
 
     const user = userSnap.data()!;
@@ -407,10 +410,7 @@ async function startServer() {
     
     const limits = {
       ...baseLimits,
-      // Use -1 as a JSON-safe sentinel for "unlimited" (Infinity becomes null in JSON.stringify)
-      qr_codes: baseLimits.qr_codes === Infinity
-        ? -1
-        : baseLimits.qr_codes + (addons.extra_qr_codes || 0),
+      qr_codes: baseLimits.qr_codes + (addons.extra_qr_codes || 0),
       monthly_scans: baseLimits.monthly_scans + (addons.extra_scans || 0),
       analytics_days: baseLimits.analytics_days,
       custom_domain: baseLimits.custom_domain || addons.custom_domain,
@@ -419,7 +419,15 @@ async function startServer() {
 
     const monthlyUsed = user.monthly_scans?.[now.toISOString().slice(0, 7)] || 0;
 
-    return { effectivePlan, limits, isTrial, isExpired, addons, monthlyUsed };
+    // On Free limits after a trial or paid plan ended: grace runs from the later of the two end dates.
+    let graceEndsAt: Date | null = null;
+    if (!isTrial && effectivePlan === 'free') {
+      const ends = [trialExpiry, planExpiry].filter(Boolean) as Date[];
+      const lapsedAt = ends.length ? new Date(Math.max(...ends.map(d => d.getTime()))) : (toDate(user.created_at) || now);
+      graceEndsAt = new Date(lapsedAt.getTime() + GRACE_DAYS * 86400000);
+    }
+
+    return { effectivePlan, limits, isTrial, isExpired, addons, monthlyUsed, graceEndsAt };
   }
 
   // User Plan API
@@ -459,6 +467,10 @@ async function startServer() {
       logger.info(`Stats aggregation for user ${uid}: found ${allSlugs.length} slugs`);
       const activeQrs = allQrSnapshot.docs.filter((d: any) => d.data().is_active !== false).length;
       const remaining_qr = license.limits.qr_codes === -1 ? -1 : Math.max(0, license.limits.qr_codes - activeQrs);
+      const activeDynamic = allQrSnapshot.docs.filter((d: any) => d.data().is_active !== false && d.data().is_dynamic !== false).length;
+      // Lapse rule: dynamic codes above the allowance pause when the grace period ends.
+      const dynamicOverAllowance = Math.max(0, activeDynamic - license.limits.dynamic_qr_codes);
+      const pause_on = license.graceEndsAt && dynamicOverAllowance > 0 ? license.graceEndsAt.toISOString() : null;
 
       // Aggregate stats across all QRs in 30-slug chunks (Firestore 'in' limit)
       let totalScans = 0;
@@ -524,7 +536,12 @@ async function startServer() {
           country: userDoc?.country || 'LK',
           timezone: userDoc?.timezone || 'Asia/Colombo'
         },
-        is_sandbox: process.env.PAYHERE_SANDBOX === 'true'
+        active_dynamic: activeDynamic,
+        dynamic_over_allowance: dynamicOverAllowance,
+        pause_on,
+        is_sandbox: process.env.PAYHERE_SANDBOX === 'true',
+        polar_enabled: !!process.env.POLAR_ACCESS_TOKEN,
+        polar_portal_url: process.env.POLAR_PORTAL_URL || null,
       });
     } catch (error: any) {
       logger.error('Plan fetch error:', { 
@@ -762,7 +779,8 @@ async function startServer() {
         return res.status(500).json({ error: 'Billing configuration error' });
       }
 
-      const currency: Currency = 'LKR';
+      // LKR by default; USD through PayHere only as the fallback when Polar is not configured.
+      const currency: Currency = req.body.currency === 'USD' ? 'USD' : 'LKR';
       const amount = PRICES[plan as 'pro' | 'team'][currency][interval as BillingInterval].toFixed(2);
       const order_id = `ORDER_${uid}_${Date.now()}`;
 
@@ -897,6 +915,121 @@ async function startServer() {
     }
   });
 
+  // ── Polar (USD card payments) ──────────────────────────────────────────────
+  // Enabled only when POLAR_ACCESS_TOKEN is set. Polar runs renewals; we mirror current_period_end.
+  const polarApi = () => process.env.POLAR_SANDBOX === 'true' ? 'https://sandbox-api.polar.sh' : 'https://api.polar.sh';
+  const polarProducts = (): Record<string, [string, string]> => {
+    const map: Record<string, [string, string]> = {};
+    const add = (id: string | undefined, plan: string, interval: string) => { if (id) map[id] = [plan, interval]; };
+    add(process.env.POLAR_PRODUCT_PRO_MONTHLY, 'pro', 'monthly');
+    add(process.env.POLAR_PRODUCT_PRO_ANNUAL, 'pro', 'annual');
+    add(process.env.POLAR_PRODUCT_TEAM_MONTHLY, 'team', 'monthly');
+    add(process.env.POLAR_PRODUCT_TEAM_ANNUAL, 'team', 'annual');
+    return map;
+  };
+
+  // Standard Webhooks: base64 HMAC-SHA256 of `${id}.${timestamp}.${rawBody}`, keyed with the secret's UTF-8 bytes.
+  const verifyPolarSignature = (headers: any, rawBody: string, secret: string): boolean => {
+    const id = headers['webhook-id'], ts = headers['webhook-timestamp'], sigHeader = headers['webhook-signature'];
+    if (!id || !ts || !sigHeader) return false;
+    if (Math.abs(Date.now() / 1000 - Number(ts)) > 300) return false; // replay window: 5 minutes
+    const expected = crypto.createHmac('sha256', Buffer.from(secret, 'utf8')).update(`${id}.${ts}.${rawBody}`).digest('base64');
+    return String(sigHeader).split(' ').some(part => safeEqual(part.split(',')[1] || '', expected));
+  };
+
+  app.post('/api/billing/polar/checkout', writeLimiter, authenticate, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const { plan, interval } = req.body;
+      if (!['monthly', 'annual'].includes(interval)) return res.status(400).json({ error: 'interval must be monthly or annual' });
+      if (!['pro', 'team'].includes(plan)) return res.status(400).json({ error: 'plan must be pro or team' });
+
+      const token = process.env.POLAR_ACCESS_TOKEN;
+      const productId = Object.entries(polarProducts()).find(([, v]) => v[0] === plan && v[1] === interval)?.[0];
+      if (!token || !productId) return res.status(503).json({ error: 'Card payments are not available yet. Please pay in LKR.' });
+
+      const amount = PRICES[plan as 'pro' | 'team'].USD[interval as BillingInterval].toFixed(2);
+      const order_id = `POLAR_${user.uid}_${Date.now()}`;
+      const { error: orderErr } = await supabase.from('subscriptions').insert({
+        uid: user.uid, plan, interval, order_id, amount, currency: 'USD', provider: 'polar', status: 'pending',
+      });
+      if (orderErr) throw orderErr;
+
+      const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
+      const r = await fetch(`${polarApi()}/v1/checkouts/`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          products: [productId],
+          success_url: `${appUrl}/settings`,
+          customer_email: user.email || undefined,
+          metadata: { uid: user.uid, order_id },
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+      const body: any = await r.json().catch(() => ({}));
+      if (!r.ok || !body.url) {
+        logger.error('Polar checkout failed', { status: r.status, detail: body?.detail });
+        return res.status(502).json({ error: 'Could not start card checkout' });
+      }
+      res.json({ url: body.url });
+    } catch (error: any) {
+      logger.error('Polar checkout error:', { message: error.message });
+      res.status(500).json({ error: 'Failed to start checkout' });
+    }
+  });
+
+  app.post('/api/billing/polar/webhook', webhookLimiter, async (req, res) => {
+    try {
+      const secret = process.env.POLAR_WEBHOOK_SECRET;
+      const raw = (req as any).rawBody?.toString('utf8') || '';
+      if (!secret || !verifyPolarSignature(req.headers, raw, secret)) {
+        logger.warn('Polar webhook: invalid signature');
+        return res.status(401).send('Invalid signature');
+      }
+
+      const { type, data } = req.body || {};
+      const uid = data?.metadata?.uid || data?.customer?.external_id;
+      const orderId = data?.metadata?.order_id;
+      if (!uid) return res.status(202).send('Ignored'); // not one of ours
+      const now = new Date().toISOString();
+
+      if ((type === 'subscription.active' || type === 'subscription.updated' || type === 'subscription.uncanceled')
+          && data.status === 'active' && data.current_period_end) {
+        const mapped = polarProducts()[data.product_id];
+        if (!mapped) {
+          logger.warn('Polar webhook: unknown product', { product_id: data.product_id });
+          return res.status(400).send('Unknown product');
+        }
+        const [plan, interval] = mapped;
+        const { data: order } = await supabase.from('subscriptions').select('amount')
+          .eq('provider', 'polar').eq('order_id', orderId || '').limit(1).maybeSingle();
+        const applied = await applyPayment({
+          uid, plan, interval, provider: 'polar',
+          paymentId: `${data.id}:${data.current_period_end}`, // one grant per subscription period
+          orderId: orderId || `POLAR_SUB_${data.id}`,
+          amount: order?.amount || PRICES[plan as 'pro' | 'team'].USD[interval as BillingInterval].toFixed(2),
+          currency: 'USD',
+          expiresAt: new Date(data.current_period_end),
+        });
+        logger.info(applied ? 'Polar period applied' : 'Polar duplicate ignored', { uid, sub: data.id });
+      } else if (type === 'subscription.canceled') {
+        // Cancelled at period end: keep the plan until plan_expires_at.
+        await supabase.from('subscriptions').update({ status: 'cancelled', updated_at: now })
+          .eq('provider', 'polar').eq('uid', uid).eq('status', 'active');
+      } else if (type === 'subscription.revoked' || type === 'order.refunded') {
+        await downgradeToFree(uid);
+        await supabase.from('subscriptions').update({ status: 'cancelled', updated_at: now })
+          .eq('provider', 'polar').eq('uid', uid).in('status', ['active', 'pending']);
+        logger.warn('Polar access revoked', { uid, type });
+      }
+      res.send('OK');
+    } catch (error: any) {
+      logger.error('Polar webhook error:', { message: error.message });
+      res.status(500).send('Error');
+    }
+  });
+
   async function createUniqueSlug(): Promise<string> {
     let slug: string, exists: boolean, attempts = 0;
     do {
@@ -978,6 +1111,16 @@ async function startServer() {
           code: 'LIMIT_QR_CODES',
           limit: license.limits.qr_codes === -1 ? 'Unlimited' : license.limits.qr_codes,
           current: activeCount
+        });
+      }
+
+      const activeDynamic = qrSnapshot.docs.filter((d: any) => d.data().is_active !== false && d.data().is_dynamic !== false).length;
+      if (is_dynamic && activeDynamic >= license.limits.dynamic_qr_codes) {
+        return res.status(403).json({
+          error: 'Dynamic QR limit reached. Upgrade for more dynamic codes.',
+          code: 'LIMIT_DYNAMIC_QR',
+          limit: license.limits.dynamic_qr_codes,
+          current: activeDynamic,
         });
       }
 
@@ -1456,31 +1599,6 @@ async function startServer() {
     }
   });
 
-  app.get('/api/analytics/:slug/referrers', authenticate, requireOwnership, async (req, res) => {
-    try {
-      const { slug } = req.params;
-      const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
-      
-      if (!statsDoc.exists()) return res.json([]);
-      
-      const data = statsDoc.data()!;
-      const referrersData = data.referrers || {};
-      let total = 0;
-      Object.values(referrersData).forEach(v => total += (v as number));
-
-      const result = Object.entries(referrersData).map(([referrer, count]) => ({
-        referrer: referrer.replace(/_/g, '.'), // Restore dots
-        count: count as number,
-        pct: total > 0 ? (((count as number) / total) * 100).toFixed(1) : 0
-      })).sort((a, b) => b.count - a.count).slice(0, 10);
-
-      res.json(result);
-    } catch (error: any) {
-      logger.error('Analytics error:', error);
-      res.status(500).json({ error: 'Failed to fetch analytics' });
-    }
-  });
-
   app.get('/api/analytics/:slug/recent', authenticate, requireOwnership, async (req, res) => {
     try {
       const { slug } = req.params;
@@ -1506,50 +1624,6 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Analytics error:', error);
       res.status(500).json({ error: 'Failed to fetch recent scans' });
-    }
-  });
-
-  app.get('/api/analytics/:slug/advanced', authenticate, requireOwnership, async (req, res) => {
-    try {
-      const { slug } = req.params;
-      const statsDoc = await getDoc(doc(db, 'qr_stats', slug));
-      
-      if (!statsDoc.exists()) {
-        return res.json({
-          regions: [],
-          isps: [],
-          languages: [],
-          hours: [],
-          os_versions: [],
-          tls_protocols: [],
-          eu_scans: 0
-        });
-      }
-      
-      const data = statsDoc.data()!;
-      
-      const formatData = (obj: any = {}) => {
-        let total = 0;
-        Object.values(obj).forEach(v => total += (v as number));
-        return Object.entries(obj).map(([name, count]) => ({
-          name,
-          count: count as number,
-          pct: total > 0 ? (((count as number) / total) * 100).toFixed(1) : 0
-        })).sort((a, b) => b.count - a.count).slice(0, 10);
-      };
-
-      res.json({
-        regions: formatData(data.regions),
-        isps: formatData(data.isps),
-        languages: formatData(data.languages),
-        hours: formatData(data.hours),
-        os_versions: formatData(data.os_versions),
-        tls_protocols: formatData(data.tls_protocols),
-        eu_scans: data.eu_scans || 0
-      });
-    } catch (error: any) {
-      logger.error('Analytics error:', error);
-      res.status(500).json({ error: 'Failed to fetch advanced analytics' });
     }
   });
 
@@ -1877,43 +1951,6 @@ async function startServer() {
     }
   });
 
-  app.get('/api/analytics/account/:uid/referrers', authenticate, async (req, res) => {
-    try {
-      const { uid } = req.params;
-      const decodedUser = (req as any).user;
-      if (decodedUser.uid !== uid) return res.status(403).send('Forbidden');
-      
-      const requestedSlugs = req.query.slugs ? (req.query.slugs as string).split(',') : null;
-      const qrSnapshot = await getDocs(query(collection(db, 'qr_codes'), where('user_uid', '==', uid)));
-      let slugs = qrSnapshot.docs.map(doc => doc.data().slug);
-      
-      if (requestedSlugs) {
-        slugs = slugs.filter(s => requestedSlugs.includes(s));
-      }
-
-      const referrers: Record<string, number> = {};
-      if (slugs.length > 0) {
-        const chunks = [];
-        for (let i = 0; i < slugs.length; i += 30) chunks.push(slugs.slice(i, i + 30));
-        for (const chunk of chunks) {
-          const statsSnapshot = await getDocs(query(collection(db, 'qr_stats'), where('slug', 'in', chunk)));
-          statsSnapshot.forEach(doc => {
-            const data = doc.data();
-            const r = data.referrers || {};
-            for (const [referrer, count] of Object.entries(r)) {
-              referrers[referrer] = (referrers[referrer] || 0) + (count as number);
-            }
-          });
-        }
-      }
-      const result = Object.entries(referrers).map(([referrer, count]) => ({ referrer, count })).sort((a, b) => b.count - a.count);
-      res.json(result);
-    } catch (error: any) {
-      logger.error('Account referrers error:', error);
-      res.status(500).json({ error: 'Failed to fetch account referrers' });
-    }
-  });
-
   app.get('/api/analytics/account/:uid/summary', authenticate, async (req, res) => {
     try {
       const { uid } = req.params;
@@ -2093,6 +2130,18 @@ async function startServer() {
       const license = await getLicense(qr.user_uid);
       const stats = statsDoc.exists() ? statsDoc.data() : { total_scans: 0 };
 
+      // Lapse rule: after the grace period, the owner's oldest dynamic codes stay live up to the
+      // allowance; the rest pause behind a holding page. Never deleted.
+      let paused = false;
+      if (qr.is_dynamic !== false && license.graceEndsAt && new Date() > license.graceEndsAt) {
+        const { count, error } = await supabase.from('qr_codes')
+          .select('slug', { count: 'exact', head: true })
+          .eq('user_uid', qr.user_uid).eq('is_active', true).eq('is_dynamic', true)
+          .lt('created_at', qr.created_at);
+        if (error) throw error;
+        paused = (count || 0) >= license.limits.dynamic_qr_codes;
+      }
+
       // Compact gate config for the Worker. Policy (quota, visitor guard) is decided here, from the
       // account-wide license, so the Worker never waits on the analytics write.
       const responseBody = {
@@ -2106,6 +2155,8 @@ async function startServer() {
         visitor_rate_period: license.limits.visitor_guard_gate && qr.visitor_rate_period != null ? qr.visitor_rate_period : 3600,
         visitor_guard: license.limits.visitor_guard_gate,
         quota_exceeded: license.monthlyUsed >= license.limits.monthly_scans,
+        paused,
+        title: qr.title || '',
         owner_plan: license.effectivePlan,
       };
 

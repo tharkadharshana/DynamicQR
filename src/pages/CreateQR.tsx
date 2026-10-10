@@ -4,7 +4,9 @@ import { supabase } from '../supabase';
 import QRCodeStyling from 'qr-code-styling';
 import { apiFetch } from '../lib/api';
 import { useUI } from '../shared/UIContext';
-import { getQRContent, SHORT_DOMAIN, SHORT_HOST } from '../lib/qrContent';
+import { getQRContent, stylingOptions, resizeLogo, SHORT_DOMAIN, SHORT_HOST } from '../lib/qrContent';
+
+const PREVIEW_SIZE = 180;
 
 export default function CreateQR() {
   const { id } = useParams();
@@ -50,8 +52,8 @@ export default function CreateQR() {
   useEffect(() => {
     try {
       qrCodeRef.current = new QRCodeStyling({
-        width: 180,
-        height: 180,
+        width: PREVIEW_SIZE,
+        height: PREVIEW_SIZE,
         margin: 0,
         type: "canvas",
       });
@@ -111,6 +113,9 @@ export default function CreateQR() {
     }
   }, [id, navigate]);
 
+  // Gate on plan *limits*, not plan name: trial users are plan 'free' with Pro limits.
+  const locked = (feature: string) => !!planData && !planData.limits?.[feature];
+
   const fetchPlan = async () => {
     try {
       const data = await apiFetch('/api/user/plan');
@@ -137,69 +142,25 @@ export default function CreateQR() {
         destination_url: formData.destination_url,
       }) || SHORT_DOMAIN;
 
-      let dotType: any = 'square';
-      if (formData.style.dot_style === 'dots') dotType = 'dots';
-      if (formData.style.dot_style === 'rounded') dotType = 'rounded';
-      if (formData.style.dot_style === 'diamond') dotType = 'classy';
-      if (formData.style.dot_style === 'star') dotType = 'classy-rounded';
-
-      let cornerType: any = 'square';
-      if (formData.style.corner_style === 'dot') cornerType = 'dot';
-      if (formData.style.corner_style === 'rounded') cornerType = 'extra-rounded';
-
-      qrCodeRef.current.update({
-        data: content,
-        image: formData.style.logo_url || undefined,
-        dotsOptions: {
-          color: formData.style.dot_color,
-          type: dotType as any
-        },
-        cornersSquareOptions: {
-          type: cornerType as any,
-          color: formData.style.dot_color
-        },
-        cornersDotOptions: {
-          type: cornerType === 'extra-rounded' ? 'dot' : cornerType as any,
-          color: formData.style.dot_color
-        },
-        backgroundOptions: {
-          color: formData.style.bg_color,
-        },
-        imageOptions: {
-          crossOrigin: 'anonymous',
-          margin: 5,
-          imageSize: 0.4
-        },
-        qrOptions: {
-          errorCorrectionLevel: formData.style.error_correction as any
-        }
-      });
+      qrCodeRef.current.update(stylingOptions(formData.style, content, PREVIEW_SIZE));
     }
   }, [formData.destination_url, formData.style, qrType, formData.content_data, isDynamic, formData.slug]);
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
-    if (file.size > 1024 * 1024) {
-      showToast('error', "Logo must be less than 1MB");
+
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('error', "Logo must be less than 5MB");
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      if (event.target?.result) {
-        setFormData({
-          ...formData,
-          style: {
-            ...formData.style,
-            logo_url: event.target.result as string,
-            error_correction: 'H' // Auto set to H
-          }
-        });
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      const logo_url = await resizeLogo(file); // <= 256 px PNG keeps the save request small
+      setFormData(f => ({ ...f, style: { ...f.style, logo_url, error_correction: 'H' } }));
+    } catch {
+      showToast('error', 'Could not read that image. Try a PNG or JPG.');
+    }
   };
 
   const handleSubmit = async () => {
@@ -270,10 +231,17 @@ export default function CreateQR() {
     });
   };
 
-  const downloadPreview = (fmt: string) => {
-    if (!qrCodeRef.current) return;
-    const extension = fmt === 'print' ? 'png' : fmt;
-    qrCodeRef.current.download({ name: 'scnr-qr', extension: extension as any });
+  // Render at the chosen output size for the file, then return the on-screen preview to its size.
+  const downloadPreview = async (extension: 'png' | 'svg') => {
+    const qr = qrCodeRef.current;
+    if (!qr) return;
+    const size = Number(formData.style.output_size) || 1200;
+    qr.update({ width: size, height: size });
+    try {
+      await qr.download({ name: `scnr-qr-${size}px`, extension });
+    } finally {
+      qr.update({ width: PREVIEW_SIZE, height: PREVIEW_SIZE });
+    }
   };
 
   const getShortUrl = () => {
@@ -521,7 +489,7 @@ export default function CreateQR() {
                     <>
                       <div style={{ fontSize: '24px', marginBottom: '8px' }}>🖼️</div>
                       <div style={{ fontWeight: 500, marginBottom: '4px' }}>Drop logo here or click to upload</div>
-                      <div style={{ fontSize: '12px', color: 'var(--text3)' }}>PNG, SVG, or JPG · Max 1MB · Will be centered at 22% size</div>
+                      <div style={{ fontSize: '12px', color: 'var(--text3)' }}>PNG, SVG, or JPG · resized to 256 px · centered</div>
                     </>
                   )}
                   <input type="file" id="logo-upload" style={{ display: 'none' }} accept="image/png, image/jpeg, image/svg+xml" onChange={handleLogoUpload} />
@@ -579,14 +547,14 @@ export default function CreateQR() {
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div style={{ fontWeight: 500 }}>Password protect</div>
-                    {planData?.plan === 'free' && <span className="chip" style={{ background: 'var(--amber-ll)', color: 'var(--amber)', fontSize: '10px' }}>PRO</span>}
+                    {locked('password_protect') && <span className="chip" style={{ background: 'var(--amber-ll)', color: 'var(--amber)', fontSize: '10px' }}>PRO</span>}
                   </div>
                   <div style={{ fontSize: '13px', color: 'var(--text3)' }}>Require a PIN before redirecting</div>
                 </div>
                 <button 
                   className={`toggle ${formData.options.password_protect ? 'on' : ''}`} 
                   onClick={() => {
-                    if (planData?.plan === 'free') return navigate('/billing');
+                    if (locked('password_protect')) return navigate('/billing');
                     setFormData({...formData, options: {...formData.options, password_protect: !formData.options.password_protect}});
                   }}
                 ></button>
@@ -601,14 +569,14 @@ export default function CreateQR() {
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div style={{ fontWeight: 500 }}>Expiry date</div>
-                    {planData?.plan === 'free' && <span className="chip" style={{ background: 'var(--amber-ll)', color: 'var(--amber)', fontSize: '10px' }}>PRO</span>}
+                    {locked('expiry_gate') && <span className="chip" style={{ background: 'var(--amber-ll)', color: 'var(--amber)', fontSize: '10px' }}>PRO</span>}
                   </div>
                   <div style={{ fontSize: '13px', color: 'var(--text3)' }}>QR deactivates automatically after this date</div>
                 </div>
                 <button 
                   className={`toggle ${formData.options.expiry_date_enabled ? 'on' : ''}`} 
                   onClick={() => {
-                    if (planData?.plan === 'free') return navigate('/billing');
+                    if (locked('expiry_gate')) return navigate('/billing');
                     setFormData({...formData, options: {...formData.options, expiry_date_enabled: !formData.options.expiry_date_enabled}});
                   }}
                 ></button>
@@ -623,14 +591,14 @@ export default function CreateQR() {
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div style={{ fontWeight: 500 }}>Scan limit</div>
-                    {planData?.plan === 'free' && <span className="chip" style={{ background: 'var(--amber-ll)', color: 'var(--amber)', fontSize: '10px' }}>PRO</span>}
+                    {locked('scan_limit_gate') && <span className="chip" style={{ background: 'var(--amber-ll)', color: 'var(--amber)', fontSize: '10px' }}>PRO</span>}
                   </div>
                   <div style={{ fontSize: '13px', color: 'var(--text3)' }}>Deactivate after N total scans</div>
                 </div>
                 <button 
                   className={`toggle ${formData.options.scan_limit_enabled ? 'on' : ''}`} 
                   onClick={() => {
-                    if (planData?.plan === 'free') return navigate('/billing');
+                    if (locked('scan_limit_gate')) return navigate('/billing');
                     setFormData({...formData, options: {...formData.options, scan_limit_enabled: !formData.options.scan_limit_enabled}});
                   }}
                 ></button>
@@ -655,7 +623,7 @@ export default function CreateQR() {
                   This is highly effective against bot spam and automated crawlers.
                 </div>
                 
-                <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', opacity: planData?.plan === 'free' ? 0.6 : 1 }}>
+                <div className="grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', opacity: locked('visitor_guard_gate') ? 0.6 : 1 }}>
                   <div className="form-section">
                     <label className="form-label" style={{ fontSize: '11px', textTransform: 'uppercase' }}>Scans per visitor</label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -664,12 +632,12 @@ export default function CreateQR() {
                          className="form-input" 
                          min="0"
                          style={{ flex: 1 }}
-                         disabled={planData?.plan === 'free'}
-                         value={planData?.plan === 'free' ? 5 : formData.options.visitor_rate_limit} 
+                         disabled={locked('visitor_guard_gate')}
+                         value={locked('visitor_guard_gate') ? 5 : formData.options.visitor_rate_limit} 
                          onChange={(e) => setFormData({...formData, options: {...formData.options, visitor_rate_limit: parseInt(e.target.value) || 0}})} 
                        />
                        <span style={{ fontSize: '13px', color: 'var(--text3)', whiteSpace: 'nowrap' }}>
-                         {planData?.plan === 'free' ? 'scans' : (formData.options.visitor_rate_limit === 0 ? 'Unlimited' : 'scans')}
+                         {locked('visitor_guard_gate') ? 'scans' : (formData.options.visitor_rate_limit === 0 ? 'Unlimited' : 'scans')}
                        </span>
                     </div>
                   </div>
@@ -678,8 +646,8 @@ export default function CreateQR() {
                     <label className="form-label" style={{ fontSize: '11px', textTransform: 'uppercase' }}>Time window</label>
                     <select 
                        className="form-input" 
-                       disabled={planData?.plan === 'free'}
-                       value={planData?.plan === 'free' ? 3600 : formData.options.visitor_rate_period}
+                       disabled={locked('visitor_guard_gate')}
+                       value={locked('visitor_guard_gate') ? 3600 : formData.options.visitor_rate_period}
                        onChange={(e) => setFormData({...formData, options: {...formData.options, visitor_rate_period: parseInt(e.target.value)}})}
                     >
                       <option value={60}>1 minute (Cooldown)</option>
@@ -690,7 +658,7 @@ export default function CreateQR() {
                   </div>
                 </div>
                 
-                {planData?.plan === 'free' ? (
+                {locked('visitor_guard_gate') ? (
                   <div style={{ marginTop: '8px', padding: '10px', background: 'var(--surface2)', borderRadius: '6px', fontSize: '12px', color: 'var(--text3)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span>🛡️</span>
                     <span>Standard Protection: 5 scans / 1 hour active. (Upgrade for custom limits).</span>
@@ -698,7 +666,7 @@ export default function CreateQR() {
                 ) : (formData.options.visitor_rate_limit === 0 && (
                   <div style={{ marginTop: '8px', padding: '10px', background: 'var(--amber-ll)', borderRadius: '6px', fontSize: '12px', color: 'var(--amber)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span>⚠️</span>
-                    <span>Unlimited scans per visitor is unlocked by your {planData?.plan} plan.</span>
+                    <span>Unlimited scans per visitor is unlocked by your {planData?.is_trial ? 'trial' : planData?.plan} plan.</span>
                   </div>
                 ))}
               </div>
@@ -784,7 +752,6 @@ export default function CreateQR() {
               <div className="dl-row">
                 <button className="dl-btn" onClick={() => downloadPreview('png')}>PNG</button>
                 <button className="dl-btn" onClick={() => downloadPreview('svg')}>SVG</button>
-                <button className="dl-btn" onClick={() => downloadPreview('print')}>Print PDF</button>
               </div>
             </div>
             <div className="divider"></div>
