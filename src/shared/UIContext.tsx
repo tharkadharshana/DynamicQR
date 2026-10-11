@@ -1,6 +1,8 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
-import ConfirmationModal from '../components/ConfirmationModal';
-import ToastContainer from '../components/ToastContainer';
+import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode, Suspense, lazy } from 'react';
+
+// Both use motion (~100 KB); load them on first use so the landing page doesn't pay for it.
+const ConfirmationModal = lazy(() => import('../components/ConfirmationModal'));
+const ToastContainer = lazy(() => import('../components/ToastContainer'));
 
 type ModalType = 'alert' | 'confirm' | 'prompt';
 
@@ -99,8 +101,13 @@ function InternalUIComponents({
   onCloseModal: () => void;
   removeToast: (id: string) => void;
 }) {
+  // Stays true once set, so exit animations still play after the first close.
+  const [used, setUsed] = useState(false);
+  if (!used && (modal.isOpen || toasts.length > 0)) setUsed(true);
+  if (!used) return null;
+
   return (
-    <>
+    <Suspense fallback={null}>
       <ConfirmationModal 
         isOpen={modal.isOpen}
         type={modal.type}
@@ -114,7 +121,7 @@ function InternalUIComponents({
         onClose={onCloseModal}
       />
       <ToastContainer toasts={toasts} onRemove={removeToast} />
-    </>
+    </Suspense>
   );
 }
 

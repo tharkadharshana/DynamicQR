@@ -1,0 +1,10 @@
+# Scnr
+
+> Scnr makes dynamic QR codes with real-time scan analytics. Print a code once, then change where it points any time without reprinting. Built for restaurants and small businesses in Sri Lanka, with plans priced in LKR and USD.
+
+## Pages
+
+- [Home](https://scnr.tharkak.com/): product overview, features and pricing (Free, Pro and Team plans)
+- [Privacy Policy](https://scnr.tharkak.com/legal/privacy-policy)
+- [Terms and Conditions](https://scnr.tharkak.com/legal/terms-and-conditions)
+- [Refund Policy](https://scnr.tharkak.com/legal/refund-policy)

@@ -1,25 +1,42 @@
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from './supabase';
 import { apiFetch } from './lib/api';
-
-import DynamicQRLayout from './components/DynamicQRLayout';
-import Dashboard from './pages/Dashboard';
-import CreateQR from './pages/CreateQR';
-import Kit from './pages/Kit';
-import Bulk from './pages/Bulk';
-import ApiDocs from './pages/ApiDocs';
 import { setShortDomain } from './lib/qrContent';
-import KitPrint from './pages/KitPrint';
-import Analytics from './pages/Analytics';
-import AccountAnalytics from './pages/AccountAnalytics';
-import Billing from './pages/Billing';
 import Landing from './pages/Landing';
-import Pricing from './pages/Pricing';
-import SettingsPage from './pages/Settings';
-import PrivacyPolicy from './pages/PrivacyPolicy';
-import TermsConditions from './pages/TermsConditions';
-import RefundPolicy from './pages/RefundPolicy';
+
+// Everything except the landing page is split into its own chunk, so logged-out
+// visitors don't download recharts, qr-code-styling and the dashboard.
+const DynamicQRLayout = lazy(() => import('./components/DynamicQRLayout'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const CreateQR = lazy(() => import('./pages/CreateQR'));
+const Kit = lazy(() => import('./pages/Kit'));
+const Bulk = lazy(() => import('./pages/Bulk'));
+const ApiDocs = lazy(() => import('./pages/ApiDocs'));
+const KitPrint = lazy(() => import('./pages/KitPrint'));
+const Analytics = lazy(() => import('./pages/Analytics'));
+const AccountAnalytics = lazy(() => import('./pages/AccountAnalytics'));
+const Billing = lazy(() => import('./pages/Billing'));
+const Pricing = lazy(() => import('./pages/Pricing'));
+const SettingsPage = lazy(() => import('./pages/Settings'));
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
+const TermsConditions = lazy(() => import('./pages/TermsConditions'));
+const RefundPolicy = lazy(() => import('./pages/RefundPolicy'));
+
+const loadingScreen = (
+  <div style={{
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100vh',
+    background: '#0C0D10',
+    color: '#9B9A93',
+    fontSize: '14px',
+    fontFamily: 'sans-serif'
+  }}>
+    Loading...
+  </div>
+);
 
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -65,27 +82,13 @@ export default function App() {
     };
   }, []);
 
-  if (loading) {
-    return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100vh',
-        background: '#0C0D10',
-        color: '#9B9A93',
-        fontSize: '14px',
-        fontFamily: 'sans-serif'
-      }}>
-        Loading...
-      </div>
-    );
-  }
+  if (loading) return loadingScreen;
 
   return (
     <ErrorBoundary>
       <UIProvider>
         <Router>
+          <Suspense fallback={loadingScreen}>
           <Routes>
             {/* Public Legal Routes */}
             <Route path="/legal/privacy-policy" element={<PrivacyPolicy />} />
@@ -115,6 +118,7 @@ export default function App() {
               </>
             )}
           </Routes>
+          </Suspense>
         </Router>
       </UIProvider>
     </ErrorBoundary>

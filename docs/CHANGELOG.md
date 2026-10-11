@@ -2,6 +2,29 @@
 
 One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-review-findings.md](11-review-findings.md).
 
+## Lighthouse fixes (branch `perf/lighthouse-fixes`)
+
+Production audit, Lighthouse 13 on mobile, 2026-10-11:
+
+- Before: Performance 65, Accessibility 94, Best Practices 100, SEO 100, Agentic Browsing 50. FCP and LCP were both 5.5 s.
+- After, on a local `vite preview` of this branch: Performance 96, Accessibility 100. FCP 2.0 s, LCP 2.3 s.
+
+Changes:
+
+- **Route-level code splitting.** Every page except Landing is now `React.lazy`. The modal and toasts, which use `motion`, load on first use. The landing entry chunk dropped from 1.6 MB to about 700 KB (203 KB gzipped). Recharts, qr-code-styling and motion are no longer in it.
+- **Fonts no longer block first paint.** The `@import` was removed from `Landing.css`. `index.html` now has preconnect links and a non-blocking Google Fonts stylesheet.
+- **Contrast passes WCAG AA.**
+  - `--ink3` changed to `#66655D` and `--ink4` to `#6B6A62`.
+  - New `--coral-ink` (`#C2401F`) for coral text and for buttons with white labels.
+  - Decorative coral is unchanged.
+  - The landing content is now wrapped in `<main>`.
+- **Agent and SEO files.**
+  - Added `public/llms.txt`.
+  - The sitemap now lists only `/` and the legal pages. It used to list `/features`, `/blog` and `/api-docs`, which don't exist, and `/pricing`, which needs a login.
+  - `/.well-known/*` is excluded from the SPA rewrite, so it returns 404 instead of HTML.
+- **Caching.** `/assets/*` is now served `immutable` for one year. It used to be `max-age=0`.
+- **CI.** New step: `npm run build` plus `scripts/check-bundle.mjs`, which enforces the entry budget and checks the shape of llms.txt and the sitemap.
+
 ## Post-launch cleanup (branch `chore/post-launch-cleanup`)
 
 - **Removed `recordScanLegacy`**, the non-atomic scan fallback for databases without migration 003. Migration 003 is applied, so `record_scan` errors now surface instead of silently miscounting.

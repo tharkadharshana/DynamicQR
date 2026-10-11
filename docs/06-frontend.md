@@ -24,6 +24,18 @@ Stack: React 19, React Router 7 (`BrowserRouter`), Vite 6, Recharts 3, `qr-code-
 
 Signed-in routes render inside [DynamicQRLayout](../src/components/DynamicQRLayout.tsx): sidebar, top bar, mobile drawer, the trial or lapse banner, and `<Outlet context={{ planData }} />`.
 
+### Code splitting
+
+Only `Landing` is imported eagerly. Every other page, and `DynamicQRLayout`, is a `React.lazy` chunk:
+
+- `App` wraps `<Routes>` in `<Suspense>`, with the boot "Loading..." screen as the fallback.
+- `DynamicQRLayout` wraps its `<Outlet>` in `<Suspense fallback={null}>`, so the sidebar stays on screen while the next page's chunk loads.
+- `UIContext` lazy-loads `ConfirmationModal` and `ToastContainer`, which use `motion`, the first time a modal or toast is shown.
+
+This keeps recharts, qr-code-styling and motion out of the landing page's entry chunk: 1.6 MB before, about 700 KB after. `scripts/check-bundle.mjs` fails CI if the entry grows past 800 KB. When you add a page, import it with `lazy()` in `App.tsx`. Don't import heavy libraries from `Landing.tsx` or `UIContext.tsx`.
+
+Fonts (Fraunces and Instrument Sans) load from Google Fonts in [index.html](../index.html). They load as a non-blocking stylesheet (`media="print"` swapped to `all` on load) behind preconnect links, so they don't delay first paint.
+
 ## Shared modules
 
 | Module | Purpose |
@@ -55,6 +67,12 @@ Shown at `/login`. It contains only claims that are true:
 - LKR/USD pricing from `formatPrice()`, defaulting to LKR when the browser's time zone is Asia/Colombo
 
 The fake logos, customer counts, testimonials, city and heatmap claims, and ticking counters were removed in Phase 1.
+
+Accessibility: content between `<nav>` and `<footer>` sits in `<main>`. All text colors in `Landing.css` meet WCAG AA (4.5:1):
+
+- `--ink3` and `--ink4` are dark enough for body text.
+- `--coral-ink` (`#C2401F`) is used for coral text and for buttons with white labels.
+- The brighter `--coral` (`#E85D3A`) is kept for decoration only: bars, borders, dots and the logo mark.
 
 ### Dashboard — [Dashboard.tsx](../src/pages/Dashboard.tsx)
 
