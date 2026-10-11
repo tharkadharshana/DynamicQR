@@ -35,6 +35,18 @@ QR codes made while the dashboard runs on localhost encode `http://localhost…/
 
 ## Environment variables
 
+### Where the values live
+
+- **Local `.env` is the master copy** of every value: local dev, shared Vercel values, per-environment notes, values not set yet, and an archive of variables removed from Vercel.
+- `vercel env pull .env.vercel-backup.<env> --environment=<env>` takes a backup. All `.env*` files are git-ignored.
+- Vercel (Production, Preview, Development) holds exactly:
+  - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+  - `SUPABASE_SERVICE_ROLE_KEY`, `INTERNAL_SECRET`, `HASH_SALT`, `CRON_SECRET` (all Sensitive)
+  - `VITE_SHORT_DOMAIN`, `LOG_LEVEL`, `PAYHERE_SANDBOX`
+  - `APP_URL`, `NODE_ENV` (per environment)
+- **Never give a secret a `VITE_` name.** Vite inlines `VITE_*` into the browser bundle. The old Supabase-integration variables (`VITE_POSTGRES_*`, `VITE_SUPABASE_JWT_SECRET`, `VITE_SUPABASE_SERVICE_ROLE_KEY`, …) were removed on 2026-10-11; their values are archived in `.env`.
+- **Client env access:** write `import.meta.env.VITE_X` out in full. Vite only inlines full property accesses (`(import.meta as any).env` compiles to an empty object). Guard it with `typeof import.meta.env !== 'undefined'` in modules the server or QA also imports.
+
 ### Express (Vercel project env and local `.env`)
 
 | Variable | Required | Purpose |
@@ -112,7 +124,7 @@ curl -sI https://<domain>/<slug>                          # expect 302 Location:
 The workflow runs on push and PR to `main` and `development`:
 
 1. `npm ci`
-2. `npm run lint` (tsc)
+2. `npm run lint` (tsc), then `node scripts/check-server-imports.mjs`. Vercel runs the server as Node ESM, so every relative import reachable from `api/index.ts` must end in `.js`. `tsx` resolves extensionless paths, so local runs and QA can't catch this.
 3. `npm run dev &`
 4. wait for `/api/health`
 5. `npx tsx qa.ts`. This includes the Worker gate engine, run in-process (section 15b).
