@@ -2,6 +2,15 @@
 
 One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-review-findings.md](11-review-findings.md).
 
+## Worker live in production (branch `chore/worker-config`)
+
+- **Scans were failing with `503 Service Unavailable (Origin error)`.** There were two causes:
+  - The deployed Worker had no secrets (`API_URL`, `INTERNAL_SECRET` and `HASH_SALT` were missing).
+  - The zone route `scnr.tharkak.com/*` pointed at an old Worker, `qr-redirect`.
+- **Fix:** set the secrets from the `.env` master copy, deployed current `main`, and moved the route to `dynamic-qr-worker`.
+- **Verified live:** a real code returns 302 (about 0.3 s when cached) and writes a `scan_events` row with country, device and unique flag. An unknown slug shows the branded 404, and `/internal/*` returns 401.
+- `MAIN_HOST` is now pinned in `[vars]` of `wrangler.toml`, so a plain `wrangler deploy` keeps it.
+
 ## Hotfix: production API and env (branch `fix/prod-module-resolution`)
 
 - **Production API was crashing** (`ERR_MODULE_NOT_FOUND …/src/lib/qrContent`) since Phase 2. Vercel runs the server as Node ESM, and `guestPage.ts` imported `./qrContent` without `.js`. Fixed. A new CI step, `scripts/check-server-imports.mjs`, walks the server import graph and fails on any extensionless relative import.
