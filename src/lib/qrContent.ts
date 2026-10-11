@@ -2,9 +2,9 @@
 // Dynamic codes always encode the permanent short domain, never window.location (printed codes must not
 // depend on which host the dashboard happened to be opened on).
 
-export const SHORT_DOMAIN: string = (
-  (import.meta as any).env?.VITE_SHORT_DOMAIN || 'https://scnr.tharkak.com'
-).replace(/\/$/, '');
+// Vite only inlines `import.meta.env.VITE_*` written out in full; the typeof guard keeps Node (server, QA) safe.
+const ENV_DOMAIN = typeof import.meta.env !== 'undefined' ? import.meta.env.VITE_SHORT_DOMAIN : undefined;
+export const SHORT_DOMAIN: string = (ENV_DOMAIN || 'https://scnr.tharkak.com').replace(/\/$/, '');
 
 export const SHORT_HOST = SHORT_DOMAIN.replace(/^https?:\/\//, '');
 

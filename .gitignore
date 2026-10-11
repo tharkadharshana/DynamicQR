@@ -11,3 +11,5 @@ firebase-applet-config.json
 docs/SCNR*
 docs/QR Code Platform Competitor Research.md
 docs/Scnr Path to Revenue*
+.vercel
+.wrangler/

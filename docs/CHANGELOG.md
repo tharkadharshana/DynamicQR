@@ -2,6 +2,15 @@
 
 One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-review-findings.md](11-review-findings.md).
 
+## Hotfix: production API and env (branch `fix/prod-module-resolution`)
+
+- **Production API was crashing** (`ERR_MODULE_NOT_FOUND …/src/lib/qrContent`) since Phase 2. Vercel runs the server as Node ESM, and `guestPage.ts` imported `./qrContent` without `.js`. Fixed. A new CI step, `scripts/check-server-imports.mjs`, walks the server import graph and fails on any extensionless relative import.
+- **`VITE_*` settings were never applied in the browser.** `(import.meta as any).env` compiled to `{}`. `qrContent.ts` and `site.ts` now use full `import.meta.env.VITE_X` accesses with a Node-safe guard. Verified: a build inlines `VITE_SHORT_DOMAIN` and `VITE_SUPPORT_EMAIL`.
+- **Vercel env rebuilt.** Production lacked `SUPABASE_SERVICE_ROLE_KEY`; it only had the key under `VITE_SUPABASE_SERVICE_ROLE_KEY`, which the server stopped reading in Phase 0.
+  - Every user variable was dropped and the clean set re-added (secrets as Sensitive).
+  - The unused `VITE_POSTGRES_*` / JWT / secret-key variables are gone.
+  - Everything is backed up in the local `.env` (master copy) and in `.env.vercel-backup.*`.
+
 ## Phase 4: Team plan for printers and agencies (branch `feat/phase4-agency`)
 
 **Run before merging:** [migrations/004_phase4.sql](../migrations/004_phase4.sql).

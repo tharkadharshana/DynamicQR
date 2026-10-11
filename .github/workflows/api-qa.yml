@@ -47,6 +47,10 @@ jobs:
       - name: Typecheck
         run: npm run lint
 
+      # Vercel runs the server as Node ESM: relative imports need explicit .js (tsx hides this locally).
+      - name: Server imports resolve on Vercel
+        run: node scripts/check-server-imports.mjs
+
       - name: Start API server
         run: npm run dev &
 

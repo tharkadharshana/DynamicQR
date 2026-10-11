@@ -1,6 +1,7 @@
 // Renders what a scan of a non-URL dynamic code shows. Pure: no DOM, no Node APIs.
 // Shared by the Cloudflare Worker (production) and the Express dev redirect.
-import { vcardText } from './qrContent';
+// `.js` extension: Vercel runs the server as Node ESM, which does not resolve extensionless paths.
+import { vcardText } from './qrContent.js';
 
 export type Lang = 'en' | 'si' | 'ta';
 export type Rendered =
