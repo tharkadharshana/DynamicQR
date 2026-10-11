@@ -88,7 +88,9 @@ QR codes made while the dashboard runs on localhost encode `http://localhost…/
 | `INTERNAL_SECRET` | Same value as the API |
 | `HASH_SALT` | Visitor fingerprint salt |
 | KV binding `QR_CACHE` | id in [wrangler.toml](../worker/wrangler.toml) |
-| `MAIN_HOST` (var) | The main app host (`scnr.tharkak.com`). On customer custom domains, paths that aren't codes redirect here. |
+| `MAIN_HOST` (var) | The main app host (`scnr.tharkak.com`), set in `[vars]` of wrangler.toml. On customer custom domains, paths that aren't codes redirect here. |
+
+Check what the live Worker has with `npx wrangler secret list` (names only). An empty list means every scan fails with a 503.
 
 ## Deployment
 
@@ -105,6 +107,7 @@ The four parts deploy separately.
 3. **Cloudflare Worker**
    1. Run `cd worker`, `wrangler kv namespace create QR_CACHE` (update the id), `wrangler secret put API_URL|INTERNAL_SECRET|HASH_SALT`, then `wrangler deploy`.
    2. Attach the Worker as a **route** on the app domain (`scnr.tharkak.com/*`). The domain's DNS must be proxied (orange cloud) with Vercel as the origin. Then the Worker's pass-through `fetch(request)` reaches Vercel.
+   3. The route must name **`dynamic-qr-worker`**. Until 2026-10-11 it pointed at an older Worker, `qr-redirect`, which answered every scan with `503 Service Unavailable (Origin error)`. The workers.dev URL (`dynamic-qr-worker.tharkadharshana.workers.dev/<slug>`) tests the Worker without the route.
 4. **PayHere**
    1. Register the domain with the merchant account.
    2. Set `notify_url` reachability (it is sent per request).
