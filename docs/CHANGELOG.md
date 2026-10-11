@@ -2,6 +2,14 @@
 
 One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-review-findings.md](11-review-findings.md).
 
+## Post-launch cleanup (branch `chore/post-launch-cleanup`)
+
+- **Removed `recordScanLegacy`**, the non-atomic scan fallback for databases without migration 003. Migration 003 is applied, so `record_scan` errors now surface instead of silently miscounting.
+- **QA no longer leaves test data in the database.**
+  - `qa.ts` sweeps `@test.dynamicqr.local` users older than 1 h at start.
+  - A crashed run deletes the users it created.
+  - First run removed 8 stale QA users and their 19 codes from crashed runs on 2026-10-10. Real accounts were untouched.
+
 ## Worker live in production (branch `chore/worker-config`)
 
 - **Scans were failing with `503 Service Unavailable (Origin error)`.** There were two causes:

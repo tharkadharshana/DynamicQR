@@ -61,6 +61,19 @@ const TEST_PASS       = 'QA_test_pass_1234!';
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 const anon  = createClient(SUPABASE_URL, ANON_KEY);
 
+// Every QA user lives under this domain. Deleting the auth user cascades to all of its rows.
+const QA_DOMAIN = '@test.dynamicqr.local';
+const createdUids: string[] = [];
+
+/** Remove QA users left behind by crashed runs. Only those older than 1 h, so a parallel CI run is safe. */
+async function sweepStaleQaUsers(): Promise<number> {
+  const { data } = await admin.auth.admin.listUsers({ perPage: 1000 }); // ponytail: first 1000 users only
+  const cutoff = Date.now() - 3600_000;
+  const stale = (data?.users || []).filter(u => u.email?.endsWith(QA_DOMAIN) && Date.parse(u.created_at) < cutoff);
+  for (const u of stale) await admin.auth.admin.deleteUser(u.id);
+  return stale.length;
+}
+
 // ─── helpers ─────────────────────────────────────────────────────────────────
 let passed = 0, failed = 0;
 const results: { name: string; ok: boolean; note: string }[] = [];
@@ -117,6 +130,9 @@ async function run() {
   // ── 1. Auth ─────────────────────────────────────────────────────────────────
   section('1. Auth — create & sign in test user');
 
+  const swept = await sweepStaleQaUsers();
+  check(`Swept stale QA users from crashed runs (${swept})`, true);
+
   const { data: created, error: createErr } = await admin.auth.admin.createUser({
     email: TEST_EMAIL, password: TEST_PASS, email_confirm: true,
   });
@@ -126,6 +142,7 @@ async function run() {
     process.exit(1);
   }
   uid = created.user.id;
+  createdUids.push(uid);
   check('Admin createUser', true);
 
   const { data: signIn, error: signInErr } = await anon.auth.signInWithPassword({
@@ -1254,6 +1271,7 @@ async function run() {
     // Team seats: invite a second real user, who then sees the owner's workspace.
     const memberEmail = `qa-member-${Date.now()}@test.dynamicqr.local`;
     const { data: mUser } = await admin.auth.admin.createUser({ email: memberEmail, password: TEST_PASS, email_confirm: true });
+    if (mUser?.user?.id) createdUids.push(mUser.user.id);
     const inv = await api('/api/team', { method: 'POST', token, body: JSON.stringify({ email: memberEmail }) });
     check('Invite member → 201', inv.status === 201, `got ${inv.status} ${JSON.stringify(inv.body)}`);
     const member = createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false } });
@@ -1336,7 +1354,9 @@ async function run() {
   process.exit(failed > 0 ? 1 : 0);
 }
 
-run().catch(err => {
+run().catch(async err => {
   console.error('\nFATAL:', err);
+  // Do not leave this run's users (and their codes) in the database.
+  await Promise.all(createdUids.map(id => admin.auth.admin.deleteUser(id).catch(() => {})));
   process.exit(1);
 });

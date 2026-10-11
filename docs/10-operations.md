@@ -137,7 +137,7 @@ Required repository secrets: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUP
 
 The workflow also sets dummy `PAYHERE_MERCHANT_ID=qa-merchant` and `PAYHERE_SECRET=qa-secret`. The billing QA signs notify payloads with the same secret the server checks, so no real merchant is needed. Locally, export the same two variables before `npm run dev` and `qa.ts` if your `.env` has none.
 
-**CI runs against the real Supabase project.** qa.ts creates a throwaway user (`qa-<ts>@test.dynamicqr.local`) and deletes it at the end. If a run fails halfway, test users and rows can be left behind.
+**CI runs against the real Supabase project.** qa.ts creates a throwaway user (`qa-<ts>@test.dynamicqr.local`) and deletes it at the end. A crashed run deletes its own users on the way out. Each run also starts by deleting `@test.dynamicqr.local` users older than one hour, so leftovers from a killed run are gone by the next run, and a parallel CI run is never touched. Deleting the auth user cascades to all of its rows.
 
 ## QA suite — [qa.ts](../qa.ts)
 

@@ -1748,37 +1748,7 @@ async function captureAnalyticsFromPayload(payload: any, qrOwnerUid?: string) {
     p_referer: referer || '', p_is_unique: isUnique, p_failed: status === 'failed_password',
   };
   const { error } = await supabase.rpc('record_scan', args);
-  if (!error) return;
-  // PGRST202 = function not found: migration 003 not applied yet.
-  if (error.code !== 'PGRST202') throw new Error(`record_scan failed: ${error.message}`);
-  await recordScanLegacy(args);
-}
-
-// ponytail: pre-migration-003 fallback (read-modify-write, can lose counts under concurrency).
-// Delete once migrations/003_phase3.sql is applied in every environment.
-async function recordScanLegacy(a: any) {
-  const now = new Date();
-  const day = now.toISOString().slice(0, 10), month = day.slice(0, 7);
-  await supabase.from('scan_events').insert({
-    slug: a.p_slug, country: a.p_country, device: a.p_device, browser: a.p_browser, os: a.p_os,
-    referer: a.p_referer || null, is_unique: a.p_is_unique,
-  });
-  if (a.p_failed) return;
-  const inc = (m: any, k: string) => ({ ...(m || {}), [k]: ((m || {})[k] || 0) + 1 });
-  const { data: cur } = await supabase.from('qr_stats').select('*').eq('slug', a.p_slug).maybeSingle();
-  await supabase.from('qr_stats').upsert({
-    slug: a.p_slug,
-    total_scans: (cur?.total_scans || 0) + 1,
-    unique_scans: (cur?.unique_scans || 0) + (a.p_is_unique ? 1 : 0),
-    days: inc(cur?.days, day), countries: inc(cur?.countries, a.p_country),
-    browsers: inc(cur?.browsers, a.p_browser), os: inc(cur?.os, a.p_os),
-    devices: inc(cur?.devices, a.p_device), monthly_scans: inc(cur?.monthly_scans, month),
-  });
-  if (a.p_owner) {
-    if (!cur?.total_scans) await supabase.from('events').insert({ uid: a.p_owner, name: 'first_scan', slug: a.p_slug });
-    const { data: p } = await supabase.from('profiles').select('monthly_scans').eq('id', a.p_owner).maybeSingle();
-    await supabase.from('profiles').update({ monthly_scans: inc(p?.monthly_scans, month) }).eq('id', a.p_owner);
-  }
+  if (error) throw new Error(`record_scan failed: ${error.message}`);
 }
 
 async function captureAnalytics(req: express.Request, slug: string) {
