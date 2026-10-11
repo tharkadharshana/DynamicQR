@@ -51,6 +51,10 @@ jobs:
       - name: Server imports resolve on Vercel
         run: node scripts/check-server-imports.mjs
 
+      # Landing entry chunk stays under budget; llms.txt and sitemap.xml keep the shape Lighthouse checks.
+      - name: Frontend build checks
+        run: npm run build && node scripts/check-bundle.mjs
+
       - name: Start API server
         run: npm run dev &
 

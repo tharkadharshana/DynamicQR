@@ -105,6 +105,8 @@ export default function Landing() {
         </div>
       </nav>
 
+      <main>
+
       {/* HERO */}
       <div className="hero">
         <div>
@@ -368,6 +370,8 @@ export default function Landing() {
           <p className="cta-note">Free forever plan · 14-day trial · Cancel any time</p>
         </div>
       </div>
+
+      </main>
 
       {/* FOOTER */}
       <footer>

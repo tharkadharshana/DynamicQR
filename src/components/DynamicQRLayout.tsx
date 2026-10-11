@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase, logout } from '../supabase';
 import { useUI } from '../shared/UIContext';
@@ -283,7 +283,8 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
           </div>
         )}
 
-        <Outlet context={{ planData }} />
+        {/* Keep the sidebar on screen while the next page chunk loads. */}
+        <Suspense fallback={null}><Outlet context={{ planData }} /></Suspense>
       </div>
     </div>
   );
