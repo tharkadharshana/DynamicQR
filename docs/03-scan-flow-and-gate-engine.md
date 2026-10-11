@@ -103,7 +103,7 @@ Recording is **one call**: `supabase.rpc('record_scan', …)` (migration 003). T
 4. increments `profiles.monthly_scans[YYYY-MM]`, the account-wide counter behind `quota_exceeded`
 5. writes a `first_scan` event the first time a code is scanned
 
-Bots are dropped before the call (a regex on the UA). Until migration 003 is applied, the server falls back to a non-atomic read-modify-write (`recordScanLegacy`, marked `ponytail:`). QA section 26 shows the difference: 10 concurrent scans give exactly 10 with the RPC, and fewer with the fallback.
+Bots are dropped before the call (a regex on the UA). The RPC needs migration 003; without it scan recording fails loudly (the old non-atomic fallback was removed). QA section 26 checks that 10 concurrent scans give exactly 10.
 
 ## Sequence
 
