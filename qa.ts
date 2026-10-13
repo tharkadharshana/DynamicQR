@@ -1669,7 +1669,8 @@ async function run() {
     const badRules = await mk({ title: 'QA bad rules', destination_url: 'https://example.com/x', content_data: { rules: [{ if: { days: [9] }, url: 'https://x.lk' }] } });
     check('Invalid rules → 400 INVALID_RULES', badRules.status === 400 && badRules.body?.code === 'INVALID_RULES', `got ${badRules.status}`);
     await admin.from('profiles').update({ plan: 'free', plan_expires_at: null, is_trial: false, trial_expires_at: new Date(Date.now() - 86400000).toISOString() }).eq('id', uid);
-    const freeRules = await api(`/api/qr/${rt}`, { method: 'PUT', token, body: JSON.stringify({ content_data: { rules } }) });
+    // Only a change is gated (a lapsed owner can still save an edit that keeps the stored rules), so send a different rule.
+    const freeRules = await api(`/api/qr/${rt}`, { method: 'PUT', token, body: JSON.stringify({ content_data: { rules: [...rules, { if: { os: ['Android'] }, url: 'https://play.google.com/store/apps/details?id=x' }] } }) });
     check('Free: saving rules → 403 FEATURE_ROUTING', freeRules.status === 403 && freeRules.body?.code === 'FEATURE_ROUTING', `got ${freeRules.status}`);
     const keep = await api(`/api/qr/${rt}`, { method: 'PUT', token, body: JSON.stringify({ title: 'QA routing renamed', content_data: { rules } }) });
     check('On Free, an edit that leaves the stored rules unchanged still saves', keep.status === 200, `got ${keep.status}`);
