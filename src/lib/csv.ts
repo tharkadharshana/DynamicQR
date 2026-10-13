@@ -32,6 +32,16 @@ export function csvToObjects(text: string): Record<string, string>[] {
   return body.map(r => Object.fromEntries(keys.map((k, i) => [k, (r[i] ?? '').trim()])));
 }
 
+/** Rows → RFC-4180 CSV (CRLF, quoted when needed, a leading quote mark on formula-like cells so spreadsheets don't run them). */
+export function toCsv(rows: unknown[][]): string {
+  const cell = (v: unknown) => {
+    let s = v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
+    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return rows.map(r => r.map(cell).join(',')).join('\r\n');
+}
+
 /** Self-check: npx tsx src/lib/csv.ts */
 if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('csv.ts')) {
   const assert = (c: unknown, m: string) => { if (!c) { console.error('FAIL', m); process.exit(1); } };
@@ -42,5 +52,8 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('csv.ts')) {
   assert(rows[3][0] === 'multi\nline', 'newline in quotes');
   const objs = csvToObjects('Title,Destination_URL\nA,https://a');
   assert(objs[0].title === 'A' && objs[0].destination_url === 'https://a', 'objects');
+  const out = toCsv([['a', 'b,c'], ['say "hi"', '=SUM(A1)'], [null, 3]]);
+  assert(out === 'a,"b,c"\r\n"say ""hi""",\'=SUM(A1)\r\n,3', 'toCsv: ' + JSON.stringify(out));
+  assert(JSON.stringify(parseCsv(toCsv([['x\ny', 'z']]))) === JSON.stringify([['x\ny', 'z']]), 'toCsv round-trips');
   console.log('csv self-check ok');
 }

@@ -41,7 +41,8 @@ All five phases are merged: safe and working, credible, Restaurant Kit, retentio
 - **Code types and design (Phase 6):** PDF, Google review, socials, phone, SMS, location, event, app-store and GS1 codes; dot styles, gradient, circle shape, frames and a saved brand style. Migration 006 adds `gtin`, `brand_style` and the `files` bucket.
 - **Pages builder (Phase 7):** block-based pages with 12 templates, a live-preview editor and click analytics. Migration 007 adds `qr_stats.clicks` and `record_click`.
 - **Short links and organisation (Phase 8):** short links with custom back-halves, folders, tags, sort and search, Select mode with bulk actions and a ZIP download, and UTM tags. Migration 008 adds `qr_codes.tags`.
-- Run the migrations in order: 001 → 002 → 003 → 004 → 005 → 006 → 007 → 008 ([doc 10](10-operations.md#deployment)).
+- **Forms (Phase 9):** a form builder with validated, spam-controlled answers, email notifications and CSV export. Migration 009 adds `form_submissions`.
+- Run the migrations in order: 001 → 002 → 003 → 004 → 005 → 006 → 007 → 008 → 009 ([doc 10](10-operations.md#deployment)).
 - The phase plan for phases 0–4 is in [doc 11](11-review-findings.md#recommended-order-of-work).
 - **What is next:** [ROADMAP.md](ROADMAP.md) plans phases 5–12 (competitor parity with Hovercode and Bitly: a Business tier, more code types, a Pages builder with templates, short links and folders, forms, advanced tracking, webhooks and workspaces, public tools). It also holds the working agreement for every change. Competitor screenshots are in [competitors/](competitors/).
 
@@ -63,6 +64,7 @@ src/                    React SPA
   pages/                Dashboard, CreateQR, Analytics, AccountAnalytics, Billing, Pricing, Settings, ApiDocs, Landing, legal
   components/           DynamicQRLayout (app shell), QRViewerModal, modals, toasts, ErrorBoundary
   lib/pageTemplates.ts  the 12 Pages templates
+  lib/forms.ts          form field types, definition check, answer validation
   lib/qrContent.ts      getQRContent()/vcardText() and SHORT_DOMAIN: what every QR encodes (shared with server)
 migrations/             Incremental SQL, run in order in the Supabase SQL editor (001_phase0.sql, …)
 vercel.json             Static build plus Node function; rewrites /api/* and /internal/* to the function

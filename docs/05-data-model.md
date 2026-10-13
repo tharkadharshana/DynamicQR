@@ -105,6 +105,18 @@ Columns the code **reads but which do not exist**: `referrers`, `regions`, `isps
 
 Also: `qr_codes.tags` (text[], GIN-indexed, migration 008; folders stay the `client` column), `qr_stats.clicks` (jsonb `{key: n}`, written only by `record_click(p_slug, p_key)`, migration 007), `qr_codes.gtin` (GS1 GTIN-14, unique when set, migration 006), `profiles.brand_style` (jsonb, the saved default design, migration 006), the public Storage bucket `files` (100 MB cap, PDF and images, written only through API-signed upload URLs, migration 006), `qr_codes.client` (folder name, indexed with `user_uid`), and `profiles.agency_name` / `profiles.agency_logo` (≤64 KB data URL) for white-label printed reports.
 
+### `form_submissions` (migration 009)
+
+| Column | Notes |
+|---|---|
+| `id` | uuid |
+| `slug` | → `qr_codes(slug)`, on delete cascade |
+| `data` | jsonb `{fieldId: value}`, only fields in the form's definition |
+| `ip_hash` | the Worker's daily, salted visitor hash (never the IP) |
+| `created_at` | indexed with `slug` |
+
+RLS is on with no policies.
+
 ### `scan_events`, one per scan (bots excluded)
 
 | Column | Written | Notes |

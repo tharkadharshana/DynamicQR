@@ -2,6 +2,7 @@
 // Shared by the Cloudflare Worker (production) and the Express dev redirect.
 // `.js` extension: Vercel runs the server as Node ESM, which does not resolve extensionless paths.
 import { vcardText, buildDestination, SOCIALS } from './qrContent.js';
+import { formFields, HONEYPOT } from './forms.js';
 
 export type Lang = 'en' | 'si' | 'ta';
 export type Rendered =
@@ -10,14 +11,14 @@ export type Rendered =
   | { kind: 'ics'; body: string; filename: string }
   | { kind: 'redirect'; location: string };
 
-const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+export const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 // Only links a guest can safely open. Anything else (javascript:, data:) is dropped.
 const safeUrl = (u: unknown) => (/^(https?:\/\/|tel:|mailto:)/i.test(String(u || '')) ? String(u) : '');
 
 const UI: Record<Lang, Record<string, string>> = {
-  en: { offer: "Today's offer", wifi: 'Wi-Fi', network: 'Network', password: 'Password', copy: 'Copy', copied: 'Copied', powered: 'Made with Scnr', phone: 'Phone', email: 'Email', address: 'Address', website: 'Website', save: 'Save as contact' },
-  si: { offer: 'අද දීමනාව', wifi: 'Wi-Fi', network: 'ජාලය', password: 'මුරපදය', copy: 'පිටපත් කරන්න', copied: 'පිටපත් විය', powered: 'Scnr සමඟ සාදන ලදී', phone: 'දුරකථනය', email: 'ඊමේල්', address: 'ලිපිනය', website: 'වෙබ් අඩවිය', save: 'සම්බන්ධතාවය සුරකින්න' },
-  ta: { offer: 'இன்றைய சலுகை', wifi: 'Wi-Fi', network: 'நெட்வொர்க்', password: 'கடவுச்சொல்', copy: 'நகலெடு', copied: 'நகலெடுக்கப்பட்டது', powered: 'Scnr மூலம் உருவாக்கப்பட்டது', phone: 'தொலைபேசி', email: 'மின்னஞ்சல்', address: 'முகவரி', website: 'இணையதளம்', save: 'தொடர்பைச் சேமி' },
+  en: { offer: "Today's offer", wifi: 'Wi-Fi', network: 'Network', password: 'Password', copy: 'Copy', copied: 'Copied', powered: 'Made with Scnr', phone: 'Phone', email: 'Email', address: 'Address', website: 'Website', save: 'Save as contact', send: 'Send', thanks: 'Thank you! We got your answer.' },
+  si: { offer: 'අද දීමනාව', wifi: 'Wi-Fi', network: 'ජාලය', password: 'මුරපදය', copy: 'පිටපත් කරන්න', copied: 'පිටපත් විය', powered: 'Scnr සමඟ සාදන ලදී', phone: 'දුරකථනය', email: 'ඊමේල්', address: 'ලිපිනය', website: 'වෙබ් අඩවිය', save: 'සම්බන්ධතාවය සුරකින්න', send: 'යවන්න', thanks: 'ස්තූතියි! ඔබේ පිළිතුර ලැබුණා.' },
+  ta: { offer: 'இன்றைய சலுகை', wifi: 'Wi-Fi', network: 'நெட்வொர்க்', password: 'கடவுச்சொல்', copy: 'நகலெடு', copied: 'நகலெடுக்கப்பட்டது', powered: 'Scnr மூலம் உருவாக்கப்பட்டது', phone: 'தொலைபேசி', email: 'மின்னஞ்சல்', address: 'முகவரி', website: 'இணையதளம்', save: 'தொடர்பைச் சேமி', send: 'அனுப்பு', thanks: 'நன்றி! உங்கள் பதில் கிடைத்தது.' },
 };
 
 export const FILE_TYPES = { vcard: 'text/vcard; charset=utf-8', ics: 'text/calendar; charset=utf-8' } as const;
@@ -209,14 +210,47 @@ function renderBlocks(config: any, d: any, lang: Lang, t: Record<string, string>
   return (langs ? `<div class="top" style="min-height:24px">${langs}</div>` : '') + html;
 }
 
+/** A form code: native inputs (required, type=email, … validate in the browser for free), POST to the same URL. */
+function renderForm(config: any, d: any, t: Record<string, string>, state: FormState): string {
+  if (state.done) return `<main><div class="top"><h1>${esc(d.title || config.title || 'Form')}</h1></div><div class="box"><p>${esc(d.thank_you || t.thanks)}</p></div></main>`;
+  const v = (id: string) => esc(state.values?.[id] ?? '');
+  const field = (f: any) => {
+    const req = f.required ? ' required' : '', id = esc(f.id), label = `<span>${esc(f.label)}${f.required ? ' *' : ''}</span>`;
+    switch (f.type) {
+      case 'textarea': return `<label>${label}<textarea name="${id}" maxlength="5000" rows="4"${req}>${v(f.id)}</textarea></label>`;
+      case 'select': return `<label>${label}<select name="${id}"${req}><option value=""></option>${(f.options || []).map((o: string) => `<option${state.values?.[f.id] === o ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select></label>`;
+      case 'checkbox': return `<label class="chk"><input type="checkbox" name="${id}"${req}${state.values?.[f.id] ? ' checked' : ''}> ${label}</label>`;
+      case 'rating': return `<fieldset class="rate"><legend>${label}</legend>${[1, 2, 3, 4, 5].map(n => `<label><input type="radio" name="${id}" value="${n}"${n === 1 ? req : ''}${String(state.values?.[f.id]) === String(n) ? ' checked' : ''}> ${n}★</label>`).join('')}</fieldset>`;
+      default: {
+        const type = ({ email: 'email', phone: 'tel', number: 'number', date: 'date' } as Record<string, string>)[f.type] || 'text';
+        return `<label>${label}<input type="${type}" name="${id}" value="${v(f.id)}"${type === 'number' ? ' step="any"' : ''}${type === 'text' ? ' maxlength="500"' : ''}${req}></label>`;
+      }
+    }
+  };
+  return `<main><div class="top"><h1>${esc(d.title || config.title || 'Form')}</h1>${d.intro ? `<p>${esc(d.intro)}</p>` : ''}</div>
+<form method="POST" class="box form">
+  ${state.error ? `<div class="err" role="alert">${esc(state.error)}</div>` : ''}
+  ${formFields(d).map(field).join('\n  ')}
+  <div style="position:absolute;left:-9999px" aria-hidden="true"><input name="${HONEYPOT}" tabindex="-1" autocomplete="off"></div>
+  <button type="submit">${esc(d.submit_label || t.send)}</button>
+</form></main>`;
+}
+const FORM_CSS = `.form label{display:grid;gap:4px;font-size:14px} .form input:not([type=checkbox]):not([type=radio]),.form select,.form textarea{font:inherit;padding:10px;border:1px solid #EADFD3;border-radius:8px;width:100%;box-sizing:border-box}
+  .form .chk{display:flex;gap:8px;align-items:center} .rate{border:0;padding:0;display:flex;gap:10px;flex-wrap:wrap} .rate legend{font-size:14px;margin-bottom:4px}
+  .form button{padding:12px;font-weight:600} .err{background:#FDECEC;color:#9B1C1C;border-radius:8px;padding:10px}`;
+
+export type FormState = { error?: string; done?: boolean; values?: Record<string, unknown> };
+
 /** config: the cached gate config (qr_type, content_data, title, branding). url: the scanned URL (for language links). */
-export function renderGuestPage(config: any, lang: Lang, url: string): Rendered | null {
+export function renderGuestPage(config: any, lang: Lang, url: string, formState: FormState = {}): Rendered | null {
   const d = config.content_data || {};
   const t = UI[lang];
   const footer = config.branding ? `<footer>${esc(t.powered)}</footer>` : '';
   switch (config.qr_type) {
     case 'vcard':
       return { kind: 'vcard', body: vcardText(d), filename: `${(d.first_name || 'contact').replace(/[^\w-]/g, '')}.vcf` };
+    case 'form':
+      return { kind: 'html', body: shell(d.title || config.title || 'Form', lang, renderForm(config, d, t, formState) + footer, undefined, FORM_CSS) };
     case 'event':
       return { kind: 'ics', body: icsText(d, config.slug), filename: `${String(d.title || 'event').replace(/[^\w-]/g, '').slice(0, 40) || 'event'}.ics` };
     case 'email':
@@ -338,6 +372,12 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('guestPage.ts'
   assert((renderGuestPage({ qr_type: 'page', slug: 's1', content_data: idPage }, 'en', 'https://s.lk/s1') as any).body.includes('href="/s1/l/k3x9q"'), 'tracked by id');
   const noHdr = renderGuestPage({ qr_type: 'page', content_data: { blocks: [{ kind: 'text', text: 'x' }], i18n: { si: { blocks: [{ text: 'සිං' }] } } } }, 'si', 'https://s.lk/p') as any;
   assert(noHdr.body.includes('class="langs"'), 'language switch without a header');
+  const form = { qr_type: 'form', title: 'F', content_data: { title: 'Feedback <x>', fields: [{ id: 'email', type: 'email', label: 'Email', required: true }, { id: 'r', type: 'rating', label: 'Stars' }, { id: 'bad', type: 'evil', label: 'x' }] } };
+  const fh = (renderGuestPage(form, 'en', 'https://s.lk/f') as any).body as string;
+  assert(fh.includes('<form method="POST"') && fh.includes('type="email" name="email" value="" required') && fh.includes('name="_hp"') && !fh.includes('name="bad"') && fh.includes('Feedback &lt;x&gt;'), 'form renders native inputs');
+  const fe = (renderGuestPage(form, 'en', 'https://s.lk/f', { error: 'Email is required', values: { r: '4' } }) as any).body as string;
+  assert(fe.includes('role="alert">Email is required') && fe.includes('value="4" checked'), 'form error keeps values');
+  assert((renderGuestPage(form, 'si', 'https://s.lk/f', { done: true }) as any).body.includes('ස්තූතියි'), 'thank-you page');
   console.log('guestPage self-check ok');
   });
 }

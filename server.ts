@@ -17,9 +17,10 @@ export const supabase = createClient(supabaseUrl, supabaseKey);
 import crypto from 'crypto';
 import { customAlphabet } from 'nanoid';
 import logger from "./logger.js";
-import { renderGuestPage, pickLang, appTarget, FILE_TYPES, blockTarget } from './src/lib/guestPage.js';
+import { renderGuestPage, pickLang, appTarget, FILE_TYPES, blockTarget, esc as escHtml } from './src/lib/guestPage.js';
 import { gtinValid, isReservedSlug, CUSTOM_SLUG_RE, normTags, withUtm } from './src/lib/qrContent.js';
 import { buildDigest } from './src/lib/digest.js';
+import { formDefError, validateSubmission } from './src/lib/forms.js';
 import { PLANS, TRIAL_LIMITS, GRACE_DAYS, DEFAULT_ADDONS, PRICES, PAID_PLANS, PlanId, PaidPlan, PlanLimits, UserAddons, Currency, BillingInterval } from './src/lib/plans.js';
 
 // Direct table helpers (replaced the Firestore-compat shim in Phase 3).
@@ -230,7 +231,7 @@ async function startServer() {
     }
   };
 
-  const QR_TYPES = ['url', 'vcard', 'wifi', 'text', 'email', 'page', 'event'];
+  const QR_TYPES = ['url', 'vcard', 'wifi', 'text', 'email', 'page', 'event', 'form'];
   // GTIN-14 as stored (unique) and encoded in the GS1 Digital Link path. null clears it.
   const normGtin = (g: unknown) => (g === null || g === '' ? null : gtinValid(g) ? String(g).padStart(14, '0') : undefined);
   // A short link is a dynamic URL row with kind='link': no QR image, counted against short_links only.
@@ -274,6 +275,23 @@ async function startServer() {
 
   // Never send the PIN hash to a browser.
   const publicQr = ({ password_hash, ...qr }: any) => ({ ...qr, has_password: !!password_hash });
+  // Form notifications only go to the owner's account email or a team member's, so a form cannot mail strangers.
+  const notifyAllowed = async (uid: string, to: unknown) => {
+    if (!to) return true;
+    const [p, { data: members }] = await Promise.all([row('profiles', 'id', uid), supabase.from('workspace_members').select('member_email').eq('owner_uid', uid)]);
+    return [p?.email, ...(members || []).map(m => m.member_email)].some(e => e && e.toLowerCase() === String(to).toLowerCase());
+  };
+  // PostgREST returns at most 1,000 rows per request: read in pages up to `max`.
+  const allRows = async (q: (from: number, to: number) => any, max: number) => {
+    const out: any[] = [];
+    for (let from = 0; from < max; from += 1000) {
+      const { data, error } = await q(from, Math.min(from + 999, max - 1));
+      if (error) throw error;
+      out.push(...(data || []));
+      if (!data || data.length < 1000) break;
+    }
+    return out;
+  };
 
   // Drop the Worker's cached config so an edit is live on the next scan (else up to the 300s KV TTL).
   // The Worker owns /internal/purge on APP_URL's domain.
@@ -548,7 +566,12 @@ async function startServer() {
           country: profile.country,
           timezone: profile.timezone
         },
-        qr_codes: qrs
+        qr_codes: qrs,
+        form_submissions: await (async () => {
+          const formSlugs = qrs.filter(q => q.qr_type === 'form').map(q => q.slug);
+          if (!formSlugs.length) return [];
+          return allRows((from, to) => supabase.from('form_submissions').select('slug, data, created_at').in('slug', formSlugs).order('created_at').range(from, to), 50000);
+        })(),
       };
       
       res.setHeader('Content-Type', 'application/json');
@@ -991,6 +1014,11 @@ async function startServer() {
       if (type === 'event' && (!content_data?.start || isNaN(new Date(content_data.start).getTime()))) {
         return res.status(400).json({ error: 'An event needs a valid start time' });
       }
+      const formErr = type === 'form' ? formDefError(content_data) : null;
+      if (formErr) return res.status(400).json({ error: formErr, code: 'INVALID_FORM' });
+      if (type === 'form' && !(await notifyAllowed(user.uid, content_data?.notify_email))) {
+        return res.status(400).json({ error: "Notifications can go to your account email or a team member's", code: 'INVALID_FORM' });
+      }
       const gtin = req.body.gtin === undefined ? null : normGtin(req.body.gtin);
       if (gtin === undefined) return res.status(400).json({ error: 'gtin must be a GTIN-8, 12, 13 or 14 with a valid check digit', code: 'INVALID_GTIN' });
       // Custom back-half (Pro and up): charset, not a route, not taken. The primary key settles races (23505 → 409).
@@ -1001,7 +1029,7 @@ async function startServer() {
       }
       const tags = normTags(req.body.tags);
       // Guest pages, events and GS1 codes only exist as dynamic codes; every other type can be either.
-      const is_dynamic = type === 'page' || type === 'event' || !!gtin || requestedDynamic !== false;
+      const is_dynamic = type === 'page' || type === 'event' || type === 'form' || !!gtin || requestedDynamic !== false;
       const uid = user.uid;
 
       // Input validation
@@ -1160,6 +1188,22 @@ async function startServer() {
     }
   });
 
+  // Form submissions (owner): newest first, up to 5,000; delete one.
+  app.get('/api/forms/:slug/submissions', authenticate, requireOwnership, async (req, res) => {
+    try {
+      res.json(await allRows((from, to) => supabase.from('form_submissions').select('id, data, created_at')
+        .eq('slug', req.params.slug).order('created_at', { ascending: false }).range(from, to), 5000));
+    } catch (error: any) {
+      logger.error('Submissions list error', { message: error.message });
+      res.status(500).json({ error: 'Failed to list submissions' });
+    }
+  });
+  app.delete('/api/forms/:slug/submissions/:id', writeLimiter, authenticate, requireOwnership, async (req, res) => {
+    const { error, count } = await supabase.from('form_submissions').delete({ count: 'exact' }).eq('slug', req.params.slug).eq('id', req.params.id);
+    if (error) return res.status(400).json({ error: 'Invalid submission id' });
+    res.status(count ? 200 : 404).json({ deleted: count || 0 });
+  });
+
   // Select mode: one action on many codes. Ownership is checked per slug; every changed code is purged at the edge.
   app.post('/api/qr/bulk', writeLimiter, authenticate, async (req, res) => {
     try {
@@ -1293,11 +1337,17 @@ async function startServer() {
           const d = content_data ?? cur.content_data;
           if (!d?.start || isNaN(new Date(d.start).getTime())) return res.status(400).json({ error: 'An event needs a valid start time' });
         }
+        if (type === 'form' && formDefError(content_data ?? cur.content_data)) {
+          return res.status(400).json({ error: formDefError(content_data ?? cur.content_data), code: 'INVALID_FORM' });
+        }
+        if (type === 'form' && !(await notifyAllowed(cur.user_uid, (content_data ?? cur.content_data)?.notify_email))) {
+          return res.status(400).json({ error: "Notifications can go to your account email or a team member's", code: 'INVALID_FORM' });
+        }
         // Static → dynamic (asked for, or implied by an event or a GTIN). Dynamic never goes back: the print encodes the slug.
-        const toDynamic = cur.is_dynamic === false && (req.body.is_dynamic === true || type === 'event' || !!(updateData.gtin ?? cur.gtin));
+        const toDynamic = cur.is_dynamic === false && (req.body.is_dynamic === true || type === 'event' || type === 'form' || !!(updateData.gtin ?? cur.gtin));
         if (toDynamic) updateData.is_dynamic = true;
         // Switching a row back on, or making it dynamic, must fit the plan caps like creating it.
-        if ((is_active === true && cur.is_active === false) || toDynamic) {
+        if ((is_active === true && cur.is_active === false) || toDynamic || (updateData.qr_type && cur.is_active !== false)) {
           const capped = await capError(cur.user_uid, (await getLicense(cur.user_uid)).limits, { ...cur, qr_type: type, is_dynamic: cur.is_dynamic !== false || toDynamic });
           if (capped) return res.status(403).json(capped);
         }
@@ -1697,6 +1747,19 @@ async function startServer() {
     }
   });
 
+  // Transactional email through Resend (digest, form notifications). Returns false when not configured or on failure.
+  const sendEmail = async (to: string, subject: string, html: string, from = process.env.DIGEST_FROM || 'Scnr <digest@scnr.app>') => {
+    const key = process.env.RESEND_API_KEY;
+    if (!key) return false;
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to, subject, html }),
+      signal: AbortSignal.timeout(8000),
+    }).catch(() => null);
+    return !!r?.ok;
+  };
+
   // Weekly (Mondays): email each owner their last-7-days scans, busiest hour and top code.
   // ?dry=1 builds the digests without sending (used by QA). ?uid= limits to one account.
   // ponytail: sends serially inside one function call; fine for hundreds of owners, move to a queue beyond that.
@@ -1721,14 +1784,7 @@ async function startServer() {
           .in('slug', qrs.map(x => x.slug)).gte('scanned_at', since).limit(50000);
         if (sErr) throw sErr;
         const d = buildDigest({ businessName: o.company || '', timezone: o.timezone || 'Asia/Colombo', qrs, scans: scans || [], appUrl });
-        if (!dry) {
-          const r = await fetch('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ from: process.env.DIGEST_FROM || 'Scnr <digest@scnr.app>', to: o.email, subject: d.subject, html: d.html }),
-          });
-          if (!r.ok) logger.warn('Digest send failed', { uid: o.id, status: r.status });
-        }
+        if (!dry && !(await sendEmail(o.email, d.subject, d.html))) logger.warn('Digest send failed', { uid: o.id });
         out.push({ uid: o.id, total: d.total, busiestHour: d.busiestHour, top: d.top, subject: d.subject });
       }
       res.json({ sent: dry ? 0 : out.length, digests: dry ? out : undefined });
@@ -1739,6 +1795,44 @@ async function startServer() {
   });
 
   // Internal endpoint for Cloudflare Worker to send rich CF payload
+  // Forms: the Worker forwards a POST here (after its gates and its per-visitor KV counter).
+  // The stored definition is the trust boundary: unknown fields are stripped, a filled honeypot is dropped silently.
+  async function submitForm(slug: string, fields: Record<string, unknown>, visitor: unknown): Promise<[number, any]> {
+    const qr = await row('qr_codes', 'slug', slug);
+    if (!qr || qr.qr_type !== 'form' || qr.is_active === false) return [404, { error: 'Form not found' }];
+    const result = validateSubmission(qr.content_data, fields || {});
+    if ('error' in result) return [400, { error: result.error }];
+    if (result.spam) return [200, { ok: true }];
+    const ip_hash = typeof visitor === 'string' ? visitor.slice(0, 64) : null;
+    const { error } = await supabase.from('form_submissions').insert({ slug: qr.slug, data: result.data, ip_hash });
+    if (error) throw error;
+    const to = qr.content_data?.notify_email;
+    // Awaited: on Vercel the function may freeze once the response is sent. Re-checked so an old definition cannot mail strangers.
+    if (to && await notifyAllowed(qr.user_uid, to)) {
+      const rowsHtml = Object.entries(result.data).map(([k, v]) => {
+        const label = (qr.content_data.fields || []).find((f: any) => f.id === k)?.label || k;
+        return `<tr><td style="padding:4px 12px 4px 0;color:#666">${escHtml(label)}</td><td>${escHtml(v)}</td></tr>`;
+      }).join('');
+      const sent = await sendEmail(String(to), `New response: ${String(qr.content_data.title || qr.title || 'your form').slice(0, 80)}`,
+        `<p>Someone filled in <b>${escHtml(qr.content_data.title || qr.title)}</b>.</p><table>${rowsHtml}</table>`);
+      if (!sent && process.env.RESEND_API_KEY) logger.warn('Form notification failed', { slug });
+    }
+    return [200, { ok: true }];
+  }
+
+  // Forms: the Worker forwards a POST here (after its gates and its per-visitor KV counter).
+  // The stored definition is the trust boundary: unknown fields are stripped, a filled honeypot is dropped silently.
+  app.post('/internal/form/:slug', async (req, res) => {
+    try {
+      if (!process.env.INTERNAL_SECRET || req.headers['x-internal-secret'] !== process.env.INTERNAL_SECRET) return res.status(401).send('Unauthorized');
+      const [status, body] = await submitForm(req.params.slug, req.body?.fields, req.body?.visitor);
+      res.status(status).json(body);
+    } catch (error: any) {
+      logger.error('Form submit error', { message: error.message });
+      res.status(500).json({ error: 'Could not save your answer' });
+    }
+  });
+
   // Pages "Engagements": the Worker reports a click on /<slug>/l/<key> (in waitUntil, after its 302).
   app.post('/internal/click', async (req, res) => {
     if (!process.env.INTERNAL_SECRET || req.headers['x-internal-secret'] !== process.env.INTERNAL_SECRET) return res.status(401).send('Unauthorized');
@@ -1847,6 +1941,16 @@ async function startServer() {
     if (error) return res.status(500).json({ error: 'Failed' });
     if (!data) return res.status(404).send('Not Found');
     res.json({ slug: data.slug });
+  });
+
+  // Local dev: form answers (the Worker does this in production, with its per-visitor cap).
+  app.post('/:slug', express.urlencoded({ extended: false, limit: '64kb' }), async (req, res, next) => {
+    const qr = await row('qr_codes', 'slug', req.params.slug).catch(() => null);
+    if (qr?.qr_type !== 'form') return next();
+    const [status, body] = await submitForm(qr.slug, req.body || {}, null);
+    const lang = pickLang((req.query.lang as string) || null, req.headers['accept-language'] || null);
+    const r = renderGuestPage({ ...qr, branding: false }, lang, `${req.protocol}://${req.headers.host}${req.originalUrl}`, status === 200 ? { done: true } : { error: body.error, values: req.body });
+    res.status(status).type('html').send((r as any).body);
   });
 
   // Local dev: tracked page links (the Worker does this in production).
