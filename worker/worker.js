@@ -1,5 +1,5 @@
 // Guest pages + vCard/Text/Email/Wi-Fi rendering, shared with the dev server (Wrangler bundles the TS import).
-import { renderGuestPage, pickLang } from '../src/lib/guestPage';
+import { renderGuestPage, pickLang, appTarget, FILE_TYPES } from '../src/lib/guestPage';
 
 // Small branded HTML page for every non-redirect outcome. Never show a bare error on a printed code.
 const page = (title, bodyHtml, status, accent = '#E85D3A') => new Response(`<!DOCTYPE html>
@@ -33,7 +33,28 @@ const PIN_LOCK_SECONDS = 900;
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    const slug = url.pathname.slice(1).split('/')[0]; // only first path segment
+    let slug = url.pathname.slice(1).split('/')[0]; // only first path segment
+    const apiUrl = (env.API_URL || '').replace(/\/$/, '');
+    const internalSecret = env.INTERNAL_SECRET;
+
+    // GS1 Digital Link: /01/<GTIN>[/10/<batch>…] resolves to the owning code's slug, then the normal gates run.
+    const gs1 = url.pathname.match(/^\/01\/(\d{8,14})(?:\/|$)/);
+    if (gs1) {
+      const key = `gs1:${gs1[1].padStart(14, '0')}`;
+      let resolved = await env.QR_CACHE.get(key);
+      if (!resolved) {
+        let res = null;
+        try {
+          res = await fetch(`${apiUrl}/internal/gs1/${gs1[1]}`, { headers: { 'x-internal-secret': internalSecret }, signal: AbortSignal.timeout(5000) });
+        } catch (err) { console.error(`GS1 lookup failed: ${err.message}`); }
+        if (res && res.status === 400) return page('Invalid product code', '<h2>Invalid product code</h2><p>This GTIN has a wrong check digit.</p>', 400);
+        if (res && res.status === 404) return page('Product not found', '<h2>Product not found</h2><p>No code is linked to this product yet.</p>', 404);
+        if (!res || !res.ok) return page('Temporarily unavailable', '<h2>Temporarily unavailable</h2><p>Please scan again in a minute.</p>', 503);
+        resolved = (await res.json()).slug;
+        ctx.waitUntil(env.QR_CACHE.put(key, resolved, { expirationTtl: 300 }));
+      }
+      slug = resolved;
+    }
 
     // Known frontend routes - always pass through to the origin
     const FRONTEND_ROUTES = new Set([
@@ -42,7 +63,6 @@ export default {
     ]);
 
     // 1. Internal / Hidden Routes
-    const internalSecret = env.INTERNAL_SECRET;
     if (slug === 'internal' && url.pathname.startsWith('/internal/purge/')) {
       if (request.headers.get('x-internal-secret') !== internalSecret) {
         return new Response('Unauthorized', { status: 401 });
@@ -53,7 +73,7 @@ export default {
     }
 
     // Our nanoid alphabet, 5-12 chars.
-    const isSlug = !FRONTEND_ROUTES.has(slug) && /^[23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ]{5,12}$/.test(slug);
+    const isSlug = !!gs1 || !FRONTEND_ROUTES.has(slug) && /^[23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ]{5,12}$/.test(slug);
     // A customer's custom short domain (Team) only serves codes; anything else goes to the main site.
     if (!isSlug && env.MAIN_HOST && url.host !== env.MAIN_HOST) {
       return Response.redirect(`https://${env.MAIN_HOST}${url.pathname}${url.search}`, 302);
@@ -86,7 +106,6 @@ export default {
     const visitorHash = await sha256Hex(`${ip}:${ua.slice(0, 100)}:${today}:${env.HASH_SALT || ''}`);
 
     // --- CONFIG FETCHING ---
-    const apiUrl = (env.API_URL || '').replace(/\/$/, '');
     let config = await env.QR_CACHE.get(slug, { type: 'json' });
 
     if (!config) {
@@ -248,12 +267,12 @@ export default {
     if (rendered?.kind === 'html') {
       return new Response(rendered.body, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
     }
-    if (rendered?.kind === 'vcard') {
-      return new Response(rendered.body, { headers: { 'Content-Type': 'text/vcard; charset=utf-8', 'Content-Disposition': `attachment; filename="${rendered.filename}"` } });
+    if (rendered?.kind === 'vcard' || rendered?.kind === 'ics') {
+      return new Response(rendered.body, { headers: { 'Content-Type': FILE_TYPES[rendered.kind], 'Content-Disposition': `attachment; filename="${rendered.filename}"` } });
     }
     if (rendered?.kind === 'redirect') {
       return new Response(null, { status: 302, headers: { Location: rendered.location } });
     }
-    return Response.redirect(config.destination_url, 302);
+    return Response.redirect(appTarget(config.app, ua) || config.destination_url, 302);
   }
 };

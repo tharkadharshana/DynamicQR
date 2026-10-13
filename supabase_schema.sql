@@ -24,6 +24,7 @@ create table if not exists public.profiles (
   timezone      text default 'Asia/Colombo',
   monthly_scans jsonb default '{}'::jsonb,
   payhere_order_id text,
+  brand_style   jsonb,  -- saved default design for new codes (migration 006)
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
@@ -46,6 +47,7 @@ create table if not exists public.qr_codes (
   destination_url     text,
   qr_type             text not null default 'url',
   kind                text not null default 'qr' check (kind in ('qr', 'link')),  -- 'link' = short link (migration 005)
+  gtin                text,  -- GS1 GTIN-14, unique when set (migration 006)
   is_dynamic          boolean not null default true,
   is_active           boolean not null default true,
   content_data        jsonb default '{}'::jsonb,
@@ -61,6 +63,7 @@ create table if not exists public.qr_codes (
 );
 
 create index if not exists qr_codes_user_uid_idx on public.qr_codes(user_uid);
+create unique index if not exists qr_codes_gtin_key on public.qr_codes(gtin) where gtin is not null;
 
 alter table public.qr_codes enable row level security;
 
@@ -158,3 +161,11 @@ create table if not exists public.addon_purchases (
 alter table public.addon_purchases enable row level security;
 
 -- No policies: RLS denies anon/authenticated. The API uses the service-role key, which bypasses RLS.
+
+-- ──────────────────────────────────────────────────────────────
+-- STORAGE: uploads (migration 006). Public read; writes only via API-signed upload URLs.
+-- ──────────────────────────────────────────────────────────────
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('files', 'files', true, 104857600, array['application/pdf', 'image/png', 'image/jpeg', 'image/webp'])
+on conflict (id) do update set public = excluded.public, file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;

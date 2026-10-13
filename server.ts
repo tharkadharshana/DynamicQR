@@ -17,7 +17,8 @@ export const supabase = createClient(supabaseUrl, supabaseKey);
 import crypto from 'crypto';
 import { customAlphabet } from 'nanoid';
 import logger from "./logger.js";
-import { renderGuestPage, pickLang } from './src/lib/guestPage.js';
+import { renderGuestPage, pickLang, appTarget, FILE_TYPES } from './src/lib/guestPage.js';
+import { gtinValid } from './src/lib/qrContent.js';
 import { buildDigest } from './src/lib/digest.js';
 import { PLANS, TRIAL_LIMITS, GRACE_DAYS, DEFAULT_ADDONS, PRICES, PAID_PLANS, PlanId, PaidPlan, PlanLimits, UserAddons, Currency, BillingInterval } from './src/lib/plans.js';
 
@@ -229,7 +230,9 @@ async function startServer() {
     }
   };
 
-  const QR_TYPES = ['url', 'vcard', 'wifi', 'text', 'email', 'page'];
+  const QR_TYPES = ['url', 'vcard', 'wifi', 'text', 'email', 'page', 'event'];
+  // GTIN-14 as stored (unique) and encoded in the GS1 Digital Link path. null clears it.
+  const normGtin = (g: unknown) => (g === null || g === '' ? null : gtinValid(g) ? String(g).padStart(14, '0') : undefined);
   // A short link is a dynamic URL row with kind='link': no QR image, counted against short_links only.
   const isLink = (q: any) => q.kind === 'link';
   // Per-object caps on top of the QR caps. Pages and forms are QR codes too; links are not.
@@ -446,6 +449,7 @@ async function startServer() {
           digestOptOut: !!userDoc?.digest_opt_out,
           agencyName: userDoc?.agency_name || '',
           agencyLogo: userDoc?.agency_logo || '',
+          brand_style: userDoc?.brand_style || null,
         },
         is_member: !!(req as any).user.isMember,
         custom_domain: await activeDomain(uid),
@@ -481,6 +485,9 @@ async function startServer() {
         ...(typeof req.body.agencyName === 'string' ? { agency_name: req.body.agencyName.slice(0, 80) } : {}),
         ...(typeof req.body.agencyLogo === 'string' && req.body.agencyLogo.length <= 65536 && (req.body.agencyLogo === '' || req.body.agencyLogo.startsWith('data:image/'))
           ? { agency_logo: req.body.agencyLogo } : {}),
+        // Saved design for new codes (colours, dots, logo, frame). Object or null; capped like content_data plus a logo.
+        ...(req.body.brand_style === null || (typeof req.body.brand_style === 'object' && !Array.isArray(req.body.brand_style) && JSON.stringify(req.body.brand_style).length <= 90000)
+          ? { brand_style: req.body.brand_style } : {}),
         updated_at: nowIso(),
       }).eq('id', uid);
       if (error) throw error;
@@ -565,6 +572,35 @@ async function startServer() {
     }
   });
 
+  // ── Uploads (PDF codes, page images) ──────────────────────────────────────
+  // The client uploads straight to Supabase Storage with a signed URL, so no file bytes pass through Vercel.
+  const FILES_BUCKET = 'files';
+  const UPLOAD_TYPES: Record<string, string> = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' };
+  app.post('/api/files', writeLimiter, authenticate, async (req, res) => {
+    try {
+      const uid = (req as any).user.uid;
+      const { type, size } = req.body || {};
+      if (!UPLOAD_TYPES[type]) return res.status(400).json({ error: `type must be one of ${Object.keys(UPLOAD_TYPES).join(', ')}` });
+      if (!Number.isInteger(size) || size <= 0) return res.status(400).json({ error: 'size must be the file size in bytes' });
+      const { limits } = await getLicense(uid);
+      // ponytail: the declared size is checked here; the bucket's own file_size_limit (100 MB, migration 006)
+      // is the hard cap. Upgrade path: check the stored object's size when the code is saved.
+      if (size > limits.file_mb * 1024 * 1024) {
+        return res.status(403).json({ error: `Your plan allows files up to ${limits.file_mb} MB`, code: 'LIMIT_FILE_SIZE', limit_mb: limits.file_mb });
+      }
+      const path = `${uid}/${crypto.randomUUID()}.${type}`;
+      const { data, error } = await supabase.storage.from(FILES_BUCKET).createSignedUploadUrl(path);
+      if (error || !data) throw error || new Error('No signed URL');
+      res.status(201).json({
+        path, token: data.token, signedUrl: data.signedUrl, contentType: UPLOAD_TYPES[type],
+        publicUrl: supabase.storage.from(FILES_BUCKET).getPublicUrl(path).data.publicUrl,
+      });
+    } catch (error: any) {
+      logger.error('Upload URL error:', { message: error?.message });
+      res.status(500).json({ error: 'Could not start the upload' });
+    }
+  });
+
   // Delete Account API
   app.delete('/api/user/account', writeLimiter, authenticate, sessionOwner, async (req, res) => {
     try {
@@ -572,6 +608,9 @@ async function startServer() {
       
       // Deleting the auth user cascades: profiles → qr_codes → qr_stats/scan_events, subscriptions, events.
       const slugs = (await rows('qr_codes', 'user_uid', uid)).map(q => q.slug);
+      // Uploaded files live under files/<uid>/. ponytail: one page of 1,000 objects; loop on `offset` if accounts grow past it.
+      const { data: files } = await supabase.storage.from(FILES_BUCKET).list(uid, { limit: 1000 });
+      if (files?.length) await supabase.storage.from(FILES_BUCKET).remove(files.map(f => `${uid}/${f.name}`));
       const { error } = await supabase.auth.admin.deleteUser(uid);
       if (error) throw error;
       res.json({ success: true });
@@ -944,8 +983,10 @@ async function startServer() {
       if (content_data !== undefined && JSON.stringify(content_data).length > CONTENT_MAX) {
         return res.status(400).json({ error: 'content_data is too large (max 20 KB)' });
       }
-      // Guest pages only exist as dynamic codes; every other type can be either.
-      const is_dynamic = type === 'page' || requestedDynamic !== false;
+      const gtin = req.body.gtin === undefined ? null : normGtin(req.body.gtin);
+      if (gtin === undefined) return res.status(400).json({ error: 'gtin must be a GTIN-8, 12, 13 or 14 with a valid check digit', code: 'INVALID_GTIN' });
+      // Guest pages, events and GS1 codes only exist as dynamic codes; every other type can be either.
+      const is_dynamic = type === 'page' || type === 'event' || !!gtin || requestedDynamic !== false;
       const uid = user.uid;
 
       // Input validation
@@ -1031,6 +1072,7 @@ async function startServer() {
         qr_type: type,
         // Only written when not the default, so plain creates keep working before migration 005.
         ...(kind === 'link' ? { kind } : {}),
+        ...(gtin ? { gtin } : {}),
         // Only written when set, so creates keep working before migration 004 adds the column.
         ...(typeof client === 'string' && client.trim() ? { client: client.trim().slice(0, 60) } : {}),
         content_data: content_data || null,
@@ -1058,6 +1100,7 @@ async function startServer() {
       };
 
       const { error: qrErr } = await supabase.from('qr_codes').insert(qrDoc);
+      if (qrErr?.code === '23505' && gtin) return res.status(409).json({ error: 'This GTIN is already used by another code', code: 'GTIN_TAKEN' });
       if (qrErr) throw new Error(`Database save failed: ${qrErr.message}`);
       const { error: statsErr } = await supabase.from('qr_stats').insert({ slug, ...statsDoc });
       if (statsErr) throw new Error(`Database save failed: ${statsErr.message}`);
@@ -1148,6 +1191,10 @@ async function startServer() {
         }
       }
 
+      if (req.body.gtin !== undefined) {
+        updateData.gtin = normGtin(req.body.gtin);
+        if (updateData.gtin === undefined) return res.status(400).json({ error: 'gtin must be a GTIN-8, 12, 13 or 14 with a valid check digit', code: 'INVALID_GTIN' });
+      }
       if (destination_url !== undefined) updateData.destination_url = destination_url;
       if (title !== undefined) updateData.title = title;
       if (style !== undefined) updateData.style = style;
@@ -1642,6 +1689,8 @@ async function startServer() {
         title: qr.title || '',
         qr_type: qr.qr_type || 'url',
         content_data: qr.qr_type && qr.qr_type !== 'url' ? qr.content_data || {} : undefined,
+        slug: qr.slug,
+        app: qr.qr_type === 'url' || !qr.qr_type ? qr.content_data?.app : undefined, // app-store code: device picks the store
         branding: !license.limits.remove_branding, // "Made with Scnr" on Free guest pages
         owner_plan: license.effectivePlan,
       };
@@ -1651,6 +1700,17 @@ async function startServer() {
       logger.error('Internal fetch error:', error);
       res.status(500).json({ error: 'Failed' });
     }
+  });
+
+  // GS1 Digital Link: the Worker resolves /01/<gtin> to the owning code's slug, then runs the normal gates.
+  app.get('/internal/gs1/:gtin', async (req, res) => {
+    if (req.headers['x-internal-secret'] !== process.env.INTERNAL_SECRET || !process.env.INTERNAL_SECRET) return res.status(401).send('Unauthorized');
+    const gtin = normGtin(req.params.gtin);
+    if (!gtin) return res.status(400).json({ error: 'Invalid GTIN' });
+    const { data, error } = await supabase.from('qr_codes').select('slug').eq('gtin', gtin).maybeSingle();
+    if (error) return res.status(500).json({ error: 'Failed' });
+    if (!data) return res.status(404).send('Not Found');
+    res.json({ slug: data.slug });
   });
 
   // Redirect Engine (Local Dev fallback)
@@ -1684,15 +1744,15 @@ async function startServer() {
         pickLang((req.query.lang as string) || null, req.headers['accept-language'] || null),
         `${req.protocol}://${req.headers.host}${req.originalUrl}`,
       );
-      if (rendered?.kind === 'vcard') {
-        res.setHeader('Content-Type', 'text/vcard; charset=utf-8');
+      if (rendered?.kind === 'vcard' || rendered?.kind === 'ics') {
+        res.setHeader('Content-Type', FILE_TYPES[rendered.kind]);
         res.setHeader('Content-Disposition', `attachment; filename="${rendered.filename}"`);
         return res.send(rendered.body);
       }
       if (rendered?.kind === 'redirect') return res.redirect(302, rendered.location);
       if (rendered?.kind === 'html') return res.type('html').send(rendered.body);
 
-      const destination = qrData.destination_url;
+      const destination = appTarget(qrData.content_data?.app, req.headers['user-agent'] || '') || qrData.destination_url;
       if (!destination) {
         return res.status(404).send('Destination not found');
       }

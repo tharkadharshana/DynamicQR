@@ -20,6 +20,16 @@ const UI: Record<Lang, Record<string, string>> = {
   ta: { offer: 'இன்றைய சலுகை', wifi: 'Wi-Fi', network: 'நெட்வொர்க்', password: 'கடவுச்சொல்', copy: 'நகலெடு', copied: 'நகலெடுக்கப்பட்டது', powered: 'Scnr மூலம் உருவாக்கப்பட்டது' },
 };
 
+export const FILE_TYPES = { vcard: 'text/vcard; charset=utf-8', ics: 'text/calendar; charset=utf-8' } as const;
+
+/** App-store code: iPhone/iPad → ios URL, Android → android URL, else '' (the caller falls back to destination_url). */
+export function appTarget(app: any, ua: string): string {
+  if (!app) return '';
+  if (/iPhone|iPad|iPod/i.test(ua)) return safeUrl(app.ios);
+  if (/Android/i.test(ua)) return safeUrl(app.android);
+  return '';
+}
+
 /** ?lang= wins, then Accept-Language, then English. */
 export function pickLang(query: string | null, acceptLanguage: string | null): Lang {
   const q = (query || '').toLowerCase();
@@ -144,5 +154,8 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('guestPage.ts'
   const ics = renderGuestPage({ qr_type: 'event', content_data: { title: 'Launch; party, 2', start: '2026-11-01T18:30', end: '2026-11-01T21:00', url: 'javascript:x' } }, 'en', 'https://s.lk/x') as any;
   assert(ics.kind === 'ics' && ics.body.includes('DTSTART:20261101T183000') && ics.body.includes('SUMMARY:Launch\\; party\\, 2'), 'ics: ' + ics.body);
   assert(!ics.body.includes('javascript') && ics.filename === 'Launchparty2.ics', 'ics: unsafe url dropped, filename');
+  const app = { ios: 'https://apps.apple.com/app/id1', android: 'https://play.google.com/store/apps/details?id=x' };
+  assert(appTarget(app, 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)') === app.ios && appTarget(app, 'Linux; Android 14') === app.android, 'app routing');
+  assert(appTarget(app, 'Windows NT 10.0') === '' && appTarget({ ios: 'javascript:x' }, 'iPhone') === '' && appTarget(null, 'iPhone') === '', 'app fallback');
   console.log('guestPage self-check ok');
 }
