@@ -4,10 +4,21 @@ import { supabase } from '../supabase';
 import QRCodeStyling from 'qr-code-styling';
 import { apiFetch } from '../lib/api';
 import { useUI } from '../shared/UIContext';
-import { getQRContent, stylingOptions, resizeLogo, SHORT_DOMAIN, shortHost } from '../lib/qrContent';
+import { getQRContent, stylingOptions, resizeLogo, SHORT_DOMAIN, shortHost, buildDestination, SOCIALS, gtinValid, FRAME_TEXTS, DOT_STYLES } from '../lib/qrContent';
 import { waLink } from '../lib/site';
+import { downloadQR } from '../components/QRViewerModal';
 
 const PREVIEW_SIZE = 180;
+const DEFAULT_STYLE: any = { dot_color: '#1A1916', bg_color: '#FFFFFF', dot_style: 'square', corner_style: 'square', error_correction: 'M', output_size: 400, logo_url: '' };
+
+// Tabs shown up front, then the "More" menu. Every URL kind is stored as qr_type 'url' with content_data.kind.
+const MAIN_TYPES: [string, string][] = [['url', 'Link'], ['pdf', 'PDF'], ['whatsapp', 'WhatsApp'], ['google_review', 'Google review'], ['gs1', 'GS1'], ['vcard', 'vCard']];
+const MORE_TYPES: [string, string][] = [['instagram', 'Instagram'], ['facebook', 'Facebook'], ['tiktok', 'TikTok'], ['youtube', 'YouTube'], ['linkedin', 'LinkedIn'], ['x', 'X'],
+  ['phone', 'Phone'], ['sms', 'SMS'], ['location', 'Location'], ['event', 'Event'], ['app', 'App store'], ['wifi', 'Wi-Fi'], ['text', 'Text'], ['email', 'Email']];
+const URL_KINDS = ['url', 'pdf', 'whatsapp', 'google_review', 'gs1', 'app', 'phone', 'sms', 'location', ...Object.keys(SOCIALS)];
+// Kinds whose destination is built from their inputs (the rest take a typed URL).
+const DERIVED_KINDS = ['pdf', 'google_review', 'phone', 'sms', 'location', ...Object.keys(SOCIALS)];
+const DYNAMIC_ONLY = ['gs1', 'event', 'app'];
 
 export default function CreateQR() {
   const { id } = useParams();
@@ -18,6 +29,9 @@ export default function CreateQR() {
   const [isDynamic, setIsDynamic] = useState(true);
   const [urlError, setUrlError] = useState(false);
   const [planData, setPlanData] = useState<any>(null);
+  const [gtin, setGtin] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const brandApplied = useRef(false);
   
   const [formData, setFormData] = useState({
     title: '',
@@ -27,15 +41,7 @@ export default function CreateQR() {
     content_data: {} as any,
     slug: '',
     is_active: true,
-    style: {
-      dot_color: '#1A1916',
-      bg_color: '#FFFFFF',
-      dot_style: 'square',
-      corner_style: 'square',
-      error_correction: 'M',
-      output_size: 400,
-      logo_url: ''
-    },
+    style: { ...DEFAULT_STYLE },
     options: {
       password_protect: false,
       password: '',
@@ -76,7 +82,8 @@ export default function CreateQR() {
           // Guest pages are edited in the Restaurant Kit.
           if (data.qr_type === 'page') { navigate(`/kit?edit=${id}`, { replace: true }); return; }
 
-          setQrType(data.content_data?.wa_phone ? 'whatsapp' : data.qr_type || 'url');
+          setQrType(data.content_data?.kind || (data.content_data?.wa_phone ? 'whatsapp' : data.qr_type || 'url'));
+          setGtin(data.gtin || '');
           setIsDynamic(data.is_dynamic !== false);
           setFormData({
             title: data.title || '',
@@ -86,15 +93,7 @@ export default function CreateQR() {
             content_data: data.content_data || {},
             slug: data.slug || '',
             is_active: data.is_active !== false,
-            style: {
-              dot_color: data.style?.dot_color || '#1A1916',
-              bg_color: data.style?.bg_color || '#FFFFFF',
-              dot_style: data.style?.dot_style || 'square',
-              corner_style: data.style?.corner_style || 'square',
-              error_correction: data.style?.error_correction || 'M',
-              output_size: data.style?.output_size || 400,
-              logo_url: data.style?.logo_url || ''
-            },
+            style: { ...DEFAULT_STYLE, ...data.style },
             options: {
               password_protect: !!data.has_password,
               password: '',
@@ -130,24 +129,42 @@ export default function CreateQR() {
     }
   };
 
+  // New codes start from the account's saved brand style, once.
+  useEffect(() => {
+    const brand = planData?.profile?.brand_style;
+    if (id || !brand || brandApplied.current) return;
+    brandApplied.current = true;
+    setFormData(f => ({ ...f, style: { ...DEFAULT_STYLE, ...brand } }));
+  }, [planData, id]);
+
   useEffect(() => {
     // Static Wi-Fi codes let phones join directly; dynamic ones show a page with the password.
     if (qrType === 'wifi') setIsDynamic(false);
+    if (DYNAMIC_ONLY.includes(qrType)) setIsDynamic(true);
   }, [qrType]);
+
+  const isUrlKind = URL_KINDS.includes(qrType);
+  const dbType = isUrlKind ? 'url' : qrType;
+  const dest = DERIVED_KINDS.includes(qrType) ? buildDestination(qrType, formData.content_data) : formData.destination_url;
+  const cd = formData.content_data || {};
+  const setCd = (patch: any) => setFormData(f => ({ ...f, content_data: { ...f.content_data, ...patch } }));
+  const setStyle = (patch: any) => setFormData(f => ({ ...f, style: { ...f.style, ...patch } }));
+  const pickType = (t: string) => { setQrType(t); setFormData(f => ({ ...f, qr_type: URL_KINDS.includes(t) ? 'url' : t })); };
 
   useEffect(() => {
     if (qrCodeRef.current) {
       const content = getQRContent({
         is_dynamic: isDynamic,
         slug: formData.slug || 'preview',
-        qr_type: qrType === 'whatsapp' ? 'url' : qrType,
+        qr_type: dbType,
         content_data: formData.content_data,
-        destination_url: formData.destination_url,
+        destination_url: dest,
+        gtin: qrType === 'gs1' && gtinValid(gtin) ? gtin : undefined,
       }) || SHORT_DOMAIN;
 
       qrCodeRef.current.update(stylingOptions(formData.style, content, PREVIEW_SIZE));
     }
-  }, [formData.destination_url, formData.style, qrType, formData.content_data, isDynamic, formData.slug]);
+  }, [dest, formData.style, qrType, dbType, formData.content_data, isDynamic, formData.slug, gtin]);
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -171,39 +188,46 @@ export default function CreateQR() {
       showToast('error', 'Enter a WhatsApp number with country code, e.g. +94 77 123 4567');
       return;
     }
-    if (qrType === 'url' && (!formData.destination_url || !formData.destination_url.startsWith('http'))) {
+    if (['url', 'app', 'gs1'].includes(qrType) && !/^https?:\/\//.test(formData.destination_url || '')) {
       setUrlError(true);
       return;
     }
     setUrlError(false);
-    
+    if (DERIVED_KINDS.includes(qrType) && !dest) {
+      showToast('error', qrType === 'pdf' ? 'Upload a PDF first.' : 'Fill in the required fields for this code.');
+      return;
+    }
+    if (qrType === 'gs1' && !gtinValid(gtin)) {
+      showToast('error', 'Enter a valid GTIN (8, 12, 13 or 14 digits).');
+      return;
+    }
+    if (qrType === 'event' && !(cd.title && cd.start)) {
+      showToast('error', 'An event needs a title and a start time.');
+      return;
+    }
+
     if (!(await supabase.auth.getSession()).data.session) return;
     setLoading(true);
 
+    // URL kinds carry their kind so the editor reopens on the right tab; Link and WhatsApp keep the old shape.
+    const kind = isUrlKind && qrType !== 'url' && qrType !== 'whatsapp' ? qrType : undefined;
+    const body = {
+      ...formData,
+      qr_type: dbType,
+      destination_url: dest,
+      content_data: { ...formData.content_data, kind },
+      is_dynamic: isDynamic,
+      // On edit, null clears a GTIN when the code stops being a GS1 code.
+      ...(qrType === 'gs1' ? { gtin } : id ? { gtin: null } : {}),
+    };
     try {
-      if (id) {
-        // Update via API
-        await apiFetch(`/api/qr/${id}`, {
-          method: 'PUT',
-          body: JSON.stringify({
-            ...formData,
-            is_dynamic: isDynamic
-          })
-        });
-      } else {
-        // Create via exact schema backend API
-        await apiFetch('/api/qr', {
-          method: 'POST',
-          body: JSON.stringify({
-            ...formData,
-            is_dynamic: isDynamic
-          })
-        });
-      }
+      await apiFetch(id ? `/api/qr/${id}` : '/api/qr', { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) });
       navigate('/');
     } catch (error: any) {
       console.error('Error saving QR code:', error);
-      if (error.status === 403) {
+      if (error.status === 409 || (error.status === 400 && qrType === 'gs1')) {
+        showToast('error', error.message);
+      } else if (error.status === 403) {
         showToast('error', error.message || 'Plan limit reached. Please upgrade.');
         navigate('/billing');
       } else {
@@ -245,17 +269,47 @@ export default function CreateQR() {
     const size = Number(formData.style.output_size) || 1200;
     qr.update({ width: size, height: size });
     try {
-      await qr.download({ name: `scnr-qr-${size}px`, extension });
+      await downloadQR(qr, formData.style, size, `scnr-qr-${size}px`, extension);
+    } catch {
+      showToast('error', 'Failed to generate download');
     } finally {
       qr.update({ width: PREVIEW_SIZE, height: PREVIEW_SIZE });
     }
   };
 
+  // PDF goes straight to Storage through a signed upload URL; replacing it keeps the same code.
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploading(true);
+    try {
+      const { path, token, publicUrl } = await apiFetch('/api/files', { method: 'POST', body: JSON.stringify({ type: 'pdf', size: file.size, name: file.name }) });
+      const { error } = await supabase.storage.from('files').uploadToSignedUrl(path, token, file, { contentType: 'application/pdf' });
+      if (error) throw error;
+      setCd({ file_url: publicUrl, file_name: file.name });
+    } catch (err: any) {
+      showToast('error', err.status === 403 ? err.message || 'That file is over your plan limit.' : 'Upload failed. Try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const saveBrandStyle = async () => {
+    try {
+      await apiFetch('/api/user/profile', { method: 'PUT', body: JSON.stringify({ brand_style: formData.style }) });
+      showToast('success', 'Saved. New codes will start with this design.');
+    } catch {
+      showToast('error', 'Could not save your default design.');
+    }
+  };
+
   const getShortUrl = () => {
-    if (qrType === 'url' || qrType === 'whatsapp') {
-      if (!formData.destination_url) return 'Enter content to generate QR';
-      let full = formData.destination_url;
-      return '→ ' + (full.length > 55 ? full.slice(0, 55) + '…' : full);
+    if (isUrlKind) {
+      if (!dest) return 'Enter content to generate QR';
+      return '→ ' + (dest.length > 55 ? dest.slice(0, 55) + '…' : dest);
+    } else if (qrType === 'event') {
+      return '→ Calendar event' + (cd.title ? `: ${cd.title}` : '');
     } else if (qrType === 'vcard') {
       return '→ vCard Contact';
     } else if (qrType === 'wifi') {
@@ -297,29 +351,130 @@ export default function CreateQR() {
               <div className="card mb16">
                 <div className="card-title">QR code type</div>
                 <div className="qr-type-tabs">
-                  <button className={`qr-type-tab ${qrType === 'url' ? 'active' : ''}`} onClick={() => { setQrType('url'); setFormData({...formData, qr_type: 'url'}); }}>URL</button>
-                  <button className={`qr-type-tab ${qrType === 'vcard' ? 'active' : ''}`} onClick={() => { setQrType('vcard'); setFormData({...formData, qr_type: 'vcard'}); }}>vCard</button>
-                  <button className={`qr-type-tab ${qrType === 'wifi' ? 'active' : ''}`} onClick={() => { setQrType('wifi'); setFormData({...formData, qr_type: 'wifi'}); }}>WiFi</button>
-                  <button className={`qr-type-tab ${qrType === 'text' ? 'active' : ''}`} onClick={() => { setQrType('text'); setFormData({...formData, qr_type: 'text'}); }}>Text</button>
-                  <button className={`qr-type-tab ${qrType === 'email' ? 'active' : ''}`} onClick={() => { setQrType('email'); setFormData({...formData, qr_type: 'email'}); }}>Email</button>
-                  <button className={`qr-type-tab ${qrType === 'whatsapp' ? 'active' : ''}`} onClick={() => { setQrType('whatsapp'); setFormData({...formData, qr_type: 'url'}); }}>WhatsApp</button>
-                  <button className="qr-type-tab" onClick={() => navigate('/kit')}>Restaurant Kit →</button>
+                  {MAIN_TYPES.map(([t, label]) => (
+                    <button key={t} className={`qr-type-tab ${qrType === t ? 'active' : ''}`} onClick={() => pickType(t)}>{label}</button>
+                  ))}
+                  <button className="qr-type-tab" onClick={() => navigate('/kit')}>Page →</button>
+                  <select className={`qr-type-tab ${MORE_TYPES.some(([t]) => t === qrType) ? 'active' : ''}`} aria-label="More code types"
+                    value={MORE_TYPES.some(([t]) => t === qrType) ? qrType : ''} onChange={(e) => e.target.value && pickType(e.target.value)}>
+                    <option value="">More ▾</option>
+                    {MORE_TYPES.map(([t, label]) => <option key={t} value={t}>{label}</option>)}
+                  </select>
                 </div>
 
-                {/* URL fields */}
-                {qrType === 'url' && (
+                {/* Link, App store fallback and GS1 product page all take a typed URL */}
+                {['url', 'app', 'gs1'].includes(qrType) && (
                   <div id="fields-url">
+                    {qrType === 'gs1' && (
+                      <div className="grid-2 mb16">
+                        <div className="form-section" style={{ marginBottom: 0 }}>
+                          <label className="form-label" htmlFor="gtin">GTIN (barcode number) *</label>
+                          <input id="gtin" inputMode="numeric" className={`form-input ${gtin && !gtinValid(gtin) ? 'error' : ''}`} placeholder="4006381333931" value={gtin}
+                            onChange={(e) => setGtin(e.target.value.replace(/\D/g, '').slice(0, 14))} />
+                          {gtin && !gtinValid(gtin) && <div className="error-msg" style={{ display: 'block' }}>Check the number: a GTIN has 8, 12, 13 or 14 numbers and a valid check digit.</div>}
+                        </div>
+                        <div className="form-section" style={{ marginBottom: 0 }}>
+                          <label className="form-label" htmlFor="gs1-batch">Batch or lot <span style={{ color: 'var(--text3)', fontWeight: 'normal' }}>(optional)</span></label>
+                          <input id="gs1-batch" className="form-input" placeholder="L2026-01" value={cd.batch || ''} onChange={(e) => setCd({ batch: e.target.value })} />
+                        </div>
+                      </div>
+                    )}
+                    {qrType === 'app' && (
+                      <>
+                        <div className="form-section"><label className="form-label" htmlFor="app-ios">App Store link (iPhone)</label>
+                          <input id="app-ios" type="url" className="form-input" placeholder="https://apps.apple.com/app/..." value={cd.app?.ios || ''} onChange={(e) => setCd({ app: { ...cd.app, ios: e.target.value } })} /></div>
+                        <div className="form-section"><label className="form-label" htmlFor="app-android">Google Play link (Android)</label>
+                          <input id="app-android" type="url" className="form-input" placeholder="https://play.google.com/store/apps/details?id=..." value={cd.app?.android || ''} onChange={(e) => setCd({ app: { ...cd.app, android: e.target.value } })} /></div>
+                      </>
+                    )}
                     <div className="form-section">
-                      <label className="form-label">Destination URL *</label>
-                      <input 
-                        type="url" 
-                        className={`form-input ${urlError ? 'error' : ''}`} 
-                        placeholder="https://yourwebsite.com" 
+                      <label className="form-label">{qrType === 'app' ? 'Link for other devices *' : qrType === 'gs1' ? 'Product page URL *' : 'Destination URL *'}</label>
+                      <input
+                        type="url"
+                        className={`form-input ${urlError ? 'error' : ''}`}
+                        placeholder="https://yourwebsite.com"
                         value={formData.destination_url}
                         onChange={(e) => setFormData({...formData, destination_url: e.target.value})}
                       />
                       {urlError && <div className="error-msg" style={{ display: 'block' }}>Please enter a valid URL starting with https://</div>}
                     </div>
+                  </div>
+                )}
+
+                {qrType === 'pdf' && (
+                  <div className="form-section">
+                    <label className="form-label" htmlFor="pdf-file">PDF file *</label>
+                    {cd.file_url && <div style={{ fontSize: '13px', color: 'var(--text2)', marginBottom: '8px' }}>Current file: <a href={cd.file_url} target="_blank" rel="noreferrer">{cd.file_name || 'PDF'}</a> (uploading a new one keeps the same code)</div>}
+                    <input id="pdf-file" type="file" accept="application/pdf" className="form-input" disabled={uploading} onChange={handlePdfUpload} />
+                    {uploading && <div style={{ fontSize: '12px', color: 'var(--text3)', marginTop: '6px' }}>Uploading…</div>}
+                  </div>
+                )}
+
+                {qrType === 'google_review' && (
+                  <div className="form-section">
+                    <label className="form-label" htmlFor="place-id">Google Place ID *</label>
+                    <input id="place-id" className="form-input" placeholder="ChIJ..." value={cd.place_id || ''} onChange={(e) => setCd({ place_id: e.target.value })} />
+                    <a href="https://developers.google.com/maps/documentation/places/web-service/place-id" target="_blank" rel="noreferrer" style={{ fontSize: '12px' }}>Find your Place ID</a>
+                  </div>
+                )}
+
+                {SOCIALS[qrType] && (
+                  <div className="form-section">
+                    <label className="form-label" htmlFor="handle">Username or profile link *</label>
+                    <input id="handle" className="form-input" placeholder="@yourbusiness" value={cd.handle || ''} onChange={(e) => setCd({ handle: e.target.value })} />
+                  </div>
+                )}
+
+                {(qrType === 'phone' || qrType === 'sms') && (
+                  <>
+                    <div className="form-section">
+                      <label className="form-label" htmlFor="tel">Phone number *</label>
+                      <input id="tel" type="tel" className="form-input" placeholder="+94 77 123 4567" value={cd.phone || ''} onChange={(e) => setCd({ phone: e.target.value })} />
+                    </div>
+                    {qrType === 'sms' && (
+                      <div className="form-section">
+                        <label className="form-label" htmlFor="sms-body">Message</label>
+                        <input id="sms-body" className="form-input" placeholder="Hi! I'd like to book a table" value={cd.body || ''} onChange={(e) => setCd({ body: e.target.value })} />
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {qrType === 'location' && (
+                  <>
+                    <div className="form-section">
+                      <label className="form-label" htmlFor="loc-address">Address or place name</label>
+                      <input id="loc-address" className="form-input" placeholder="Galle Face Green, Colombo" value={cd.address || ''} onChange={(e) => setCd({ address: e.target.value })} />
+                    </div>
+                    <div className="grid-2 mb16">
+                      <div className="form-section" style={{ marginBottom: 0 }}>
+                        <label className="form-label" htmlFor="loc-lat">Or latitude</label>
+                        <input id="loc-lat" inputMode="decimal" className="form-input" placeholder="6.9271" value={cd.lat ?? ''} onChange={(e) => setCd({ lat: e.target.value })} />
+                      </div>
+                      <div className="form-section" style={{ marginBottom: 0 }}>
+                        <label className="form-label" htmlFor="loc-lng">Longitude</label>
+                        <input id="loc-lng" inputMode="decimal" className="form-input" placeholder="79.8612" value={cd.lng ?? ''} onChange={(e) => setCd({ lng: e.target.value })} />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {qrType === 'event' && (
+                  <div id="fields-event">
+                    <div className="form-section"><label className="form-label" htmlFor="ev-title">Event name *</label>
+                      <input id="ev-title" className="form-input" placeholder="Launch night" value={cd.title || ''} onChange={(e) => setCd({ title: e.target.value })} /></div>
+                    <div className="grid-2 mb16">
+                      <div className="form-section" style={{ marginBottom: 0 }}><label className="form-label" htmlFor="ev-start">Starts *</label>
+                        <input id="ev-start" type="datetime-local" className="form-input" value={cd.start || ''} onChange={(e) => setCd({ start: e.target.value })} /></div>
+                      <div className="form-section" style={{ marginBottom: 0 }}><label className="form-label" htmlFor="ev-end">Ends</label>
+                        <input id="ev-end" type="datetime-local" className="form-input" value={cd.end || ''} onChange={(e) => setCd({ end: e.target.value })} /></div>
+                    </div>
+                    <div className="form-section"><label className="form-label" htmlFor="ev-loc">Location</label>
+                      <input id="ev-loc" className="form-input" placeholder="Hotel ballroom, Colombo 03" value={cd.location || ''} onChange={(e) => setCd({ location: e.target.value })} /></div>
+                    <div className="form-section"><label className="form-label" htmlFor="ev-desc">Description</label>
+                      <textarea id="ev-desc" className="form-input" rows={3} value={cd.description || ''} onChange={(e) => setCd({ description: e.target.value })} /></div>
+                    <div className="form-section"><label className="form-label" htmlFor="ev-url">Event link</label>
+                      <input id="ev-url" type="url" className="form-input" placeholder="https://..." value={cd.url || ''} onChange={(e) => setCd({ url: e.target.value })} /></div>
                   </div>
                 )}
 
@@ -402,13 +557,18 @@ export default function CreateQR() {
                   <span style={{ background: '#E85D3A', color: 'white', width: '24px', height: '24px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'bold' }}>2</span>
                   <span style={{ textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text3)', fontSize: '13px' }}>STYLE</span>
                 </div>
-                <button 
-                  className="btn btn-ghost" 
-                  style={{ padding: '4px 12px', fontSize: '13px', border: '1px solid var(--border)', borderRadius: '6px' }} 
-                  onClick={() => setFormData({...formData, style: { dot_color: '#1A1916', bg_color: '#FFFFFF', dot_style: 'square', corner_style: 'square', error_correction: 'M', output_size: 400, logo_url: '' }})}
-                >
-                  Reset style
-                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button className="btn btn-ghost" style={{ padding: '4px 12px', fontSize: '13px', border: '1px solid var(--border)', borderRadius: '6px' }} onClick={saveBrandStyle}>
+                    Save as my default
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    style={{ padding: '4px 12px', fontSize: '13px', border: '1px solid var(--border)', borderRadius: '6px' }}
+                    onClick={() => setFormData({...formData, style: { ...DEFAULT_STYLE }})}
+                  >
+                    Reset style
+                  </button>
+                </div>
               </div>
 
               <div className="form-section">
@@ -460,26 +620,31 @@ export default function CreateQR() {
               </div>
 
               <div style={{ display: 'flex', gap: '16px' }}>
-                <div className="form-section" style={{ flex: 2 }}>
-                  <label className="form-label">Dot style</label>
-                  <div className="style-grid">
-                    <div className={`style-opt ${formData.style.dot_style === 'square' ? 'selected' : ''}`} onClick={() => setFormData({...formData, style: {...formData.style, dot_style: 'square'}})} title="Square">
-                      <svg viewBox="0 0 28 28" fill="var(--text2)"><rect x="2" y="2" width="6" height="6"/><rect x="20" y="2" width="6" height="6"/><rect x="2" y="20" width="6" height="6"/><rect x="11" y="2" width="6" height="6"/><rect x="2" y="11" width="6" height="6"/><rect x="20" y="20" width="6" height="6"/><rect x="11" y="20" width="6" height="6"/><rect x="20" y="11" width="6" height="6"/><rect x="11" y="11" width="6" height="6"/></svg>
-                    </div>
-                    <div className={`style-opt ${formData.style.dot_style === 'dots' ? 'selected' : ''}`} onClick={() => setFormData({...formData, style: {...formData.style, dot_style: 'dots'}})} title="Dots">
-                      <svg viewBox="0 0 28 28" fill="var(--text2)"><circle cx="5" cy="5" r="3"/><circle cx="23" cy="5" r="3"/><circle cx="5" cy="23" r="3"/><circle cx="14" cy="5" r="3"/><circle cx="5" cy="14" r="3"/><circle cx="23" cy="23" r="3"/><circle cx="14" cy="23" r="3"/><circle cx="23" cy="14" r="3"/><circle cx="14" cy="14" r="3"/></svg>
-                    </div>
-                    <div className={`style-opt ${formData.style.dot_style === 'rounded' ? 'selected' : ''}`} onClick={() => setFormData({...formData, style: {...formData.style, dot_style: 'rounded'}})} title="Rounded">
-                      <svg viewBox="0 0 28 28" fill="var(--text2)"><rect x="2" y="2" width="6" height="6" rx="2"/><rect x="20" y="2" width="6" height="6" rx="2"/><rect x="2" y="20" width="6" height="6" rx="2"/><rect x="11" y="2" width="6" height="6" rx="2"/><rect x="2" y="11" width="6" height="6" rx="2"/><rect x="20" y="20" width="6" height="6" rx="2"/><rect x="11" y="20" width="6" height="6" rx="2"/><rect x="20" y="11" width="6" height="6" rx="2"/><rect x="11" y="11" width="6" height="6" rx="2"/></svg>
-                    </div>
-                    <div className={`style-opt ${formData.style.dot_style === 'diamond' ? 'selected' : ''}`} onClick={() => setFormData({...formData, style: {...formData.style, dot_style: 'diamond'}})} title="Diamond">
-                      <svg viewBox="0 0 28 28" fill="var(--text2)"><polygon points="5,2 8,5 5,8 2,5"/><polygon points="23,2 26,5 23,8 20,5"/><polygon points="5,20 8,23 5,26 2,23"/><polygon points="14,2 17,5 14,8 11,5"/><polygon points="5,11 8,14 5,17 2,14"/><polygon points="23,20 26,23 23,26 20,23"/><polygon points="14,20 17,23 14,26 11,23"/><polygon points="23,11 26,14 23,17 20,14"/><polygon points="14,11 17,14 14,17 11,14"/></svg>
-                    </div>
-                    <div className={`style-opt ${formData.style.dot_style === 'star' ? 'selected' : ''}`} onClick={() => setFormData({...formData, style: {...formData.style, dot_style: 'star'}})} title="Star">
-                      <svg viewBox="0 0 28 28" fill="var(--text2)"><text x="2" y="9" fontSize="8">★</text><text x="20" y="9" fontSize="8">★</text><text x="11" y="9" fontSize="8">★</text><text x="2" y="18" fontSize="8">★</text><text x="20" y="18" fontSize="8">★</text><text x="11" y="18" fontSize="8">★</text><text x="2" y="27" fontSize="8">★</text><text x="20" y="27" fontSize="8">★</text><text x="11" y="27" fontSize="8">★</text></svg>
-                    </div>
-                  </div>
+                <div className="form-section" style={{ flex: 1 }}>
+                  <label className="form-label" htmlFor="dot-style">Dot style</label>
+                  <select id="dot-style" className="form-input" value={({ diamond: 'classy', star: 'classy-rounded' } as any)[formData.style.dot_style] || formData.style.dot_style}
+                    onChange={(e) => setStyle({ dot_style: e.target.value })}>
+                    {DOT_STYLES.map(d => <option key={d} value={d}>{d[0].toUpperCase() + d.slice(1).replace('-', ' ')}</option>)}
+                  </select>
                 </div>
+                <div className="form-section" style={{ flex: 1 }}>
+                  <label className="form-label" htmlFor="corner-dot">Corner dot</label>
+                  <select id="corner-dot" className="form-input" value={formData.style.corner_dot_style || ''} onChange={(e) => setStyle({ corner_dot_style: e.target.value || undefined })}>
+                    <option value="">Match corners</option>
+                    <option value="square">Square</option>
+                    <option value="dot">Dot</option>
+                  </select>
+                </div>
+                <div className="form-section" style={{ flex: 1 }}>
+                  <label className="form-label" htmlFor="qr-shape">Shape</label>
+                  <select id="qr-shape" className="form-input" value={formData.style.shape || 'square'} onChange={(e) => setStyle({ shape: e.target.value })}>
+                    <option value="square">Square</option>
+                    <option value="circle">Circle</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '16px' }}>
                 <div className="form-section" style={{ flex: 1 }}>
                   <label className="form-label">Corner style</label>
                   <div className="style-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
@@ -494,6 +659,41 @@ export default function CreateQR() {
                     </div>
                   </div>
                 </div>
+                <div className="form-section" style={{ flex: 1 }}>
+                  <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <input type="checkbox" checked={!!formData.style.gradient_color}
+                      onChange={(e) => setStyle({ gradient_color: e.target.checked ? '#E85D3A' : undefined })} />
+                    Gradient
+                  </label>
+                  {formData.style.gradient_color && (
+                    <input type="color" className="form-input" aria-label="Gradient end colour" value={formData.style.gradient_color}
+                      style={{ height: '36px', padding: '4px', cursor: 'pointer' }} onChange={(e) => setStyle({ gradient_color: e.target.value })} />
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '16px' }}>
+                <div className="form-section" style={{ flex: 2 }}>
+                  <label className="form-label" htmlFor="qr-frame">Frame</label>
+                  <select id="qr-frame" className="form-input"
+                    value={!formData.style.frame ? '' : FRAME_TEXTS.includes(formData.style.frame.text) ? formData.style.frame.text : 'custom'}
+                    onChange={(e) => setStyle({ frame: e.target.value ? { color: formData.style.frame?.color || '#1A1916', text: e.target.value === 'custom' ? '' : e.target.value } : undefined })}>
+                    <option value="">No frame</option>
+                    {FRAME_TEXTS.map(t => <option key={t} value={t}>{t}</option>)}
+                    <option value="custom">Custom text…</option>
+                  </select>
+                  {formData.style.frame && !FRAME_TEXTS.includes(formData.style.frame.text) && (
+                    <input className="form-input" style={{ marginTop: '8px' }} maxLength={24} placeholder="Your call to action" value={formData.style.frame.text}
+                      onChange={(e) => setStyle({ frame: { ...formData.style.frame, text: e.target.value } })} />
+                  )}
+                </div>
+                {formData.style.frame && (
+                  <div className="form-section" style={{ flex: 1 }}>
+                    <label className="form-label" htmlFor="frame-color">Frame colour</label>
+                    <input id="frame-color" type="color" className="form-input" value={formData.style.frame.color || '#1A1916'}
+                      style={{ height: '36px', padding: '4px', cursor: 'pointer' }} onChange={(e) => setStyle({ frame: { ...formData.style.frame, color: e.target.value } })} />
+                  </div>
+                )}
               </div>
 
               <div className="form-section">
@@ -571,7 +771,7 @@ export default function CreateQR() {
                 </div>
                 <button 
                   className={`toggle ${isDynamic ? 'on' : ''}`} 
-                  onClick={() => setIsDynamic(!isDynamic)}
+                  onClick={() => !DYNAMIC_ONLY.includes(qrType) && setIsDynamic(!isDynamic)}
                 ></button>
               </div>
 
@@ -719,6 +919,7 @@ export default function CreateQR() {
                 onClick={() => {
                   setQrType('url');
                   setIsDynamic(true);
+                  setGtin('');
                   setFormData({
                     title: '',
                     client: '',
@@ -727,15 +928,7 @@ export default function CreateQR() {
                     qr_type: 'url',
                     is_active: true,
                     content_data: {},
-                    style: {
-                      dot_color: '#1A1916',
-                      bg_color: '#FFFFFF',
-                      dot_style: 'square',
-                      corner_style: 'square',
-                      error_correction: 'M',
-                      output_size: 400,
-                      logo_url: ''
-                    },
+                    style: { ...DEFAULT_STYLE },
                     options: {
                       password_protect: false,
                       password: '',
@@ -770,6 +963,12 @@ export default function CreateQR() {
             <div className="qr-preview-frame">
               <div ref={canvasRef} id="preview-canvas"></div>
             </div>
+            {/* The frame is added to downloads only; this band previews its text and colour. */}
+            {formData.style.frame && (
+              <div style={{ background: formData.style.frame.color || '#1A1916', color: '#fff', fontWeight: 700, textAlign: 'center', padding: '6px', borderRadius: '6px', margin: '-8px 0 12px' }}>
+                {formData.style.frame.text || 'Scan me'}
+              </div>
+            )}
             <div className="qr-preview-slug" id="preview-slug">
               {isDynamic ? `${shortHost()}/${formData.slug || '———'}` : 'Static QR'}
             </div>

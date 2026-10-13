@@ -1,9 +1,36 @@
 import React, { useEffect, useRef } from 'react';
 import QRCodeStyling from 'qr-code-styling';
 import { useUI } from '../shared/UIContext';
-import { getQRContent, stylingOptions, shortHost } from '../lib/qrContent';
+import { getQRContent, stylingOptions, shortHost, framedSvg } from '../lib/qrContent';
 
 export { getQRContent };
+
+/** Save the code as a file. With a frame, the SVG is wrapped by framedSvg and, for PNG, drawn onto a canvas. */
+export async function downloadQR(q: QRCodeStyling, style: any, size: number, name: string, extension: 'png' | 'svg') {
+  if (!style?.frame) return q.download({ name, extension });
+  const raw = await q.getRawData('svg');
+  let blob = new Blob([framedSvg(await (raw as Blob).text(), size, style.frame)], { type: 'image/svg+xml' });
+  if (extension === 'png') {
+    const src = URL.createObjectURL(blob);
+    try {
+      const img = new Image();
+      img.src = src;
+      await img.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      canvas.getContext('2d')!.drawImage(img, 0, 0);
+      blob = await new Promise<Blob>((ok, fail) => canvas.toBlob(b => (b ? ok(b) : fail(new Error('PNG export failed'))), 'image/png'));
+    } finally {
+      URL.revokeObjectURL(src);
+    }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${name}.${extension}`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
 
 const VIEW_SIZE = 280;
 
@@ -27,7 +54,7 @@ export default function QRViewerModal({ qr, onClose }: { qr: any; onClose: () =>
     if (!q) return;
     try {
       q.update({ width: 1200, height: 1200 });
-      await q.download({ name: `${(qr.title || qr.slug).replace(/[^a-z0-9]/gi, '_')}-qr`, extension: 'png' });
+      await downloadQR(q, qr.style, 1200, `${(qr.title || qr.slug).replace(/[^a-z0-9]/gi, '_')}-qr`, 'png');
     } catch {
       showToast('error', 'Failed to generate download');
     } finally {
