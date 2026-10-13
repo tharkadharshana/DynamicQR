@@ -47,7 +47,9 @@
  *      (302, 404, counted with label and CTR, not a scan), Save as contact, template save
  *  31. Short links: custom back-half (edge, reserved, api prefix, 409, charset), tag/kind/folder
  *      filters, bulk deactivate/folder/tag/delete with a foreign slug, UTM append
- *  32. Cleanup
+ *  32. Forms: Free cap 0, definition check, edge render + honeypot, valid answer, missing field,
+ *      honeypot dropped, unknown field stripped, CSV, not a scan, 6th answer 429, export, delete
+ *  33. Cleanup
  */
 import 'dotenv/config';
 import crypto from 'crypto';
@@ -55,7 +57,7 @@ import { createClient } from '@supabase/supabase-js';
 import worker from './worker/worker.js';
 import { waLink } from './src/lib/site.ts';
 import { getQRContent, setShortDomain, buildDestination, gtinValid } from './src/lib/qrContent.ts';
-import { csvToObjects } from './src/lib/csv.ts';
+import { csvToObjects, toCsv } from './src/lib/csv.ts';
 import { PAGE_TEMPLATES } from './src/lib/pageTemplates.ts';
 
 // ─── config ──────────────────────────────────────────────────────────────────
@@ -1560,8 +1562,53 @@ async function run() {
     check('UTM appended without clobbering existing params', wu.location === 'https://example.com/p?utm_source=keep&x=1&utm_medium=print&utm_campaign=avurudu', `got ${wu.location}`);
   }
 
-  // ── 32. Cleanup ──────────────────────────────────────────────────────────────
-  section('32. Cleanup');
+  // ── 32. Forms: definition, edge submit, validation, spam control, owner API ──
+  section('32. Forms — cap on Free, submit at the edge, validation, honeypot, 429, CSV, export');
+  {
+    const def = { title: 'QA feedback', intro: 'Tell us', submit_label: 'Send', thank_you: 'Thanks, QA!', fields: [
+      { id: 'name', type: 'text', label: 'Name', required: true },
+      { id: 'email', type: 'email', label: 'Email' },
+      { id: 'stars', type: 'rating', label: 'Stars' },
+    ] };
+    await admin.from('profiles').update({ plan: 'free', plan_expires_at: null, is_trial: false, trial_expires_at: new Date(Date.now() - 86400000).toISOString() }).eq('id', uid);
+    const freeForm = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'form', title: 'QA form', content_data: def }) });
+    check('Free: a form → 403 LIMIT_FORMS (Free has 0)', freeForm.status === 403 && freeForm.body?.code === 'LIMIT_FORMS', `status=${freeForm.status} code=${freeForm.body?.code}`);
+    await admin.from('profiles').update({ plan: 'pro', plan_expires_at: new Date(Date.now() + 30 * 86400000).toISOString(), is_trial: false }).eq('id', uid);
+    const badDef = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'form', title: 'QA bad form', content_data: { fields: [{ id: 'x', type: 'select', label: 'Pick' }] } }) });
+    check('A select field without options → 400 INVALID_FORM', badDef.status === 400 && badDef.body?.code === 'INVALID_FORM', `got ${badDef.status}`);
+    const f = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'form', title: 'QA form', content_data: def }) });
+    const fs = f.body?.slug;
+    check('Pro: create a form → 201, dynamic', f.status === 201 && f.body?.is_dynamic === true, `status=${f.status}`);
+
+    const kv = new Map<string, string>();
+    const view = await runWorker(`/${fs}`, { kv, ua: 'QA-form' });
+    check('Form renders native inputs and a honeypot', view.status === 200 && view.body.includes('name="name"') && view.body.includes('required') && view.body.includes('name="_hp"'), `status=${view.status}`);
+    const ok = await runWorker(`/${fs}`, { kv, ua: 'QA-form', method: 'POST', form: { name: 'Ann', email: 'ann@example.com', stars: '5', sneaky: 'drop me' } });
+    check('Valid answer → thank-you page', ok.status === 200 && ok.body.includes('Thanks, QA!'), `status=${ok.status}`);
+    const missing = await runWorker(`/${fs}`, { kv, ua: 'QA-form', method: 'POST', form: { email: 'x@example.com' } });
+    check('Missing required field → 400, the form again with the error', missing.status === 400 && missing.body.includes('Name is required') && missing.body.includes('value="x@example.com"'), `status=${missing.status}`);
+    const bot = await runWorker(`/${fs}`, { kv, ua: 'QA-form', method: 'POST', form: { name: 'Bot', _hp: 'http://spam' } });
+    check('Filled honeypot → looks accepted', bot.status === 200 && bot.body.includes('Thanks, QA!'), `status=${bot.status}`);
+    const subs = (await api(`/api/forms/${fs}/submissions`, { token })).body;
+    check('Only the real answer is stored, unknown field stripped', Array.isArray(subs) && subs.length === 1 && subs[0].data.name === 'Ann' && subs[0].data.stars === 5 && !('sneaky' in subs[0].data), JSON.stringify(subs));
+    check('CSV export includes the answer', toCsv([['name', 'email'], ...(subs || []).map((x: any) => [x.data.name, x.data.email])]).includes('Ann,ann@example.com'));
+    const sum = (await api(`/api/analytics/${fs}/summary`, { token })).body;
+    check('Answers are not scans (1 scan from the view)', sum?.total_scans === 1, `got ${sum?.total_scans}`);
+    await runWorker(`/${fs}`, { kv, ua: 'QA-form', method: 'POST', form: { name: 'Four' } });
+    await runWorker(`/${fs}`, { kv, ua: 'QA-form', method: 'POST', form: { name: 'Five' } });
+    const sixth = await runWorker(`/${fs}`, { kv, ua: 'QA-form', method: 'POST', form: { name: 'Six' } });
+    check('6th answer from one visitor in 15 min → 429', sixth.status === 429, `got ${sixth.status}`);
+    const direct = await api(`/internal/form/${fs}`, { method: 'POST', body: JSON.stringify({ fields: { name: 'x' } }) });
+    check('/internal/form without the secret → 401', direct.status === 401, `got ${direct.status}`);
+    const exp = (await api('/api/user/export', { token })).body;
+    check('Data export includes form submissions', Array.isArray(exp?.form_submissions) && exp.form_submissions.some((x: any) => x.slug === fs), `n=${exp?.form_submissions?.length}`);
+    const del = subs?.[0] ? await api(`/api/forms/${fs}/submissions/${subs[0].id}`, { method: 'DELETE', token }) : { status: 0 };
+    const after = (await api(`/api/forms/${fs}/submissions`, { token })).body;
+    check('Delete one submission', del.status === 200 && Array.isArray(after) && !after.some((x: any) => x.id === subs?.[0]?.id), `status=${del.status}`);
+  }
+
+  // ── 33. Cleanup ──────────────────────────────────────────────────────────────
+  section('33. Cleanup');
   {
     const del = await api('/api/user/account', { method: 'DELETE', token });
     check('DELETE /api/user/account → 200', del.status === 200, `status=${del.status} ${JSON.stringify(del.body)}`);
