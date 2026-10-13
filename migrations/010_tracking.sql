@@ -6,6 +6,9 @@ alter table public.scan_events
   add column if not exists lat  double precision,  -- opt-in GPS, rounded to 3 decimals (~100 m)
   add column if not exists lng  double precision;
 
+-- The map reads only rows with a fix.
+create index if not exists scan_events_geo_idx on public.scan_events(slug, scanned_at desc) where lat is not null;
+
 alter table public.qr_stats
   add column if not exists cities    jsonb not null default '{}'::jsonb,  -- { "Colombo": 40 }
   add column if not exists languages jsonb not null default '{}'::jsonb,  -- { "si": 12 }

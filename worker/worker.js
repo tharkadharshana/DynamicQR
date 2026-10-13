@@ -113,13 +113,19 @@ export default {
 
     // GPS fix from the opt-in interstitial: forwarded to the origin, which only fills a fresh scan of this slug.
     if (request.method === 'POST' && url.pathname === `/${slug}/geo` && apiUrl) {
-      const fix = await request.json().catch(() => null);
-      if (fix && typeof fix.e === 'string') {
-        ctx.waitUntil(fetch(`${apiUrl}/internal/geo`, {
+      // Only codes whose cached config has GPS on (the scan just filled that cache) can receive fixes.
+      const cfg = await env.QR_CACHE.get(slug, { type: 'json' });
+      const fix = cfg?.gps ? await request.json().catch(() => null) : null;
+      if (fix && /^[0-9a-f-]{36}$/i.test(String(fix.e)) && typeof fix.lat === 'number' && typeof fix.lng === 'number') {
+        const send = () => fetch(`${apiUrl}/internal/geo`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-internal-secret': internalSecret },
           body: JSON.stringify({ slug, event_id: fix.e, lat: fix.lat, lng: fix.lng }),
           signal: AbortSignal.timeout(4000),
+        });
+        // The scan's own report may still be in flight (a cached fix arrives instantly): one retry after 2 s.
+        ctx.waitUntil(send().then(async r => {
+          if (r.status === 404) { await new Promise(res => setTimeout(res, 2000)); await send(); }
         }).catch(err => console.error(`Geo sync error: ${err.message}`)));
       }
       return new Response(null, { status: 204 });
@@ -335,7 +341,6 @@ export default {
           lang: request.headers.get('Accept-Language') || '',
           country: cf.country || 'Unknown',
           city: cf.city || '',
-          region: cf.region || '',
           event_id: eventId,
           asn: cf.asn || null,
           colo: cf.colo || 'Unknown',

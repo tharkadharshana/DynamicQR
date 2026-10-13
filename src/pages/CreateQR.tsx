@@ -254,7 +254,7 @@ export default function CreateQR() {
       return;
     }
 
-    const cleaned = showRouting ? cleanRules(rules) : qrType === 'app' && !locked('smart_routing') ? appRules(cd.app) : [];
+    const cleaned = showRouting ? cleanRules(rules) : qrType === 'app' && planData && !locked('smart_routing') ? appRules(cd.app) : [];
     const ruleErr = rulesError(cleaned);
     if (ruleErr) { showToast('error', `Smart routing: ${ruleErr}`); return; }
 

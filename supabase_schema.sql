@@ -90,10 +90,10 @@ create table if not exists public.qr_stats (
   os            jsonb not null default '{}'::jsonb,
   devices       jsonb not null default '{}'::jsonb,
   monthly_scans jsonb not null default '{}'::jsonb,
-  clicks        jsonb not null default '{}'::jsonb,
-  cities        jsonb not null default '{}'::jsonb,  -- migration 010
-  languages     jsonb not null default '{}'::jsonb,
-  referrers     jsonb not null default '{}'::jsonb,  -- Pages link clicks { "2": 14, "1-0": 3 } (migration 007)
+  clicks        jsonb not null default '{}'::jsonb,  -- Pages link clicks { "2": 14, "1-0": 3 } (migration 007)
+  cities        jsonb not null default '{}'::jsonb,  -- migration 010: { "Colombo": 40 }
+  languages     jsonb not null default '{}'::jsonb,  -- { "si": 12 }
+  referrers     jsonb not null default '{}'::jsonb,  -- { "instagram.com": 7 }
   updated_at    timestamptz not null default now()
 );
 
@@ -123,6 +123,7 @@ create table if not exists public.scan_events (
 
 create index if not exists scan_events_slug_idx on public.scan_events(slug);
 create index if not exists scan_events_scanned_at_idx on public.scan_events(scanned_at desc);
+create index if not exists scan_events_geo_idx on public.scan_events(slug, scanned_at desc) where lat is not null;  -- migration 010
 
 alter table public.scan_events enable row level security;
 
