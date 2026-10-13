@@ -1,5 +1,5 @@
 // Guest pages + vCard/Text/Email/Wi-Fi rendering, shared with the dev server (Wrangler bundles the TS import).
-import { renderGuestPage, pickLang, appTarget, FILE_TYPES } from '../src/lib/guestPage';
+import { renderGuestPage, pickLang, appTarget, FILE_TYPES, blockTarget } from '../src/lib/guestPage';
 
 // Small branded HTML page for every non-redirect outcome. Never show a bare error on a printed code.
 const page = (title, bodyHtml, status, accent = '#E85D3A') => new Response(`<!DOCTYPE html>
@@ -214,8 +214,25 @@ export default {
       }
     }
 
-    // Switching language on a guest page reloads with ?lang= — not a new scan.
-    const isLangSwitch = qrType !== 'url' && url.searchParams.has('lang');
+    // Pages "Engagements": /<slug>/l/<key> → the link on the page, counted as a click, not a scan.
+    // Runs after the gates, so a PIN-protected page's links stay behind its PIN.
+    const click = url.pathname.match(/^\/[^/]+\/l\/(\d{1,3}(?:-\d{1,3})?)$/);
+    if (click && !gs1) {
+      const target = qrType === 'page' ? blockTarget(config.content_data, click[1]) : null;
+      if (!target) return page('Link not found', '<h2>Link not found</h2><p>This link is no longer on the page.</p>', 404);
+      if (apiUrl) {
+        ctx.waitUntil(fetch(`${apiUrl}/internal/click`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-internal-secret': internalSecret },
+          body: JSON.stringify({ slug, key: click[1] }),
+          signal: AbortSignal.timeout(4000),
+        }).catch(err => console.error(`Click sync error: ${err.message}`)));
+      }
+      return new Response(null, { status: 302, headers: { Location: target.url } });
+    }
+
+    // Switching language on a guest page (?lang=) or saving its contact (?vcf=1) is not a new scan.
+    const isLangSwitch = qrType !== 'url' && (url.searchParams.has('lang') || url.searchParams.has('vcf'));
 
     // --- SCAN LIMIT CHECK (only after the other gates pass) ---
     // ponytail: count lives in a per-edge KV copy refreshed from the DB every 300s; can overshoot under bursty multi-region traffic.

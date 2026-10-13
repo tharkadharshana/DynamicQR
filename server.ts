@@ -17,7 +17,7 @@ export const supabase = createClient(supabaseUrl, supabaseKey);
 import crypto from 'crypto';
 import { customAlphabet } from 'nanoid';
 import logger from "./logger.js";
-import { renderGuestPage, pickLang, appTarget, FILE_TYPES } from './src/lib/guestPage.js';
+import { renderGuestPage, pickLang, appTarget, FILE_TYPES, blockTarget } from './src/lib/guestPage.js';
 import { gtinValid } from './src/lib/qrContent.js';
 import { buildDigest } from './src/lib/digest.js';
 import { PLANS, TRIAL_LIMITS, GRACE_DAYS, DEFAULT_ADDONS, PRICES, PAID_PLANS, PlanId, PaidPlan, PlanLimits, UserAddons, Currency, BillingInterval } from './src/lib/plans.js';
@@ -1404,6 +1404,21 @@ async function startServer() {
       const s = stats.find(x => x.slug === q.slug) || {};
       return { id: q.slug, slug: q.slug, title: q.title, total_scans: s.total_scans || 0, unique_scans: s.unique_scans || 0 };
     }).sort((a, b) => b.total_scans - a.total_scans),
+    // Pages: clicks per tracked link, labelled from the page's current blocks. CTR = clicks / scans of that page.
+    clicks: async ({ stats }) => {
+      const withClicks = stats.filter(s => s.clicks && Object.keys(s.clicks).length);
+      if (!withClicks.length) return [];
+      const { data, error } = await supabase.from('qr_codes').select('slug, content_data').in('slug', withClicks.map(s => s.slug));
+      if (error) throw error;
+      return withClicks.flatMap(s => {
+        const d = data?.find(q => q.slug === s.slug)?.content_data || {};
+        return Object.entries(s.clicks).map(([key, n]) => {
+          const t = blockTarget(d, key);
+          return { slug: s.slug, key, label: t?.label || '(removed link)', url: t?.url || '', clicks: Number(n),
+            ctr: s.total_scans ? Number((Number(n) / s.total_scans * 100).toFixed(1)) : 0 };
+        });
+      }).sort((a, b) => b.clicks - a.clicks);
+    },
     recent: async ({ slugs }) => {
       if (!slugs.length) return [];
       const { data, error } = await supabase.from('scan_events')
@@ -1636,6 +1651,16 @@ async function startServer() {
   });
 
   // Internal endpoint for Cloudflare Worker to send rich CF payload
+  // Pages "Engagements": the Worker reports a click on /<slug>/l/<key> (in waitUntil, after its 302).
+  app.post('/internal/click', async (req, res) => {
+    if (!process.env.INTERNAL_SECRET || req.headers['x-internal-secret'] !== process.env.INTERNAL_SECRET) return res.status(401).send('Unauthorized');
+    const { slug, key } = req.body || {};
+    if (typeof slug !== 'string' || typeof key !== 'string' || !/^\d{1,3}(-\d{1,3})?$/.test(key)) return res.status(400).json({ error: 'slug and key required' });
+    const { error } = await supabase.rpc('record_click', { p_slug: slug, p_key: key });
+    if (error) { logger.error('record_click failed', { message: error.message }); return res.status(500).send('Failed'); }
+    res.send('OK');
+  });
+
   app.post('/internal/scan', async (req, res) => {
     try {
       const secret = req.headers['x-internal-secret'];

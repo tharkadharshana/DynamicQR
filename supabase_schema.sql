@@ -88,6 +88,7 @@ create table if not exists public.qr_stats (
   os            jsonb not null default '{}'::jsonb,
   devices       jsonb not null default '{}'::jsonb,
   monthly_scans jsonb not null default '{}'::jsonb,
+  clicks        jsonb not null default '{}'::jsonb,  -- Pages link clicks { "2": 14, "1-0": 3 } (migration 007)
   updated_at    timestamptz not null default now()
 );
 
@@ -169,3 +170,13 @@ insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_typ
 values ('files', 'files', true, 104857600, array['application/pdf', 'image/png', 'image/jpeg', 'image/webp'])
 on conflict (id) do update set public = excluded.public, file_size_limit = excluded.file_size_limit,
   allowed_mime_types = excluded.allowed_mime_types;
+
+-- ──────────────────────────────────────────────────────────────
+-- record_click (migration 007; needs jsonb_inc from migration 003)
+-- ──────────────────────────────────────────────────────────────
+create or replace function public.record_click(p_slug text, p_key text)
+returns void language sql security definer set search_path = public as $$
+  update qr_stats set clicks = jsonb_inc(clicks, p_key), updated_at = now() where slug = p_slug;
+$$;
+revoke all on function public.record_click(text, text) from public, anon, authenticated;
+grant execute on function public.record_click(text, text) to service_role;
