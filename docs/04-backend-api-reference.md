@@ -87,6 +87,8 @@ On Vercel each serverless instance keeps its own counters, so these limits are s
   "destination_url": "https://…",        // must parse with new URL(), or ''
   "qr_type": "url|vcard|wifi|text|email|page|event",   // anything else → 400
   "gtin": "4006381333931",               // optional GS1 GTIN-8/12/13/14: check digit validated (400 INVALID_GTIN), stored as GTIN-14, unique (409 GTIN_TAKEN); forces dynamic
+  "slug": "menu-2026",                   // optional custom back-half (Pro+): 3–40 [A-Za-z0-9-]; 400 INVALID_SLUG / RESERVED_SLUG, 403 FEATURE_CUSTOM_SLUG, 409 SLUG_TAKEN
+  "tags": ["menu", "colombo"],           // optional, lower-cased, ≤10 of ≤30 chars (also on PUT)
   "kind": "qr|link",                     // default qr; link = short link: dynamic url with a destination_url (else 400)
   "is_dynamic": true,
   "content_data": { … },                 // type-specific (see doc 05), max 20 KB
@@ -109,7 +111,11 @@ The route returns `201` with the stored `qr_codes` row.
 
 ### `GET /api/qr` (user)
 
-Returns an array of the user's `qr_codes` rows (`password_hash` removed, `has_password` added). Each row has `id` (= slug) and `stats` (the `qr_stats` row, or `null`).
+Returns an array of the user's `qr_codes` rows (`password_hash` removed, `has_password` added). Each row has `id` (= slug) and `stats` (the `qr_stats` row, or `null`). Optional filters (Phase 8): `?kind=qr|link`, `?qr_type=page`, `?tag=<tag>`, `?folder=<client>`.
+
+### `POST /api/qr/bulk` (user, write)
+
+Body `{slugs: [...1–500], action: 'folder'|'tag'|'untag'|'activate'|'deactivate'|'delete', value?}`. Ownership is checked per slug, every changed code is purged at the edge, and activation goes through the plan caps one code at a time. Returns `{done: [slugs], failed: [{slug, error}]}`.
 
 ### `GET /api/qr/:slug` (user and owner)
 

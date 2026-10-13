@@ -13,10 +13,10 @@ Every type can be dynamic. URL codes redirect; the others are rendered at the ed
 - `slug` = the first path segment.
 - `/internal/purge/{slug}` with a valid `x-internal-secret` deletes KV `{slug}`. The API calls this through `purgeEdge(slug)` after every edit, deactivation and delete.
 - These pass through to the origin (`fetch(request)`):
-  - SPA routes: `'' create edit analytics settings billing login legal pricing api-docs`
+  - SPA routes: every name in `RESERVED_SLUGS` ([qrContent.ts](../src/lib/qrContent.ts)), the one list the server also uses to refuse custom back-halves. The `qrContent.ts` self-check fails if an `App.tsx` route is missing from it.
   - anything containing `.`
   - anything starting with `api`, `internal`, `assets` or `_`
-  - anything that does not match the slug alphabet `^[23456789a-km-zA-HJ-NP-Z…]{5,12}$` (no 0/1/i/l/o/I/O)
+  - anything that does not match `^[A-Za-z0-9-]{3,40}$` (generated slugs and custom back-halves, Phase 8)
 - **Custom short domains (Team).** On a host other than `MAIN_HOST` (a Worker var), anything that isn't a slug is redirected `302` to `https://MAIN_HOST{path}`, before the pass-through. Slugs resolve the same on every host.
 
 ### 2. Visitor fingerprint
@@ -162,6 +162,10 @@ After the gates pass, the Worker calls `renderGuestPage(config, lang, url)` from
 - **Language** comes from `?lang=en|si|ta`, then `Accept-Language`, then English. Sinhala and Tamil text uses Noto Sans from Google Fonts. **A language switch (`?lang=` on a non-URL code) is not counted as a scan** and does not touch the scan or visitor counters.
 - **Safety.** All text is HTML-escaped. Link URLs must start with `http(s)://`, `tel:` or `mailto:`; anything else (`javascript:`, `data:`) is dropped.
 - **Size.** `content_data` is capped at 20 KB by the API and travels inside the cached config.
+
+### UTM tags (Phase 8)
+
+A URL code or short link with `content_data.utm = {source, medium, campaign, term, content}` gets `utm_*` parameters appended on redirect by `withUtm()`. A parameter already in the destination wins. `/internal/slug` passes `utm` for URL codes.
 
 ### Page clicks and Save as contact (Phase 7)
 

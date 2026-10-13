@@ -172,7 +172,7 @@ If a skill is missing in the cloud session, follow its rules from this document 
 - [x] Phase 5: Plans v2
 - [x] Phase 6: Code types and design
 - [x] Phase 7: Pages builder and templates
-- [ ] Phase 8: Short links and organization
+- [x] Phase 8: Short links and organization
 - [ ] Phase 9: Forms
 - [ ] Phase 10: Tracking and smart routing
 - [ ] Phase 11: Business tier

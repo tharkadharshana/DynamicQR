@@ -2,6 +2,14 @@
 
 One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-review-findings.md](11-review-findings.md).
 
+## Phase 8: Short links and organisation (branch `feat/links-organize`)
+
+- **Short links** (`kind='link'`) get a Dashboard tab and a "Paste a link" box. **Custom back-halves** on Pro and up (`limits.custom_slug`): `[A-Za-z0-9-]{3,40}`, refused when reserved. `RESERVED_SLUGS` moved into `src/lib/qrContent.ts` and is imported by the Worker and the server, so one list prevents collisions; the self-check checks every `App.tsx` route against it. The Worker's slug pattern widened to match.
+- **Folders** (the `client` column, renamed in the UI and available on every plan), **tags** (`qr_codes.tags`, migration 008), filters on `GET /api/qr`, client-side sort and search, and **Select mode** backed by `POST /api/qr/bulk`, with a ZIP download built by `fflate`.
+- **UTM tags** on URL codes and links, appended by the Worker (`withUtm()`, existing parameters win). Folder analytics act as campaigns.
+- Pricing now lists short links and custom back-halves.
+- QA section 31. **Needs a Worker deploy** (slug pattern, reserved list, UTM).
+
 ## Phase 7: Pages builder and templates (branch `feat/pages-builder`)
 
 - **Blocks.** `renderGuestPage` renders `content_data.blocks[]` through one block switch: header, socials, button, text, image, video, products, contact (Save as contact → `?vcf=1`), offer, Wi-Fi, divider. Theme colours, button shape and font; per-block translations through `i18n[lang].blocks`. Still pure, escaped and `safeUrl`-checked. Kit pages without blocks render byte-for-byte as before (hash in the self-check).
