@@ -37,6 +37,9 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
     { name: 'Dashboard', path: '/', icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="4" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="7" width="6" height="8" rx="1"/></svg>
     ) },
+    { name: 'Pages', path: '/pages', icon: (
+      <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="4" y="1.5" width="8" height="13" rx="1.5"/><path d="M6 5h4M6 8h4M6 11h2"/></svg>
+    ) },
     { name: 'Restaurant Kit', path: '/kit', icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 2v5a2 2 0 004 0V2M5 2v12M11 2c-1.5 1-2 3-2 5h2v7"/></svg>
     ) },
@@ -86,6 +89,8 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
       case '/': return { title: 'Dashboard', sub: 'Your codes and scans' };
       case '/analytics': return { title: 'Analytics', sub: 'Detailed scan insights' };
       case '/create': return { title: 'Create QR', sub: 'Generate a new QR code' };
+      case '/pages': return { title: 'Pages', sub: 'Mobile landing pages behind one QR' };
+      case '/pages/new': return { title: 'New page', sub: 'Start from a template or a blank page' };
       case '/kit': return { title: 'Restaurant Kit', sub: 'Menu, reviews, Wi-Fi and offers on one code' };
       case '/bulk': return { title: 'Bulk create', sub: 'Many codes from one CSV' };
       case '/api-docs': return { title: 'API Docs', sub: 'REST API v1' };

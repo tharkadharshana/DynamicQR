@@ -151,6 +151,7 @@ After the gates pass, the Worker calls `renderGuestPage(config, lang, url)` from
 
 | `qr_type` | Scanner sees |
 |---|---|
+| `page` with `blocks` | The Pages builder layout: blocks in order, the page theme, tracked links (Phase 7) |
 | `page` | Hosted guest page: name, subtitle, today's offer, link buttons, Wi-Fi box with copy, EN/සිං/தமி switch, brand colour. Free owners get a "Made with Scnr" footer (`config.branding`). |
 | `vcard` | `.vcf` download (`text/vcard`) |
 | `text` | HTML page with the text (escaped) |
@@ -161,6 +162,11 @@ After the gates pass, the Worker calls `renderGuestPage(config, lang, url)` from
 - **Language** comes from `?lang=en|si|ta`, then `Accept-Language`, then English. Sinhala and Tamil text uses Noto Sans from Google Fonts. **A language switch (`?lang=` on a non-URL code) is not counted as a scan** and does not touch the scan or visitor counters.
 - **Safety.** All text is HTML-escaped. Link URLs must start with `http(s)://`, `tel:` or `mailto:`; anything else (`javascript:`, `data:`) is dropped.
 - **Size.** `content_data` is capped at 20 KB by the API and travels inside the cached config.
+
+### Page clicks and Save as contact (Phase 7)
+
+- Buttons, linked images, social icons and product cards link to `/<slug>/l/<key>` (`key` is the block's stable `id`, set by the editor so a reorder keeps the counts, or its index for blocks without one; `<key>-j` for item `j` of a socials or products block). After the gates (so a PIN page's links stay behind its PIN), the Worker resolves the key with `blockTarget()` from the cached config, sends `POST /internal/click` in `waitUntil`, and 302s. Only links that are on the page resolve; anything else is a 404 page. A click is not a scan.
+- `?vcf=1` on a page with a contact block downloads a vCard. Like `?lang=`, it is not counted as a scan.
 
 ### GS1 Digital Link and app-store codes (Phase 6)
 

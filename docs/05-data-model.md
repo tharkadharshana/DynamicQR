@@ -51,7 +51,7 @@ All foreign keys `on delete cascade`, so deleting the auth user removes everythi
 | `kind` | text, default `qr` | `qr` or `link` (check constraint, migration 005). A `link` is a short link: a dynamic URL row shown without a QR image, counted against `short_links` and not against the QR caps. |
 | `is_dynamic` | bool | |
 | `is_active` | bool | |
-| `content_data` | jsonb | type-specific, see below |
+| `content_data` | jsonb | type-specific, see below. A Pages-builder page has `{blocks: [...], theme: {accent, bg, text, button, font}, i18n: {si: {blocks: [...overrides]}, ta: ...}}`. |
 | `style` | jsonb | `{dot_color, bg_color, dot_style, corner_style, error_correction, output_size, logo_url}`. `logo_url` is a **base64 data URL**. |
 | `password_hash` | text | `sha256(password + slug)` hex |
 | `expiry_date` | text | `datetime-local` string, no time zone |
@@ -103,7 +103,7 @@ Columns the code **reads but which do not exist**: `referrers`, `regions`, `isps
 | `api_keys` | `uid, name, prefix, key_hash (unique), created_at, last_used_at, revoked_at` | Only the SHA-256 is stored |
 | `custom_domains` | `uid, hostname (unique), cf_id, status` | One per account; Cloudflare for SaaS custom hostname id |
 
-Also: `qr_codes.gtin` (GS1 GTIN-14, unique when set, migration 006), `profiles.brand_style` (jsonb, the saved default design, migration 006), the public Storage bucket `files` (100 MB cap, PDF and images, written only through API-signed upload URLs, migration 006), `qr_codes.client` (folder name, indexed with `user_uid`), and `profiles.agency_name` / `profiles.agency_logo` (≤64 KB data URL) for white-label printed reports.
+Also: `qr_stats.clicks` (jsonb `{key: n}`, written only by `record_click(p_slug, p_key)`, migration 007), `qr_codes.gtin` (GS1 GTIN-14, unique when set, migration 006), `profiles.brand_style` (jsonb, the saved default design, migration 006), the public Storage bucket `files` (100 MB cap, PDF and images, written only through API-signed upload URLs, migration 006), `qr_codes.client` (folder name, indexed with `user_uid`), and `profiles.agency_name` / `profiles.agency_logo` (≤64 KB data URL) for white-label printed reports.
 
 ### `scan_events`, one per scan (bots excluded)
 

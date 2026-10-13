@@ -43,7 +43,9 @@
  *      and pages (create and reactivate), links outside the QR cap, Free 90-day history, logo on Free
  *  29. Code types: URL builders, PDF signed upload + redirect + size cap, GS1 (store, 409, 400,
  *      Worker /01/ path), event .ics, app-store routing by device, brand_style
- *  30. Cleanup
+ *  30. Pages builder: block page at the edge (escaping, javascript: dropped), tracked clicks
+ *      (302, 404, counted with label and CTR, not a scan), Save as contact, template save
+ *  31. Cleanup
  */
 import 'dotenv/config';
 import crypto from 'crypto';
@@ -52,6 +54,7 @@ import worker from './worker/worker.js';
 import { waLink } from './src/lib/site.ts';
 import { getQRContent, setShortDomain, buildDestination, gtinValid } from './src/lib/qrContent.ts';
 import { csvToObjects } from './src/lib/csv.ts';
+import { PAGE_TEMPLATES } from './src/lib/pageTemplates.ts';
 
 // ─── config ──────────────────────────────────────────────────────────────────
 const API             = process.env.QA_API_URL || 'http://localhost:3000';
@@ -1468,8 +1471,45 @@ async function run() {
     check('brand_style persists', sv.status === 200 && got?.frame?.text === 'Menu' && got?.shape === 'circle', JSON.stringify(got));
   }
 
-  // ── 30. Cleanup ──────────────────────────────────────────────────────────────
-  section('30. Cleanup');
+  // ── 30. Pages builder: blocks, tracked links, Save as contact ────────────────
+  section('30. Pages builder — blocks at the edge, click tracking, Save as contact, templates');
+  {
+    await admin.from('profiles').update({ plan: 'pro', plan_expires_at: new Date(Date.now() + 30 * 86400000).toISOString(), is_trial: false }).eq('id', uid);
+    const blocks = [
+      { kind: 'header', name: 'QA <Page>', tagline: 'Tagline' },
+      { kind: 'socials', items: [{ network: 'instagram', handle: 'qa.lk' }] },
+      { kind: 'button', label: 'Order now', url: 'https://example.com/order' },
+      { kind: 'button', label: 'Evil', url: 'javascript:alert(1)' },
+      { kind: 'contact', phone: '+94 77 123 4567', email: 'qa@example.com' },
+    ];
+    const pg = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'page', title: 'QA blocks page', content_data: { blocks, theme: { accent: '#7C3AED', button: 'pill' } } }) });
+    const ps = pg.body?.slug;
+    check('Create a block page → 201', pg.status === 201 && !!ps, `status=${pg.status} ${JSON.stringify(pg.body)}`);
+    const view = await runWorker(`/${ps}`, { ua: 'QA-page-view' });
+    check('Block page renders at the edge, escaped', view.status === 200 && view.body.includes('QA &lt;Page&gt;') && !view.body.includes('<Page>'), `status=${view.status}`);
+    check('javascript: link dropped; buttons tracked', !view.body.includes('javascript:') && view.body.includes(`/${ps}/l/2`) && !view.body.includes(`/${ps}/l/3`));
+    const c1 = await runWorker(`/${ps}/l/2`, { ua: 'QA-click-1' });
+    const c2 = await runWorker(`/${ps}/l/1-0`, { ua: 'QA-click-2' });
+    check('Click on /l/2 → 302 to the button URL', c1.status === 302 && c1.location === 'https://example.com/order', `status=${c1.status} loc=${c1.location}`);
+    check('Click on a social → 302 to the profile', c2.status === 302 && c2.location === 'https://www.instagram.com/qa.lk', `loc=${c2.location}`);
+    const bad = await runWorker(`/${ps}/l/3`, { ua: 'QA-click-bad' });
+    check('Click on a dropped link → 404', bad.status === 404, `got ${bad.status}`);
+    const clicks = (await api(`/api/analytics/${ps}/clicks`, { token })).body;
+    const order = Array.isArray(clicks) ? clicks.find((c: any) => c.key === '2') : null;
+    check('Engagements: the click is counted with its label and CTR', order?.clicks === 1 && order?.label === 'Order now' && order?.ctr === 100, JSON.stringify(clicks));
+    const sum = (await api(`/api/analytics/${ps}/summary`, { token })).body;
+    check('Clicks are not scans (1 scan from the page view)', sum?.total_scans === 1, `got ${sum?.total_scans}`);
+    const vcf = await runWorker(`/${ps}?vcf=1`, { ua: 'QA-vcf' });
+    check('Save as contact → text/vcard with the contact', vcf.status === 200 && (vcf.type || '').startsWith('text/vcard') && vcf.body.includes('EMAIL:qa@example.com'), `status=${vcf.status} type=${vcf.type}`);
+    const ic = await api('/internal/click', { method: 'POST', body: JSON.stringify({ slug: ps, key: '2' }) });
+    check('/internal/click without the secret → 401', ic.status === 401, `got ${ic.status}`);
+    const tpl = PAGE_TEMPLATES[0];
+    const fromTpl = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'page', title: tpl.name, content_data: tpl.content }) });
+    check('A page from a template saves (fits the 20 KB cap)', fromTpl.status === 201, `status=${fromTpl.status}`);
+  }
+
+  // ── 31. Cleanup ──────────────────────────────────────────────────────────────
+  section('31. Cleanup');
   {
     const del = await api('/api/user/account', { method: 'DELETE', token });
     check('DELETE /api/user/account → 200', del.status === 200, `status=${del.status} ${JSON.stringify(del.body)}`);

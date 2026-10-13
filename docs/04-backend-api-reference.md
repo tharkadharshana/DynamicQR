@@ -155,6 +155,7 @@ One set of views is served in two scopes:
 | `devices` | `[{device_type, count, pct}]` |
 | `countries` | top 10 `[{country, scans, unique_visitors: 0}]` |
 | `os`, `browsers` | `[{os|browser, count, pct}]` |
+| `clicks` | Pages: `[{slug, key, label, url, clicks, ctr}]`, labels from the page's current blocks, CTR = clicks / scans × 100 |
 | `hours` | 24 rows `[{hour: 0–23 (UTC), scans}]`, all time |
 | `performance` | `[{id, slug, title, total_scans, unique_scans}]`, by scans |
 | `recent` | the 20 newest events `[{id, slug, scanned_at, country, city, device_type, os, browser, referrer, is_unique}]` |
@@ -205,6 +206,7 @@ The add-on checkout was removed in Phase 0: there was no UI and the webhook bran
 | Method / path | Auth | Purpose |
 |---|---|---|
 | `GET /internal/slug/:slug` | secret | Compact gate config including the policy fields `quota_exceeded`, `paused` (lapse rule), `title`, `visitor_guard`, the resolved `visitor_rate_limit`, and for non-URL codes `qr_type`, `content_data` and `branding` ([doc 03](03-scan-flow-and-gate-engine.md#3-config-lookup)) |
+| `POST /internal/click` | secret | `{slug, key}` → `record_click` (Pages engagements); 400 on a malformed key |
 | `GET /internal/gs1/:gtin` | secret | `{slug}` of the code that owns the GTIN; 400 on a bad check digit, 404 if none |
 | `POST /internal/scan` | secret | Records the scan only (the quota is enforced by the Worker from the config). Returns `OK` or `404`. |
 
