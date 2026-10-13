@@ -39,7 +39,9 @@
  *  27. Team plan: API keys + /api/v1 (scopes, revoke, downgrade), seats with a 2nd real user
  *      (member access, owner-only actions, seat cap, removal), client folders, custom domain
  *      (validation, edge redirect, QR content), white-label branding, CSV parser
- *  28. Cleanup
+ *  28. Plans v2: Business checkout (LKR, annual, USD), Business limits, Free caps on short links
+ *      and pages, links outside the QR cap, Free 90-day history, logo on Free
+ *  29. Cleanup
  */
 import 'dotenv/config';
 import crypto from 'crypto';
@@ -1237,7 +1239,7 @@ async function run() {
   if (testSlug) {
     await admin.from('profiles').update({ plan: 'team', plan_expires_at: new Date(Date.now() + 30 * 86400000).toISOString(), is_trial: false }).eq('id', uid);
     const team = (await api('/api/user/plan', { token })).body;
-    check('Team limits: 5 seats, bulk, API, custom domain', team?.limits?.seats === 5 && team?.limits?.bulk_create === true && team?.limits?.api_access === true && team?.limits?.custom_domain === true, JSON.stringify(team?.limits));
+    check('Team limits: 10 seats, bulk, API, 10 custom domains', team?.limits?.seats === 10 && team?.limits?.bulk_create === true && team?.limits?.api_access === true && team?.limits?.custom_domains === 10, JSON.stringify(team?.limits));
 
     // v1 alias with a session token
     const v1 = await api('/api/v1/qr', { token });
@@ -1288,9 +1290,10 @@ async function run() {
       const mt = await api('/api/team', { method: 'POST', token: mToken, body: JSON.stringify({ email: 'x@y.lk' }) });
       check('Member cannot pay or invite → 403 OWNER_ONLY', mb.status === 403 && mt.status === 403 && mb.body?.code === 'OWNER_ONLY', `${mb.status}/${mt.status}`);
     } else check('Member sign-in', false, 'no session');
-    for (let i = 0; i < 3; i++) await api('/api/team', { method: 'POST', token, body: JSON.stringify({ email: `qa-seat-${i}-${Date.now()}@test.dynamicqr.local` }) });
+    // Owner + 1 member so far: fill the remaining seats, then one more.
+    for (let i = 0; i < (team?.limits?.seats ?? 10) - 2; i++) await api('/api/team', { method: 'POST', token, body: JSON.stringify({ email: `qa-seat-${i}-${Date.now()}@test.dynamicqr.local` }) });
     const over = await api('/api/team', { method: 'POST', token, body: JSON.stringify({ email: `qa-seat-over-${Date.now()}@test.dynamicqr.local` }) });
-    check('6th user (owner + 5 invites) → 403 LIMIT_SEATS', over.status === 403 && over.body?.code === 'LIMIT_SEATS', `status=${over.status}`);
+    check('11th user (owner + 10 invites) → 403 LIMIT_SEATS', over.status === 403 && over.body?.code === 'LIMIT_SEATS', `status=${over.status}`);
     const teamList = (await api('/api/team', { token })).body;
     const members = Array.isArray(teamList) ? teamList : [];
     for (const m of members) await api(`/api/team/${m.id}`, { method: 'DELETE', token });
@@ -1328,8 +1331,58 @@ async function run() {
     check('Pro: creating an API key → 403 FEATURE_API', noApi.status === 403 && noApi.body?.code === 'FEATURE_API', `got ${noApi.status}`);
   }
 
-  // ── 28. Cleanup ──────────────────────────────────────────────────────────────
-  section('28. Cleanup');
+  // ── 28. Plans v2: Business tier and per-object caps ───────────────────────────
+  section('28. Plans v2 — Business checkout, short link / page caps, Free history, logo on Free');
+  {
+    const co = (plan: string, interval: string, currency = 'LKR') =>
+      api('/api/billing/checkout', { method: 'POST', token, body: JSON.stringify({ plan, interval, currency }) });
+    const bm = await co('business', 'monthly'), by = await co('business', 'annual'), bu = await co('business', 'monthly', 'USD');
+    check('Business checkout: LKR 25,990 / month', bm.body?.amount === '25990.00' && bm.body?.currency === 'LKR', JSON.stringify(bm.body?.amount ?? bm.body));
+    check('Business checkout: LKR 259,900 / year', by.body?.amount === '259900.00', JSON.stringify(by.body?.amount ?? by.body));
+    check('Business checkout: $79.00 USD fallback', bu.body?.amount === '79.00' && bu.body?.currency === 'USD', JSON.stringify(bu.body?.amount ?? bu.body));
+    const bad = await co('enterprise', 'monthly');
+    check('Unknown plan → 400', bad.status === 400, `got ${bad.status}`);
+
+    await admin.from('profiles').update({ plan: 'business', plan_expires_at: new Date(Date.now() + 30 * 86400000).toISOString(), is_trial: false }).eq('id', uid);
+    const biz = (await api('/api/user/plan', { token })).body?.limits;
+    check('Business limits: 2,000 codes, 25 seats, 10 workspaces, 50 domains, webhooks', biz?.qr_codes === 2000 && biz?.seats === 25 && biz?.workspaces === 10 && biz?.custom_domains === 50 && biz?.webhooks === true, JSON.stringify(biz));
+
+    // Free (not lapsed, no trial), with every earlier code switched off so only this section's rows count.
+    await admin.from('qr_codes').update({ is_active: false }).eq('user_uid', uid);
+    await admin.from('profiles').update({ plan: 'free', plan_expires_at: null, is_trial: false, trial_expires_at: new Date(Date.now() - 86400000).toISOString() }).eq('id', uid);
+    const mk = (body: any) => api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'url', is_dynamic: true, ...body }) });
+
+    const links: number[] = [];
+    for (let i = 0; i < 4; i++) links.push((await mk({ kind: 'link', destination_url: `https://example.com/l${i}`, title: `QA link ${i}` })).status);
+    check('Free: 3 short links → 201', links.slice(0, 3).every(s => s === 201), links.join(','));
+    const l4 = await mk({ kind: 'link', destination_url: 'https://example.com/l4', title: 'QA link 4' });
+    check('Free: 4th short link → 403 LIMIT_SHORT_LINKS', links[3] === 403 && l4.body?.code === 'LIMIT_SHORT_LINKS', `status=${links[3]} code=${l4.body?.code}`);
+    const badKind = await mk({ kind: 'link', qr_type: 'vcard', content_data: { first_name: 'x' } });
+    check('kind=link on a non-url type → 400', badKind.status === 400, `got ${badKind.status}`);
+
+    // Links do not use the dynamic pilot: the one dynamic slot is still free for a page.
+    const p1 = await mk({ qr_type: 'page', title: 'QA page 1', content_data: { name: 'QA' } });
+    check('Free: 1st page → 201 (links outside the QR cap)', p1.status === 201, `status=${p1.status} ${JSON.stringify(p1.body)}`);
+    const p2 = await mk({ qr_type: 'page', title: 'QA page 2', content_data: { name: 'QA' } });
+    check('Free: 2nd page → 403 LIMIT_PAGES', p2.status === 403 && p2.body?.code === 'LIMIT_PAGES', `status=${p2.status} code=${p2.body?.code}`);
+
+    const logo = 'data:image/png;base64,iVBORw0KGgo=';
+    const lq = await mk({ is_dynamic: false, destination_url: 'https://example.com/logo', title: 'QA logo', style: { dot_color: '#000000', bg_color: '#ffffff', logo_url: logo } });
+    const lqGet = lq.body?.slug ? (await api(`/api/qr/${lq.body.slug}`, { token })).body : null;
+    check('Free: QR with a logo saves', lq.status === 201 && lqGet?.style?.logo_url === logo, `status=${lq.status}`);
+
+    const free = (await api('/api/user/plan', { token })).body;
+    check('Free: 90 days of history', free?.limits?.analytics_days === 90, `got ${free?.limits?.analytics_days}`);
+    const ts = p1.body?.slug ? await api(`/api/analytics/${p1.body.slug}/timeseries?days=500`, { token }) : { body: null };
+    check('Free: timeseries capped at 90 days', Array.isArray(ts.body) && ts.body.length === 90, `got ${ts.body?.length}`);
+
+    const link0 = (await api('/api/qr', { token })).body?.find?.((q: any) => q.title === 'QA link 0');
+    const w = link0 ? await runWorker(`/${link0.slug}`, { ua: 'QA-link' }) : { status: 0, location: null };
+    check('Short link redirects at the edge', w.status === 302 && w.location === 'https://example.com/l0', `status=${w.status} loc=${w.location}`);
+  }
+
+  // ── 29. Cleanup ──────────────────────────────────────────────────────────────
+  section('29. Cleanup');
   {
     const del = await api('/api/user/account', { method: 'DELETE', token });
     check('DELETE /api/user/account → 200', del.status === 200, `status=${del.status} ${JSON.stringify(del.body)}`);
