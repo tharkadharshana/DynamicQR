@@ -39,7 +39,8 @@ All five phases are merged: safe and working, credible, Restaurant Kit, retentio
 - **Team plan (Phase 4):** API keys and `/api/v1`, 5 seats (invite by email), client folders, bulk CSV creation with a print sheet, one custom short domain (Cloudflare for SaaS), and white-label report branding (migration 004).
 - **Plans v2 (Phase 5):** a fourth tier, Business ($79 / LKR 25,990), and per-object caps for short links, pages and forms, generated pricing cards with an FAQ (they list shipped features only), Free history raised to 90 days ([doc 07](07-plans-billing-payhere.md)). Migration 005 adds `qr_codes.kind`.
 - **Code types and design (Phase 6):** PDF, Google review, socials, phone, SMS, location, event, app-store and GS1 codes; dot styles, gradient, circle shape, frames and a saved brand style. Migration 006 adds `gtin`, `brand_style` and the `files` bucket.
-- Run the migrations in order: 001 → 002 → 003 → 004 → 005 → 006 ([doc 10](10-operations.md#deployment)).
+- **Pages builder (Phase 7):** block-based pages with 12 templates, a live-preview editor and click analytics. Migration 007 adds `qr_stats.clicks` and `record_click`.
+- Run the migrations in order: 001 → 002 → 003 → 004 → 005 → 006 → 007 ([doc 10](10-operations.md#deployment)).
 - The phase plan for phases 0–4 is in [doc 11](11-review-findings.md#recommended-order-of-work).
 - **What is next:** [ROADMAP.md](ROADMAP.md) plans phases 5–12 (competitor parity with Hovercode and Bitly: a Business tier, more code types, a Pages builder with templates, short links and folders, forms, advanced tracking, webhooks and workspaces, public tools). It also holds the working agreement for every change. Competitor screenshots are in [competitors/](competitors/).
 
@@ -60,6 +61,7 @@ src/                    React SPA
   lib/plans.ts          Plan limits, trial limits, add-ons (shared with server)
   pages/                Dashboard, CreateQR, Analytics, AccountAnalytics, Billing, Pricing, Settings, ApiDocs, Landing, legal
   components/           DynamicQRLayout (app shell), QRViewerModal, modals, toasts, ErrorBoundary
+  lib/pageTemplates.ts  the 12 Pages templates
   lib/qrContent.ts      getQRContent()/vcardText() and SHORT_DOMAIN: what every QR encodes (shared with server)
 migrations/             Incremental SQL, run in order in the Supabase SQL editor (001_phase0.sql, …)
 vercel.json             Static build plus Node function; rewrites /api/* and /internal/* to the function

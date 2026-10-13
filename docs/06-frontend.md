@@ -88,6 +88,12 @@ Form cards (name and type, style, options, Visitor Guard) plus a live preview.
 - Downloads render at the chosen output size, then the preview returns to 180 px. Logos are resized on the device before saving.
 - On a 403 (`LIMIT_QR_CODES`, `LIMIT_DYNAMIC_QR`, `FEATURE_*`) it shows a toast and goes to `/billing`.
 
+### Pages — [Pages.tsx](../src/pages/Pages.tsx) and [PageEditor.tsx](../src/pages/PageEditor.tsx) (Phase 7)
+
+- `/pages` lists page codes with their short URL; the QR is shown on demand. `/pages/new` is the template picker: "Start from scratch", the 12 templates as live iframe previews, and the Restaurant Kit wizard.
+- The editor has a block list (add, move up and down, delete; no drag-and-drop library), theme controls, image upload through `POST /api/files`, Sinhala and Tamil text per block, and a live preview: an iframe whose `srcdoc` is `renderGuestPage(...)`, so the preview is exactly what guests see.
+- Analytics shows an **Engagements** card (clicks and CTR per link) for page codes.
+
 ### Restaurant Kit — [Kit.tsx](../src/pages/Kit.tsx) and [KitPrint.tsx](../src/pages/KitPrint.tsx)
 
 The wizard has three steps:

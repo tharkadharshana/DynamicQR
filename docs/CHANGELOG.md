@@ -2,6 +2,13 @@
 
 One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-review-findings.md](11-review-findings.md).
 
+## Phase 7: Pages builder and templates (branch `feat/pages-builder`)
+
+- **Blocks.** `renderGuestPage` renders `content_data.blocks[]` through one block switch: header, socials, button, text, image, video, products, contact (Save as contact → `?vcf=1`), offer, Wi-Fi, divider. Theme colours, button shape and font; per-block translations through `i18n[lang].blocks`. Still pure, escaped and `safeUrl`-checked. Kit pages without blocks render byte-for-byte as before (hash in the self-check).
+- **Engagements.** Page links go through `/<slug>/l/<key>`; the Worker logs the click and 302s. Migration 007 adds `qr_stats.clicks` and `record_click()` (a separate function, because a click must not touch the scan totals or the monthly quota). New analytics view `clicks` with CTR.
+- **Editor and templates.** `PageEditor.tsx` with a live `srcdoc` preview; `Pages.tsx` lists pages and the template picker; `src/lib/pageTemplates.ts` holds 12 presets in six groups (link-in-bio, products and services, digital business card, promotions, restaurant menu, real estate), with a self-check.
+- QA section 30. **Needs a Worker deploy** (click route, `?vcf=1`).
+
 ## Phase 6: Code types and QR design (branch `feat/code-types-design`)
 
 - **New URL types** built by one pure `buildDestination(kind, data)` in `src/lib/qrContent.ts`, with a self-check: Google review (Place ID), Instagram, Facebook, TikTok, YouTube, LinkedIn, X, phone, SMS, location and PDF. They store `qr_type 'url'` and `content_data.kind`, like WhatsApp, so analytics needed nothing new.
