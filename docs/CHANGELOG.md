@@ -2,6 +2,13 @@
 
 One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-review-findings.md](11-review-findings.md).
 
+## Phase 9: Forms (branch `feat/forms`)
+
+- **Form codes** (`qr_type 'form'`): the definition lives in `content_data`; `src/lib/forms.ts` holds the field types, the definition check and the submission validator, with a self-check. `renderGuestPage` renders native inputs and a honeypot, the thank-you page, and the form with its error.
+- **Submit path.** The Worker caps answers per visitor in KV (5 per 15 minutes) and posts to `/internal/form/:slug`; the server validates against the stored definition, stores the answer in `form_submissions` (migration 009, RLS on, no policies) and emails `notify_email` through the Resend helper the digest now shares (`sendEmail`).
+- **Owner side.** A Forms page, an editor with a live preview, a responses table with delete and a CSV download (`toCsv` in `csv.ts`, formula-safe). Answers are in `/api/user/export`.
+- Pricing lists forms. QA section 32. **Needs a Worker deploy** (form POST).
+
 ## Phase 8: Short links and organisation (branch `feat/links-organize`)
 
 - **Short links** (`kind='link'`) get a Dashboard tab and a "Paste a link" box. **Custom back-halves** on Pro and up (`limits.custom_slug`): `[A-Za-z0-9-]{3,40}`, refused when reserved. `RESERVED_SLUGS` moved into `src/lib/qrContent.ts` and is imported by the Worker and the server, so one list prevents collisions; the self-check checks every `App.tsx` route against it. The Worker's slug pattern widened to match.

@@ -156,12 +156,17 @@ After the gates pass, the Worker calls `renderGuestPage(config, lang, url)` from
 | `vcard` | `.vcf` download (`text/vcard`) |
 | `text` | HTML page with the text (escaped) |
 | `email` | `302` to `mailto:` |
+| `form` | The form: native inputs, a hidden honeypot, POST to the same URL (Phase 9) |
 | `event` | `.ics` download (`text/calendar`), one VEVENT with floating local times |
 | `wifi` | Page with the network and a copyable password (a *static* Wi-Fi code joins directly, so the kit prints a static one next to the guest page) |
 
 - **Language** comes from `?lang=en|si|ta`, then `Accept-Language`, then English. Sinhala and Tamil text uses Noto Sans from Google Fonts. **A language switch (`?lang=` on a non-URL code) is not counted as a scan** and does not touch the scan or visitor counters.
 - **Safety.** All text is HTML-escaped. Link URLs must start with `http(s)://`, `tel:` or `mailto:`; anything else (`javascript:`, `data:`) is dropped.
 - **Size.** `content_data` is capped at 20 KB by the API and travels inside the cached config.
+
+### Form answers (Phase 9)
+
+A `POST` to a form code, after the gates (a PIN unlock POST is told apart), is an answer, not a scan. The Worker counts answers per visitor in KV (`formsub:<slug>:<visitor>`, 5 per 15 minutes, then a 429 page), forwards the fields to `POST /internal/form/:slug` with the secret header, and renders the thank-you page, or the form again with the error and the typed values (400), or a retry message (503).
 
 ### UTM tags (Phase 8)
 

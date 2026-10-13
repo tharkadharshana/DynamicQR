@@ -96,6 +96,10 @@ Form cards (name and type, style, options, Visitor Guard) plus a live preview.
 - The editor has a block list (add, move up and down, delete; no drag-and-drop library), theme controls, image upload through `POST /api/files`, Sinhala and Tamil text per block, and a live preview: an iframe whose `srcdoc` is `renderGuestPage(...)`, so the preview is exactly what guests see.
 - Analytics shows an **Engagements** card (clicks and CTR per link) for page codes.
 
+### Forms — [Forms.tsx](../src/pages/Forms.tsx) and [FormEditor.tsx](../src/pages/FormEditor.tsx) (Phase 9)
+
+`/forms` lists forms; the editor reuses the Pages pattern (a field list with up, down and delete, and a live `srcdoc` preview); `/forms/:slug/responses` shows the answers with delete and a CSV download built in the browser with `toCsv()` from [csv.ts](../src/lib/csv.ts).
+
 ### Restaurant Kit — [Kit.tsx](../src/pages/Kit.tsx) and [KitPrint.tsx](../src/pages/KitPrint.tsx)
 
 The wizard has three steps:

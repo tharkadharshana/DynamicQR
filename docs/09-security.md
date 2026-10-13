@@ -98,3 +98,10 @@ Any signed-in user, including trial users, can point a code on the platform doma
 - Raw IPs are not stored in the DB. The Worker sends IP and UA to the API, and they show up in **Vercel request logs** (the access log records `ip` and `ua`). Mention this in the privacy policy, or stop logging them.
 - `scan_events` has no retention limit. Add a cleanup job, for example 400 days, to match the Team history limit.
 - Export and account deletion exist (GDPR-style rights). Deletion removes `scan_events` in the background, and a failure there is only logged.
+
+## Phase 9: forms
+
+- The stored definition is the trust boundary: `validateSubmission()` strips unknown fields, checks types and lengths, and the owner only ever sees validated values. Notification emails escape every value.
+- Spam: a hidden honeypot input (`_hp`; a filled one is accepted and dropped, so bots learn nothing) and a per-visitor KV counter at the edge (5 answers per 15 minutes).
+- `ip_hash` is the Worker's daily salted visitor hash, never the IP. `form_submissions` has RLS on and no policies.
+- CSV downloads prefix formula-like cells (`=`, `+`, `-`, `@`) with a quote mark (`toCsv`), so a spreadsheet does not run them.

@@ -113,6 +113,13 @@ The route returns `201` with the stored `qr_codes` row.
 
 Returns an array of the user's `qr_codes` rows (`password_hash` removed, `has_password` added). Each row has `id` (= slug) and `stats` (the `qr_stats` row, or `null`). Optional filters (Phase 8): `?kind=qr|link`, `?qr_type=page`, `?tag=<tag>`, `?folder=<client>`.
 
+### Forms (Phase 9)
+
+- `POST /api/qr` with `qr_type: 'form'` checks the definition with `formDefError()` (400 `INVALID_FORM`) and the plan's `forms` cap (403 `LIMIT_FORMS`).
+- `GET /api/forms/:slug/submissions` (owner): `[{id, data, created_at}]`, newest first, up to 5,000.
+- `DELETE /api/forms/:slug/submissions/:id` (owner, write): `{deleted}`; 404 when it is not there.
+- `GET /api/user/export` includes `form_submissions`.
+
 ### `POST /api/qr/bulk` (user, write)
 
 Body `{slugs: [...1–500], action: 'folder'|'tag'|'untag'|'activate'|'deactivate'|'delete', value?}`. Ownership is checked per slug, every changed code is purged at the edge, and activation goes through the plan caps one code at a time. Returns `{done: [slugs], failed: [{slug, error}]}`.
@@ -212,6 +219,7 @@ The add-on checkout was removed in Phase 0: there was no UI and the webhook bran
 | Method / path | Auth | Purpose |
 |---|---|---|
 | `GET /internal/slug/:slug` | secret | Compact gate config including the policy fields `quota_exceeded`, `paused` (lapse rule), `title`, `visitor_guard`, the resolved `visitor_rate_limit`, and for non-URL codes `qr_type`, `content_data` and `branding` ([doc 03](03-scan-flow-and-gate-engine.md#3-config-lookup)) |
+| `POST /internal/form/:slug` | secret | `{fields, visitor}` from the Worker: validated against the stored form (unknown fields stripped, a filled honeypot accepted and dropped), stored in `form_submissions`, and emailed to `notify_email` when set. 400 with a message, 404 for a missing or inactive form |
 | `POST /internal/click` | secret | `{slug, key}` → `record_click` (Pages engagements); 400 on a malformed key |
 | `GET /internal/gs1/:gtin` | secret | `{slug}` of the code that owns the GTIN; 400 on a bad check digit, 404 if none |
 | `POST /internal/scan` | secret | Records the scan only (the quota is enforced by the Worker from the config). Returns `OK` or `404`. |
