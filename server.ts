@@ -21,7 +21,7 @@ import { renderGuestPage, pickLang, appTarget, FILE_TYPES, blockTarget, esc as e
 import { gtinValid, isReservedSlug, CUSTOM_SLUG_RE, normTags, withUtm } from './src/lib/qrContent.js';
 import { buildDigest } from './src/lib/digest.js';
 import { formDefError, validateSubmission } from './src/lib/forms.js';
-import { pickRoute, routeCtx, rulesError } from './src/lib/routing.js';
+import { pickRoute, routeCtx, rulesError, primaryLang } from './src/lib/routing.js';
 import { signStandardWebhook, verifyStandardWebhook, newWebhookSecret, WEBHOOK_EVENTS } from './src/lib/webhooks.js';
 import { PLANS, TRIAL_LIMITS, GRACE_DAYS, DEFAULT_ADDONS, PRICES, PAID_PLANS, PlanId, PaidPlan, PlanLimits, UserAddons, Currency, BillingInterval } from './src/lib/plans.js';
 
@@ -1377,7 +1377,10 @@ async function startServer() {
         if (content_data !== undefined) {
           const routeErr = rulesError(content_data?.rules);
           if (routeErr) return res.status(400).json({ error: routeErr, code: 'INVALID_RULES' });
-          if (content_data?.rules?.length || content_data?.gps === true) {
+          // Only a change is gated: after a plan lapses, the editor sends the stored rules back unchanged and the edit must still save.
+          const rulesChanged = JSON.stringify(content_data?.rules || []) !== JSON.stringify(cur.content_data?.rules || []);
+          const gpsChanged = (content_data?.gps === true) !== (cur.content_data?.gps === true);
+          if ((rulesChanged && content_data?.rules?.length) || (gpsChanged && content_data?.gps === true)) {
             const { limits } = await getLicense(cur.user_uid);
             if (content_data?.rules?.length && !limits.smart_routing) return res.status(403).json({ error: 'Smart routing needs the Pro plan or above', code: 'FEATURE_ROUTING' });
             if (content_data?.gps === true && !limits.gps_tracking) return res.status(403).json({ error: 'GPS tracking needs the Pro plan or above', code: 'FEATURE_GPS' });
@@ -2003,16 +2006,17 @@ async function startServer() {
   app.post('/internal/geo', async (req, res) => {
     if (!process.env.INTERNAL_SECRET || req.headers['x-internal-secret'] !== process.env.INTERNAL_SECRET) return res.status(401).send('Unauthorized');
     const { slug, event_id } = req.body || {};
-    const lat = Number(req.body?.lat), lng = Number(req.body?.lng);
-    if (typeof slug !== 'string' || !/^[0-9a-f-]{36}$/i.test(String(event_id)) || !(Math.abs(lat) <= 90) || !(Math.abs(lng) <= 180)) {
+    const { lat, lng } = req.body || {};
+    if (typeof slug !== 'string' || !/^[0-9a-f-]{36}$/i.test(String(event_id)) || typeof lat !== 'number' || typeof lng !== 'number' || !(Math.abs(lat) <= 90) || !(Math.abs(lng) <= 180)) {
       return res.status(400).json({ error: 'slug, event_id, lat and lng required' });
     }
     const round = (n: number) => Math.round(n * 1000) / 1000;
     // Only a scan from the last 10 minutes without a fix yet, so a replayed id cannot move old points.
-    const { error } = await supabase.from('scan_events').update({ lat: round(lat), lng: round(lng) })
+    const { error, count } = await supabase.from('scan_events').update({ lat: round(lat), lng: round(lng) }, { count: 'exact' })
       .eq('id', event_id).eq('slug', slug).is('lat', null).gte('scanned_at', new Date(Date.now() - 600000).toISOString());
     if (error) { logger.error('Geo update failed', { message: error.message }); return res.status(500).send('Failed'); }
-    res.status(204).end();
+    // 404 = the scan is not recorded yet (its /internal/scan may still be running): the Worker tries once more.
+    res.status(count ? 204 : 404).end();
   });
 
   // Forms: the Worker forwards a POST here (after its gates and its per-visitor KV counter).
@@ -2205,7 +2209,9 @@ async function startServer() {
 
       const ua = req.headers['user-agent'] || '';
       const ctx = routeCtx(ua, String(req.headers['cf-ipcountry'] || ''), String(req.headers['accept-language'] || ''));
-      const destination = withUtm(pickRoute(qrData.content_data?.rules, ctx) || appTarget(qrData.content_data?.app, ua) || qrData.destination_url, qrData.content_data?.utm);
+      // Same rule as /internal/slug: URL codes on a plan with smart routing.
+      const routed = (qrData.qr_type || 'url') === 'url' && (await getLicense(qrData.user_uid)).limits.smart_routing ? qrData.content_data?.rules : undefined;
+      const destination = withUtm(pickRoute(routed, ctx) || appTarget(qrData.content_data?.app, ua) || qrData.destination_url, qrData.content_data?.utm);
       if (!destination) {
         return res.status(404).send('Destination not found');
       }
@@ -2291,7 +2297,7 @@ async function captureAnalyticsFromPayload(payload: any, qrOwnerUid?: string) {
     // Phase 10 (migration 010): the Worker's event id (links a GPS fix to this scan), city, language, referrer domain.
     p_id: /^[0-9a-f-]{36}$/i.test(payload.event_id || '') ? payload.event_id : null,
     p_city: typeof payload.city === 'string' ? payload.city.slice(0, 80) : '',
-    p_lang: String(payload.lang || '').slice(0, 2).toLowerCase().replace(/[^a-z]/g, ''),
+    p_lang: primaryLang(payload.lang),
     p_ref_host: refHost,
   };
   const { error } = await supabase.rpc('record_scan', args);

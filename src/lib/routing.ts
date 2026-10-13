@@ -12,13 +12,16 @@ export const OSES = ['iOS', 'Android', 'Windows', 'macOS', 'Linux', 'Other'];
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const okUrl = (u: unknown) => /^https?:\/\//i.test(String(u || ''));
 
+/** Primary language subtag of an Accept-Language header: 'fil-PH,en;q=0.8' → 'fil'. */
+export const primaryLang = (h: string) => (String(h || '').split(/[,;]/)[0].split('-')[0].trim().toLowerCase().match(/^[a-z]{2,3}$/) || [''])[0];
+
 /** Device and OS from a User-Agent, country from Cloudflare, language from Accept-Language (primary subtag). */
 export function routeCtx(ua: string, country: string, acceptLanguage: string, now = new Date()): RouteCtx {
   const os = /iPhone|iPad|iPod/i.test(ua) ? 'iOS' : /Android/i.test(ua) ? 'Android' : /Windows/i.test(ua) ? 'Windows'
     : /Mac OS X|Macintosh/i.test(ua) ? 'macOS' : /Linux|CrOS/i.test(ua) ? 'Linux' : 'Other';
   const device = /iPad|Tablet/i.test(ua) || (/Android/i.test(ua) && !/Mobile/i.test(ua)) ? 'tablet'
     : /Mobi|iPhone|iPod|Android/i.test(ua) ? 'mobile' : 'desktop';
-  return { device, os, country: String(country || '').toUpperCase(), lang: String(acceptLanguage || '').slice(0, 2).toLowerCase(), now };
+  return { device, os, country: String(country || '').toUpperCase(), lang: primaryLang(acceptLanguage), now };
 }
 
 /** Day of week (0 = Sunday) and "HH:MM" in a time zone (default Sri Lanka). */
@@ -84,6 +87,7 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('routing.ts'))
   const win = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)';
   const ipad = 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)';
   assert(routeCtx(iphone, 'lk', 'si-LK,si;q=0.9').os === 'iOS' && routeCtx(iphone, 'lk', '').device === 'mobile' && routeCtx(iphone, 'lk', 'si-LK').lang === 'si', 'iphone ctx');
+  assert(routeCtx(iphone, '', 'fil-PH,en;q=0.8').lang === 'fil' && primaryLang('') === '' && primaryLang('*') === '' && primaryLang('SI') === 'si', 'primary language subtag');
   assert(routeCtx(ipad, '', '').device === 'tablet' && routeCtx(pixel, '', '').os === 'Android' && routeCtx(win, '', '').device === 'desktop', 'device and os');
   const rules: Rule[] = [
     { if: { os: ['iOS'] }, url: 'https://apps.apple.com/x' },

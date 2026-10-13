@@ -1645,7 +1645,11 @@ async function run() {
     check('A posted fix is stored rounded to 3 decimals', fix.status === 204 && Array.isArray(geo) && geo[0]?.lat === 6.927 && geo[0]?.lng === 79.862, `status=${fix.status} ${JSON.stringify(geo)}`);
     const again = await api('/internal/geo', { method: 'POST', internal: true, body: JSON.stringify({ slug: g, event_id: eventId, lat: 1, lng: 1 }) });
     const geo2 = (await api(`/api/analytics/${g}/geo`, { token })).body;
-    check('A second fix for the same scan does not move it', again.status === 204 && geo2?.[0]?.lat === 6.927, JSON.stringify(geo2));
+    check('A second fix for the same scan does not move it', again.status === 404 && geo2?.[0]?.lat === 6.927, JSON.stringify(geo2));
+    const nullFix = await api('/internal/geo', { method: 'POST', internal: true, body: JSON.stringify({ slug: g, event_id: eventId, lat: null, lng: null }) });
+    check('A null fix is refused, not stored as 0,0', nullFix.status === 400, `got ${nullFix.status}`);
+    const lost = await api('/internal/geo', { method: 'POST', internal: true, body: JSON.stringify({ slug: g, event_id: '00000000-0000-4000-8000-000000000000', lat: 1, lng: 1 }) });
+    check('A fix for a scan that is not recorded (yet) → 404, so the Worker retries', lost.status === 404, `got ${lost.status}`);
     const noSecret = await api('/internal/geo', { method: 'POST', body: JSON.stringify({ slug: g, event_id: eventId, lat: 1, lng: 1 }) });
     check('/internal/geo without the secret → 401', noSecret.status === 401, `got ${noSecret.status}`);
 
@@ -1663,6 +1667,8 @@ async function run() {
     await admin.from('profiles').update({ plan: 'free', plan_expires_at: null, is_trial: false, trial_expires_at: new Date(Date.now() - 86400000).toISOString() }).eq('id', uid);
     const freeRules = await api(`/api/qr/${rt}`, { method: 'PUT', token, body: JSON.stringify({ content_data: { rules } }) });
     check('Free: saving rules → 403 FEATURE_ROUTING', freeRules.status === 403 && freeRules.body?.code === 'FEATURE_ROUTING', `got ${freeRules.status}`);
+    const keep = await api(`/api/qr/${rt}`, { method: 'PUT', token, body: JSON.stringify({ title: 'QA routing renamed', content_data: { rules } }) });
+    check('On Free, an edit that leaves the stored rules unchanged still saves', keep.status === 200, `got ${keep.status}`);
     const lapsedCfg = (await api(`/internal/slug/${rt}`, { internal: true })).body;
     check('On Free, stored rules are not served to the edge', lapsedCfg?.rules === undefined, JSON.stringify(lapsedCfg?.rules));
     await admin.from('profiles').update({ plan: 'pro', plan_expires_at: new Date(Date.now() + 30 * 86400000).toISOString() }).eq('id', uid);
