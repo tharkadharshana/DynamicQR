@@ -47,6 +47,9 @@ export function formatPrice(plan: PaidPlan, currency: Currency, interval: Billin
   return currency === 'USD' ? `$${n}` : `LKR ${n.toLocaleString('en-US')}`;
 }
 
+/** Webhook endpoints per account (Business only; the plan flag `webhooks` turns the feature on). */
+export const MAX_WEBHOOKS = 10;
+
 export const PLANS: Record<PlanId, PlanLimits> = {
   free: {
     qr_codes: 3,

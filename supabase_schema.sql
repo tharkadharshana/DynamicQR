@@ -210,7 +210,7 @@ alter table public.form_submissions enable row level security;
 
 -- ──────────────────────────────────────────────────────────────
 -- BUSINESS (migration 011): webhooks, workspaces. qr_codes.workspace_id / workspace_members.workspace_id
--- reference workspaces(id) on delete set null (added by the migration after workspaces exists).
+-- reference workspaces(id) (qr_codes: on delete set null; workspace_members: on delete cascade), added by the migration after workspaces exists.
 -- ──────────────────────────────────────────────────────────────
 create table if not exists public.webhooks (
   id                uuid primary key default gen_random_uuid(),

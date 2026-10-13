@@ -4,6 +4,7 @@ import { supabase, logout } from '../supabase';
 import { apiFetch, formatNumber } from '../lib/api';
 import { useUI } from '../shared/UIContext';
 import TeamSettings from '../components/TeamSettings';
+import { WorkspacesSection, DomainsSection, WebhooksSection } from '../components/BusinessSettings';
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -31,7 +32,7 @@ export default function Settings() {
   
   const [savingProfile, setSavingProfile] = useState(false);
   const [digestOn, setDigestOn] = useState(true);
-  const [webhookUrl, setWebhookUrl] = useState('');
+  const [section, setSection] = useState('account');
 
   useEffect(() => {
     const displayName = user?.user_metadata?.full_name || user?.user_metadata?.name || '';
@@ -234,6 +235,20 @@ export default function Settings() {
 
           {/* RIGHT COLUMN */}
           <div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '16px' }} role="tablist" aria-label="Settings sections">
+              {([['workspaces', 'Workspaces'], ['members', 'Members'], ['domains', 'Custom domains'], ['webhooks', 'Webhooks'], ['account', 'Account']] as const).map(([k, label]) => (
+                <button key={k} role="tab" aria-selected={section === k} className={`btn btn-sm ${section === k ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setSection(k)}>{label}</button>
+              ))}
+              <button className="btn btn-ghost btn-sm" onClick={exportData}>Export data</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => navigate('/bulk')}>Bulk generator</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => navigate('/api-docs')}>Developer API</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => navigate('/billing')}>Billing</button>
+            </div>
+            {section === 'workspaces' && <WorkspacesSection planData={planData} />}
+            {section === 'domains' && <DomainsSection planData={planData} />}
+            {section === 'webhooks' && <WebhooksSection planData={planData} />}
+            {section === 'members' && <TeamSettings planData={planData} />}
+            {section === 'account' && <>
             <div className="settings-section mb16">
               <div className="settings-header">
                 <span className="settings-title">Profile information</span>
@@ -334,8 +349,6 @@ export default function Settings() {
               </div>
             </div>
 
-            <TeamSettings planData={planData} />
-
             <div className="settings-section" style={{ borderColor: 'rgba(255,87,87,0.2)' }}>
               <div className="settings-header" style={{ borderColor: 'rgba(255,87,87,0.2)' }}><span className="settings-title" style={{ color: 'var(--red)' }}>Danger zone</span></div>
               <div className="settings-body">
@@ -344,7 +357,7 @@ export default function Settings() {
                 <div className="setting-row"><div className="setting-info"><div className="setting-name">Delete account</div><div className="setting-desc">Permanently deletes account, all QR codes, and all analytics</div></div><button className="btn btn-ghost btn-sm" style={{ borderColor: 'rgba(255,87,87,0.4)', color: 'var(--red)' }} onClick={deleteAccount}>Delete my account</button></div>
               </div>
             </div>
-
+            </>}
           </div>
         </div>
       </div>

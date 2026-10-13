@@ -103,7 +103,8 @@ Any signed-in user, including trial users, can point a code on the platform doma
 
 - **Webhooks** are signed with `webhook-id`, `webhook-timestamp` and `webhook-signature: v1,<base64 HMAC-SHA256>` over `id.timestamp.body`, keyed with the endpoint's `whsec_…` secret ([webhooks.ts](../src/lib/webhooks.ts): the same signer and verifier the Polar webhook uses). The secret is shown once. Receivers should reject timestamps more than 5 minutes old. URLs must be https and public; redirects are not followed. `ponytail:` a public name that resolves to a private address is not caught; resolve and check the address before each delivery if this becomes a risk.
 - **Workspaces** are enforced in the one place that already resolves who is acting: `authenticate` sets `user.workspace` from the `X-Workspace` header (checked against the owner's workspaces, or the member's own), and `requireOwnership`, the list, bulk and analytics scopes filter on it. A member held to a workspace cannot switch.
-- Webhook delivery stops when the plan lapses.
+- Webhook delivery stops when the plan lapses (test pings too). Events carry only public fields: `qr.updated` never includes a password hash or the whole `content_data`. User-facing handlers wait at most 2.5 s for deliveries (`deliverSoon`); the Worker's `/internal/scan` call waits for the full retries because it already runs in `waitUntil`. The URL check strips a trailing dot and refuses `*.localhost`, `*.local`, `*.internal`, `*.lan`, single-label names and private, link-local and carrier-grade ranges.
+- Deleting a workspace deletes members held to it (it never widens their access); codes move to the default workspace. The owner moves codes between workspaces with `PUT workspace_id` or the bulk `workspace` action (a member held to a workspace cannot).
 
 ## Phase 10: location
 

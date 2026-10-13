@@ -2,6 +2,7 @@ import React, { Suspense, useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase, logout } from '../supabase';
 import { useUI } from '../shared/UIContext';
+import WorkspaceSwitcher from './WorkspaceSwitcher';
 
 export default function DynamicQRLayout({ planData }: { planData?: any }) {
   const location = useLocation();
@@ -234,6 +235,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
             <span className="page-sub hidden sm:inline" id="page-sub" style={{ marginLeft: '12px' }}>{sub}</span>
           </div>
           <div className="topbar-right">
+            <WorkspaceSwitcher planData={planData} />
             <button
               className="btn btn-icon btn-sm"
               onClick={toggleTheme}

@@ -75,6 +75,7 @@ export default function CreateQR() {
     qr_type: 'url',
     content_data: {} as any,
     slug: '',
+    domain: '',
     is_active: true,
     style: { ...DEFAULT_STYLE },
     options: {
@@ -130,6 +131,7 @@ export default function CreateQR() {
             qr_type: data.qr_type || 'url',
             content_data: data.content_data || {},
             slug: data.slug || '',
+            domain: data.domain || '',
             is_active: data.is_active !== false,
             style: { ...DEFAULT_STYLE, ...data.style },
             options: {
@@ -204,6 +206,7 @@ export default function CreateQR() {
       const content = getQRContent({
         is_dynamic: isDynamic,
         slug: formData.slug || 'preview',
+        domain: formData.domain,
         qr_type: dbType,
         content_data: formData.content_data,
         destination_url: dest,
@@ -212,7 +215,7 @@ export default function CreateQR() {
 
       qrCodeRef.current.update(stylingOptions(formData.style, content, PREVIEW_SIZE));
     }
-  }, [dest, formData.style, qrType, dbType, formData.content_data, isDynamic, formData.slug, gtin]);
+  }, [dest, formData.style, qrType, dbType, formData.content_data, isDynamic, formData.slug, formData.domain, gtin]);
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -865,6 +868,16 @@ export default function CreateQR() {
                 </div>
               )}
 
+              {isDynamic && (planData?.custom_domains?.length || 0) > 1 && (
+                <div className="form-section" style={{ padding: '16px 0 0' }}>
+                  <label className="form-label" htmlFor="qr-domain">Short domain</label>
+                  <select id="qr-domain" className="form-input" value={formData.domain} onChange={(e) => setFormData({ ...formData, domain: e.target.value })}>
+                    <option value="">Account default</option>
+                    {planData.custom_domains.map((h: string) => <option key={h} value={h}>{h}</option>)}
+                  </select>
+                </div>
+              )}
+
               {showUtm && (
                 <details style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
                   <summary style={{ fontWeight: 500, cursor: 'pointer' }}>UTM tags <span style={{ color: 'var(--text3)', fontWeight: 'normal', fontSize: '13px' }}>(added to the link on every scan)</span></summary>
@@ -1089,6 +1102,7 @@ export default function CreateQR() {
                     tags: [],
                     destination_url: '',
                     slug: '',
+                    domain: '',
                     qr_type: 'url',
                     is_active: true,
                     content_data: {},
@@ -1134,7 +1148,7 @@ export default function CreateQR() {
               </div>
             )}
             <div className="qr-preview-slug" id="preview-slug">
-              {isDynamic ? `${shortHost()}/${formData.slug || '———'}` : 'Static QR'}
+              {isDynamic ? `${formData.domain || shortHost()}/${formData.slug || '———'}` : 'Static QR'}
             </div>
             <div style={{ marginBottom: '16px' }}>
               <div style={{ fontSize: '11px', color: 'var(--text3)', marginBottom: '4px' }}>Destination</div>

@@ -3,7 +3,7 @@ import { apiFetch } from '../lib/api';
 import { resizeLogo } from '../lib/qrContent';
 import { useUI } from '../shared/UIContext';
 
-// Plan settings for Pro and up: API keys, members (seats from the plan), one custom short domain, white-label report branding.
+// Plan settings for Pro and up: API keys, members (seats from the plan), white-label report branding.
 export default function TeamSettings({ planData }: { planData: any }) {
   const { showToast, showModal } = useUI();
   const limits = planData?.limits || {};
@@ -12,8 +12,8 @@ export default function TeamSettings({ planData }: { planData: any }) {
   const [newKey, setNewKey] = useState<string | null>(null);
   const [members, setMembers] = useState<any[]>([]);
   const [email, setEmail] = useState('');
-  const [domain, setDomain] = useState<any>(null);
-  const [hostname, setHostname] = useState('');
+  const [workspaces, setWorkspaces] = useState<any[]>([]);
+  const [wsId, setWsId] = useState('');
   const [agencyName, setAgencyName] = useState(planData?.profile?.agencyName || '');
   const [agencyLogo, setAgencyLogo] = useState(planData?.profile?.agencyLogo || '');
 
@@ -21,13 +21,13 @@ export default function TeamSettings({ planData }: { planData: any }) {
     if (!owner) return;
     if (limits.api_access) apiFetch('/api/keys').then(setKeys).catch(() => {});
     if (limits.seats > 1) apiFetch('/api/team').then(setMembers).catch(() => {});
-    if (limits.custom_domains > 0) apiFetch('/api/domains').then(setDomain).catch(() => {});
+    if (limits.workspaces > 1) apiFetch('/api/workspaces').then(r => setWorkspaces((Array.isArray(r) ? r : []).filter((w: any) => w.id !== 'default'))).catch(() => {});
   };
   useEffect(refresh, [planData]);
 
-  if (!limits.api_access && limits.seats <= 1 && !(limits.custom_domains > 0)) return null;
+  if (!limits.api_access && limits.seats <= 1) return null;
   if (!owner) {
-    return <div className="settings-section mb16"><div className="settings-body" style={{ fontSize: '13px', color: 'var(--text3)' }}>You are a member of a shared workspace. The owner manages keys, members, domains and billing.</div></div>;
+    return <div className="settings-section mb16"><div className="settings-body" style={{ fontSize: '13px', color: 'var(--text3)' }}>You are a member of a shared workspace. The owner manages keys, members and billing.</div></div>;
   }
 
   const run = async (fn: () => Promise<any>, ok: string) => {
@@ -66,37 +66,21 @@ export default function TeamSettings({ planData }: { planData: any }) {
           <div className="settings-body" style={{ display: 'grid', gap: '10px' }}>
             {members.map(m => (
               <div key={m.id} className="setting-row">
-                <div className="setting-info"><div className="setting-name">{m.member_email}</div><div className="setting-desc">{m.joined ? 'Joined' : 'Invited — they join by signing in with Google using this email'}</div></div>
+                <div className="setting-info"><div className="setting-name">{m.member_email}</div><div className="setting-desc">{m.joined ? 'Joined' : 'Invited — they join by signing in with Google using this email'}{m.workspace_id ? ` · ${workspaces.find(w => w.id === m.workspace_id)?.name || 'one workspace'} only` : ''}</div></div>
                 <button className="btn btn-ghost btn-sm" onClick={() => showModal({ type: 'confirm', title: 'Remove member', message: `Remove ${m.member_email}?`, confirmText: 'Remove', isDestructive: true,
                   onConfirm: () => run(() => apiFetch(`/api/team/${m.id}`, { method: 'DELETE' }), 'Member removed') })}>Remove</button>
               </div>
             ))}
             <div style={{ display: 'flex', gap: '8px' }}>
               <input className="form-input" type="email" aria-label="Member email" placeholder="colleague@business.lk" value={email} onChange={e => setEmail(e.target.value)} />
-              <button className="btn btn-primary btn-sm" disabled={!email} onClick={() => run(async () => { await apiFetch('/api/team', { method: 'POST', body: JSON.stringify({ email }) }); setEmail(''); }, 'Invite saved')}>Invite</button>
+              {workspaces.length > 0 && (
+                <select className="form-input" aria-label="Workspace access" style={{ width: 'auto' }} value={wsId} onChange={e => setWsId(e.target.value)}>
+                  <option value="">All workspaces</option>
+                  {workspaces.map(w => <option key={w.id} value={w.id}>Only {w.name}</option>)}
+                </select>
+              )}
+              <button className="btn btn-primary btn-sm" disabled={!email} onClick={() => run(async () => { await apiFetch('/api/team', { method: 'POST', body: JSON.stringify({ email, ...(wsId ? { workspace_id: wsId } : {}) }) }); setEmail(''); }, 'Invite saved')}>Invite</button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {limits.custom_domains > 0 && (
-        <div className="settings-section mb16">
-          <div className="settings-header"><span className="settings-title">Custom short domain</span></div>
-          <div className="settings-body" style={{ display: 'grid', gap: '10px', fontSize: '13px' }}>
-            {domain ? (
-              <>
-                <div><b>{domain.hostname}</b> · {domain.status === 'active' ? '✅ active — new codes use this domain' : domain.status === 'failed' ? '❌ failed' : '⏳ waiting for DNS and certificate'}</div>
-                {domain.status !== 'active' && <div style={{ color: 'var(--text3)' }}>Add a CNAME record: <code>{domain.hostname}</code> → <code>{domain.cname_target || 'your Scnr fallback hostname'}</code>. It usually takes a few minutes.</div>}
-                <div><button className="btn btn-ghost btn-sm" onClick={() => showModal({ type: 'confirm', title: 'Remove domain', message: 'Codes printed with this domain stop working. Remove it?', confirmText: 'Remove', isDestructive: true,
-                  onConfirm: () => run(() => apiFetch('/api/domains', { method: 'DELETE' }), 'Domain removed') })}>Remove domain</button></div>
-              </>
-            ) : (
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input className="form-input" aria-label="Custom hostname" placeholder="qr.yourbusiness.lk" value={hostname} onChange={e => setHostname(e.target.value)} />
-                <button className="btn btn-primary btn-sm" disabled={!hostname} onClick={() => run(() => apiFetch('/api/domains', { method: 'POST', body: JSON.stringify({ hostname }) }), 'Domain added — now add the DNS record')}>Add</button>
-              </div>
-            )}
-            <div style={{ color: 'var(--text3)', fontSize: '12px' }}>Only change this before printing. Codes already printed keep their old domain, which keeps working.</div>
           </div>
         </div>
       )}
