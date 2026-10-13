@@ -1655,7 +1655,7 @@ async function startServer() {
   app.post('/internal/click', async (req, res) => {
     if (!process.env.INTERNAL_SECRET || req.headers['x-internal-secret'] !== process.env.INTERNAL_SECRET) return res.status(401).send('Unauthorized');
     const { slug, key } = req.body || {};
-    if (typeof slug !== 'string' || typeof key !== 'string' || !/^\d{1,3}(-\d{1,3})?$/.test(key)) return res.status(400).json({ error: 'slug and key required' });
+    if (typeof slug !== 'string' || typeof key !== 'string' || !/^[a-z0-9]{1,12}(-\d{1,3})?$/.test(key)) return res.status(400).json({ error: 'slug and key required' });
     const { error } = await supabase.rpc('record_click', { p_slug: slug, p_key: key });
     if (error) { logger.error('record_click failed', { message: error.message }); return res.status(500).send('Failed'); }
     res.send('OK');
@@ -1758,6 +1758,15 @@ async function startServer() {
     if (error) return res.status(500).json({ error: 'Failed' });
     if (!data) return res.status(404).send('Not Found');
     res.json({ slug: data.slug });
+  });
+
+  // Local dev: tracked page links (the Worker does this in production).
+  app.get('/:slug/l/:key', async (req, res, next) => {
+    const qr = await row('qr_codes', 'slug', req.params.slug).catch(() => null);
+    const target = qr?.qr_type === 'page' ? blockTarget(qr.content_data, req.params.key) : null;
+    if (!target) return next();
+    await supabase.rpc('record_click', { p_slug: qr.slug, p_key: req.params.key });
+    res.redirect(302, target.url);
   });
 
   // Redirect Engine (Local Dev fallback)

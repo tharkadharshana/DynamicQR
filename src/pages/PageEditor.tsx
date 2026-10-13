@@ -21,9 +21,13 @@ const IMAGE_TYPES: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 
 const previewHtml = (title: string, content_data: any, lang: Lang = 'en') =>
   (renderGuestPage({ qr_type: 'page', title, content_data }, lang, PREVIEW_URL) as any)?.body || '';
 
+// Stable block ids: click counts are keyed by them, so moving a block keeps its Engagements history.
+const bid = () => Math.random().toString(36).slice(2, 8).padEnd(6, '0');
+const withIds = (bs: any[]) => bs.map(b => (b.id ? b : { ...b, id: bid() }));
+
 /** Editor state keeps each block's translations on the block (`_tr`), so moving or deleting a block moves them too. */
 function fromContent(cd: any) {
-  return (cd.blocks || []).map((b: any, i: number) => ({ ...b, _tr: { si: cd.i18n?.si?.blocks?.[i] || {}, ta: cd.i18n?.ta?.blocks?.[i] || {} } }));
+  return withIds(cd.blocks || []).map((b: any, i: number) => ({ ...b, _tr: { si: cd.i18n?.si?.blocks?.[i] || {}, ta: cd.i18n?.ta?.blocks?.[i] || {} } }));
 }
 function toContent(blocks: any[], theme: any) {
   const i18n: any = {};
@@ -39,7 +43,7 @@ function kitToBlocks(d: any) {
   if (d.offer?.text) blocks.push({ kind: 'offer', title: d.offer.title || '', text: d.offer.text, _tr: { si: { text: d.i18n?.si?.offer?.text }, ta: { text: d.i18n?.ta?.offer?.text } } });
   (d.links || []).forEach((l: any, i: number) => blocks.push({ kind: 'button', label: l.label, url: l.url, _tr: { si: { label: d.i18n?.si?.labels?.[i] }, ta: { label: d.i18n?.ta?.labels?.[i] } } }));
   if (d.wifi?.ssid) blocks.push({ kind: 'wifi', ssid: d.wifi.ssid, password: d.wifi.password || '' });
-  return blocks;
+  return withIds(blocks);
 }
 
 function TemplatePicker() {
@@ -101,6 +105,7 @@ function Editor({ slug, template }: { slug?: string; template: string | null }) 
   useEffect(() => {
     if (!slug) return;
     apiFetch(`/api/qr/${slug}`).then(qr => {
+      if (qr.qr_type !== 'page') { navigate(`/edit/${slug}`, { replace: true }); return; } // not a page: the code editor
       const cd = qr.content_data || {};
       setTitle(qr.title || '');
       if (Array.isArray(cd.blocks)) { setBlocks(fromContent(cd)); setTheme({ ...DEFAULT_THEME, ...(cd.theme || {}) }); }
@@ -112,7 +117,7 @@ function Editor({ slug, template }: { slug?: string; template: string | null }) 
   const upd = (i: number, patch: any) => setBlocks(bs => bs.map((b, j) => (j === i ? { ...b, ...patch } : b)));
   const updItem = (i: number, j: number, patch: any) => setBlocks(bs => bs.map((b, k) => (k === i ? { ...b, items: b.items.map((it: any, m: number) => (m === j ? { ...it, ...patch } : it)) } : b)));
   const move = (i: number, d: number) => setBlocks(bs => { const n = [...bs]; [n[i], n[i + d]] = [n[i + d], n[i]]; return n; });
-  const add = () => setBlocks(bs => [...bs, { kind: addKind, ...(addKind === 'socials' || addKind === 'products' ? { items: [] } : {}), _tr: { si: {}, ta: {} } }]);
+  const add = () => setBlocks(bs => [...bs, { id: bid(), kind: addKind, ...(addKind === 'socials' || addKind === 'products' ? { items: [] } : {}), _tr: { si: {}, ta: {} } }]);
 
   // Image goes straight to Storage through a signed upload URL, like the PDF code type.
   const upload = async (id: string, file: File | undefined, done: (url: string) => void) => {
@@ -276,7 +281,7 @@ function Editor({ slug, template }: { slug?: string; template: string | null }) 
             </div>
 
             {blocks.map((b, i) => (
-              <div key={i} className="card mb16">
+              <div key={b.id || i} className="card mb16">
                 <div className="section-row" style={{ marginBottom: '10px' }}>
                   <span className="card-title" style={{ margin: 0 }}>{KIND_LABELS[b.kind] || b.kind}</span>
                   <div style={{ display: 'flex', gap: '6px' }}>
