@@ -89,6 +89,8 @@ On Vercel each serverless instance keeps its own counters, so these limits are s
   "gtin": "4006381333931",               // optional GS1 GTIN-8/12/13/14: check digit validated (400 INVALID_GTIN), stored as GTIN-14, unique (409 GTIN_TAKEN); forces dynamic
   "slug": "menu-2026",                   // optional custom back-half (Pro+): 3–40 [A-Za-z0-9-]; 400 INVALID_SLUG / RESERVED_SLUG, 403 FEATURE_CUSTOM_SLUG, 409 SLUG_TAKEN
   "tags": ["menu", "colombo"],           // optional, lower-cased, ≤10 of ≤30 chars (also on PUT)
+  // content_data.rules (Pro+): [{if:{device,os,country,lang,days,from,to,tz}, url}], ≤20; 400 INVALID_RULES, 403 FEATURE_ROUTING
+  // content_data.gps: true (Pro+) turns on the GPS interstitial; 403 FEATURE_GPS
   "kind": "qr|link",                     // default qr; link = short link: dynamic url with a destination_url (else 400)
   "is_dynamic": true,
   "content_data": { … },                 // type-specific (see doc 05), max 20 KB
@@ -168,6 +170,9 @@ One set of views is served in two scopes:
 | `devices` | `[{device_type, count, pct}]` |
 | `countries` | top 10 `[{country, scans, unique_visitors: 0}]` |
 | `os`, `browsers` | `[{os|browser, count, pct}]` |
+| `cities` | top 10 `[{city, scans}]` (Phase 10) |
+| `languages`, `referrers` | top 10 `[{language|referrer, count, pct}]` (Phase 10) |
+| `geo` | the newest 1,000 GPS fixes `[{lat, lng, scanned_at}]` (Phase 10, opt-in codes only) |
 | `clicks` | Pages: `[{slug, key, label, url, clicks, ctr}]`, labels from the page's current blocks, CTR = clicks / scans × 100 |
 | `hours` | 24 rows `[{hour: 0–23 (UTC), scans}]`, all time |
 | `performance` | `[{id, slug, title, total_scans, unique_scans}]`, by scans |
@@ -219,6 +224,7 @@ The add-on checkout was removed in Phase 0: there was no UI and the webhook bran
 | Method / path | Auth | Purpose |
 |---|---|---|
 | `GET /internal/slug/:slug` | secret | Compact gate config including the policy fields `quota_exceeded`, `paused` (lapse rule), `title`, `visitor_guard`, the resolved `visitor_rate_limit`, and for non-URL codes `qr_type`, `content_data` and `branding` ([doc 03](03-scan-flow-and-gate-engine.md#3-config-lookup)) |
+| `POST /internal/geo` | secret | `{slug, event_id, lat, lng}` → fills `scan_events.lat/lng` (3 decimals) for a fresh scan without a fix; 204 |
 | `POST /internal/form/:slug` | secret | `{fields, visitor}` from the Worker: validated against the stored form (unknown fields stripped, a filled honeypot accepted and dropped), stored in `form_submissions`, and emailed to `notify_email` when set. 400 with a message, 404 for a missing or inactive form |
 | `POST /internal/click` | secret | `{slug, key}` → `record_click` (Pages engagements); 400 on a malformed key |
 | `GET /internal/gs1/:gtin` | secret | `{slug}` of the code that owns the GTIN; 400 on a bad check digit, 404 if none |

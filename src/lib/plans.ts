@@ -196,6 +196,7 @@ export function planFeatures(plan: PlanId): string[] {
     'Colours, shapes and logo',
     ...(l.password_protect ? ['PIN, expiry, scan limits and Visitor Guard'] : []),
     ...(l.custom_slug ? ['Custom back-halves for links'] : []),
+    ...(l.smart_routing ? ['Smart routing and GPS tracking'] : []),
     ...(l.remove_branding ? ['No Scnr branding'] : []),
     // ponytail: one domain per account until Phase 11 lifts the route's "1 per account" check; then show the count.
     ...(l.custom_domains ? ['Your own short domain'] : []),

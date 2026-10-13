@@ -52,3 +52,9 @@ See [doc 04](04-backend-api-reference.md#analytics). One set of views serves bot
 ## Weekly digest
 
 `buildDigest()` ([src/lib/digest.ts](../src/lib/digest.ts), with a self-check) takes the last 7 days of scans and produces the total, the busiest hour in the owner's time zone, the top code and a short tip. The Monday cron emails it through Resend. Owners opt out in Settings.
+
+## Phase 10: cities, languages, referrers and the GPS map
+
+- **Top cities** come from Cloudflare's `request.cf.city` at the edge; **languages** from the scanner's `Accept-Language` (primary subtag); **referrers** from the `Referer` header's domain. All three are all-time maps in `qr_stats`, summed like countries, so they are not limited by the history window.
+- **Scan map.** Only codes with GPS tracking turned on collect fixes, and only when the scanner allows it. Points are rounded to about 100 m. The map shows the newest 1,000.
+- **Engagements** (Phase 7) and **form answers** (Phase 9) are not scans and never change these numbers.
