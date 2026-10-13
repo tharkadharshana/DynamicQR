@@ -2,12 +2,33 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase';
 import QRCode from 'qrcode';
+import QRCodeStyling from 'qr-code-styling';
+import { zipSync } from 'fflate';
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
 import { apiFetch } from '../lib/api';
 import { useUI } from '../shared/UIContext';
 import QRViewerModal from '../components/QRViewerModal';
 import { pageEditPath } from './Pages';
-import { getQRContent, SHORT_DOMAIN, shortHost } from '../lib/qrContent';
+import { slugProblem } from './CreateQR';
+import { getQRContent, SHORT_DOMAIN, shortHost, stylingOptions, framedSvg } from '../lib/qrContent';
+
+// Dashboard tabs over the one loaded list. Phase 9 adds ['form', 'Forms'] here.
+const TABS: [string, string][] = [['qr', 'QR codes'], ['page', 'Pages'], ['link', 'Short links']];
+const tabOf = (q: any) => (q.kind === 'link' ? 'link' : q.qr_type === 'page' ? 'page' : 'qr');
+const SORTS: Record<string, [string, (a: any, b: any) => number]> = {
+  newest: ['Newest', (a, b) => String(b.created_at).localeCompare(String(a.created_at))],
+  oldest: ['Oldest', (a, b) => String(a.created_at).localeCompare(String(b.created_at))],
+  scans: ['Most scans', (a, b) => (b.stats?.total_scans || 0) - (a.stats?.total_scans || 0)],
+  name: ['Name', (a, b) => String(a.title || a.slug).localeCompare(String(b.title || b.slug))],
+};
+
+function saveBlob(blob: Blob, name: string) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
 
 // "Swap today's offer": edit a guest page's offer in place; live on the next scan, no reprint.
 function OfferSwap({ qr, onSaved }: { qr: any; onSaved: (qr: any) => void }) {
@@ -40,7 +61,15 @@ function OfferSwap({ qr, onSaved }: { qr: any; onSaved: (qr: any) => void }) {
 
 export default function Dashboard() {
   const [qrCodes, setQrCodes] = useState<any[]>([]);
-  const [clientFilter, setClientFilter] = useState('');
+  const [tab, setTab] = useState('qr');
+  const [folder, setFolder] = useState('');
+  const [tag, setTag] = useState('');
+  const [sort, setSort] = useState('newest');
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<Set<string> | null>(null); // null = not in select mode
+  const [pasteUrl, setPasteUrl] = useState('');
+  const [backHalf, setBackHalf] = useState('');
+  const [busy, setBusy] = useState(false);
   const [viewQR, setViewQR] = useState<any | null>(null);
   const [stats, setStats] = useState<Record<string, any>>({});
   const [timeseries, setTimeseries] = useState<any[]>([]);
@@ -99,17 +128,7 @@ export default function Dashboard() {
 
     const fetchData = async () => {
       try {
-        // Fetch QR Codes (now includes stats from server-side join)
-        const codes = await apiFetch('/api/qr');
-        const codesArray = Array.isArray(codes) ? codes : [];
-        setQrCodes(codesArray);
-        
-        // Map stats from the response
-        const newStats: Record<string, any> = {};
-        codesArray.forEach((qr: any) => {
-          if (qr.stats) newStats[qr.id] = qr.stats;
-        });
-        setStats(newStats);
+        await loadCodes();
 
         // Fetch account level data
         const [devData, countryData, recentData] = await Promise.all([
@@ -134,6 +153,81 @@ export default function Dashboard() {
 
     fetchData();
   }, [userId]);
+
+  // QR codes, pages and short links in one list, each with its stats from the server-side join.
+  const loadCodes = async () => {
+    const codes = await apiFetch('/api/qr');
+    const codesArray = Array.isArray(codes) ? codes : [];
+    setQrCodes(codesArray);
+    const newStats: Record<string, any> = {};
+    codesArray.forEach((qr: any) => {
+      if (qr.stats) newStats[qr.id] = qr.stats;
+    });
+    setStats(newStats);
+  };
+
+  // "Paste a link": a short link straight from the Dashboard (kind 'link'; no QR image).
+  const shorten = async () => {
+    const url = pasteUrl.trim();
+    if (!/^https?:\/\/\S+\.\S+/.test(url)) return showToast('error', 'Paste a full link starting with https://');
+    if (slugProblem(backHalf)) return showToast('error', slugProblem(backHalf));
+    setBusy(true);
+    try {
+      const qr = await apiFetch('/api/qr', { method: 'POST', body: JSON.stringify({ kind: 'link', qr_type: 'url', destination_url: url, title: new URL(url).hostname.slice(0, 120), ...(backHalf ? { slug: backHalf } : {}) }) });
+      const short = getQRContent(qr);
+      navigator.clipboard?.writeText(short).catch(() => {});
+      showToast('success', `${short} is ready and copied.`);
+      setPasteUrl('');
+      setBackHalf('');
+      setTab('link');
+      await loadCodes();
+    } catch (err: any) {
+      showToast('error', err?.message || 'Could not shorten that link');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Select mode: one server call for many codes, then reload and report what happened.
+  const bulk = async (action: string, value?: string) => {
+    if (!selected?.size) return;
+    try {
+      const r = await apiFetch('/api/qr/bulk', { method: 'POST', body: JSON.stringify({ slugs: [...selected], action, value }) });
+      const why = [...new Set((r.failed || []).map((f: any) => f.error))].join(', ');
+      showToast(r.failed?.length ? 'warning' : 'success', `${r.done.length} done${r.failed?.length ? `, ${r.failed.length} failed (${why})` : ''}.`);
+      setSelected(new Set());
+      await loadCodes();
+    } catch (err: any) {
+      showToast('error', err?.message || 'That did not work. Try again.');
+    }
+  };
+  const askBulk = (action: string, title: string, message: string, confirmText: string) =>
+    showModal({ type: 'prompt', title, message, confirmText, onConfirm: v => bulk(action, (v || '').trim()) });
+
+  // Download ZIP: one 1000 px SVG per selected QR code (short links have no image), named after the title.
+  const downloadZip = async () => {
+    const codes = qrCodes.filter(q => selected?.has(q.slug) && q.kind !== 'link');
+    if (!codes.length) return showToast('info', 'Select at least one QR code. Short links have no image.');
+    setBusy(true);
+    try {
+      const files: Record<string, Uint8Array> = {}, used = new Set<string>();
+      for (const qr of codes) {
+        const raw = await new QRCodeStyling({ ...stylingOptions(qr.style, getQRContent(qr), 1000), type: 'svg' }).getRawData('svg');
+        let svg = await (raw as Blob).text();
+        if (qr.style?.frame) svg = framedSvg(svg, 1000, qr.style.frame);
+        const base = String(qr.title || qr.slug).replace(/[^a-z0-9-]+/gi, '_').slice(0, 60) || qr.slug;
+        let name = base, i = 2;
+        while (used.has(name.toLowerCase())) name = `${base}-${i++}`;
+        used.add(name.toLowerCase());
+        files[`${name}.svg`] = new TextEncoder().encode(svg);
+      }
+      saveBlob(new Blob([zipSync(files) as BlobPart], { type: 'application/zip' }), 'scnr-codes.zip');
+    } catch {
+      showToast('error', 'Could not build the ZIP. Try fewer codes.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleDelete = (qrId: string, slug: string) => {
     showModal({
@@ -163,8 +257,21 @@ export default function Dashboard() {
     });
   };
 
+  // ponytail: tabs, filters, sort and search run client-side over the loaded list; move them server-side
+  // (GET /api/qr already takes ?kind, ?tag, ?folder) if a list exceeds 2,000 rows.
+  const needle = search.trim().toLowerCase();
+  const shown = qrCodes
+    .filter(q => tabOf(q) === tab && (!folder || q.client === folder) && (!tag || (q.tags || []).includes(tag))
+      && (!needle || [q.title, q.slug, q.destination_url].some(v => String(v || '').toLowerCase().includes(needle))))
+    .sort(SORTS[sort][1]);
+  const shownKey = shown.map(q => q.id).join();
+  const folders = [...new Set(qrCodes.map(q => q.client).filter(Boolean))].sort() as string[];
+  const allTags = [...new Set(qrCodes.flatMap(q => q.tags || []))].sort() as string[];
+  const noCustomSlug = !!planData && !planData.limits?.custom_slug;
+
   useEffect(() => {
-    qrCodes.forEach(qr => {
+    shown.forEach(qr => {
+      if (qr.kind === 'link') return;
       const canvas = document.getElementById(`thumb-${qr.id}`) as HTMLCanvasElement;
       if (canvas) {
         const content = getQRContent(qr) || SHORT_DOMAIN;
@@ -179,7 +286,7 @@ export default function Dashboard() {
         }).catch(err => console.error(err));
       }
     });
-  }, [qrCodes]);
+  }, [shownKey, qrCodes]);
 
   if (loading) {
     return <div className="flex justify-center items-center h-64">Loading...</div>;
@@ -187,11 +294,26 @@ export default function Dashboard() {
 
   const totalScans = Number(Object.values(stats).reduce((sum: number, s: any) => sum + (s.total_scans || 0), 0));
   const uniqueVisitors = Number(Object.values(stats).reduce((sum: number, s: any) => sum + (s.unique_scans || 0), 0));
-  const activeCodes = qrCodes.filter(qr => qr.is_active !== false).length;
 
   return (
     <div className="content" style={{ padding: '28px', overflow: 'auto', height: '100%' }}>
       <div className="page active">
+        {/* Paste a link: shorten it here, or open the editor with it filled in */}
+        <div className="card mb16">
+          <div className="card-title">Paste a link</div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <input type="url" aria-label="Link to shorten" className="form-input" style={{ flex: '3 1 260px' }} placeholder="https://example.com/a-long-link"
+              value={pasteUrl} onChange={e => setPasteUrl(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') shorten(); }} />
+            <input aria-label="Custom back-half" className={`form-input ${slugProblem(backHalf) ? 'error' : ''}`} style={{ flex: '1 1 150px' }} maxLength={40}
+              placeholder={noCustomSlug ? 'Back-half (Pro)' : 'Back-half (optional)'} disabled={noCustomSlug}
+              value={backHalf} onChange={e => setBackHalf(e.target.value.trim())} />
+            <button className="btn btn-primary btn-sm" disabled={busy} onClick={shorten}>Shorten</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/create?url=${encodeURIComponent(pasteUrl.trim())}`)}>Make QR code</button>
+          </div>
+          {slugProblem(backHalf) ? <div className="error-msg">{slugProblem(backHalf)}</div>
+            : noCustomSlug && <div style={{ fontSize: '12px', color: 'var(--text3)', marginTop: '6px' }}>Pick your own back-half ({shortHost()}/your-name) on <Link to="/billing" style={{ color: 'var(--coral)' }}>Pro</Link>.</div>}
+        </div>
+
         {/* Today's offer on guest pages (Restaurant Kit) */}
         {qrCodes.some(q => q.qr_type === 'page') ? (
           <div className="card mb16">
@@ -233,7 +355,7 @@ export default function Dashboard() {
               <svg className="stat-icon" viewBox="0 0 16 16" fill="var(--purple)"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
               QR Codes
             </div>
-            <div className="stat-val">{qrCodes.length}</div>
+            <div className="stat-val">{qrCodes.filter(q => q.kind !== 'link').length}</div>
             <span className="stat-change neutral">
               {planData ? `${planData.limits.qr_codes === -1 ? 'Unlimited' : planData.limits.qr_codes} limit` : 'Loading...'}
             </span>
@@ -368,55 +490,130 @@ export default function Dashboard() {
         {/* QR Codes table + Top Countries */}
         <div className="grid-21 mb24">
           <div className="card">
-            <div className="section-row">
-              <span className="section-title">Your QR codes</span>
-              {qrCodes.some(q => q.client) && (
-              <select aria-label="Filter by client" className="form-input" style={{ width: 'auto', padding: '4px 8px', fontSize: '12px' }} value={clientFilter} onChange={e => setClientFilter(e.target.value)}>
-                <option value="">All clients</option>
-                {[...new Set(qrCodes.map(q => q.client).filter(Boolean))].map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            )}
-            {planData?.limits?.bulk_create && <button className="btn btn-ghost btn-sm" onClick={() => navigate('/bulk')}>Bulk</button>}
-            <button className="btn btn-ghost btn-sm" onClick={() => navigate('/create')}>+ New</button>
+            <div className="section-row" style={{ flexWrap: 'wrap', gap: '8px' }}>
+              <div className="dash-tabs" role="tablist">
+                {TABS.map(([t, label]) => (
+                  <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
+                    {label} ({qrCodes.filter(q => tabOf(q) === t).length})
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button className="btn btn-ghost btn-sm" onClick={() => setSelected(selected ? null : new Set())}>{selected ? 'Done' : 'Select'}</button>
+                {planData?.limits?.bulk_create && <button className="btn btn-ghost btn-sm" onClick={() => navigate('/bulk')}>Bulk</button>}
+                {tab !== 'link' && <button className="btn btn-ghost btn-sm" onClick={() => navigate(tab === 'page' ? '/pages' : '/create')}>+ New</button>}
+              </div>
             </div>
-            
-            {qrCodes.length === 0 ? (
+
+            <div className="list-tools">
+              <input type="search" aria-label="Search" className="form-input" style={{ flex: '1 1 160px' }} placeholder="Search name, link or back-half" value={search} onChange={e => setSearch(e.target.value)} />
+              <select aria-label="Sort" className="form-input" value={sort} onChange={e => setSort(e.target.value)}>
+                {Object.entries(SORTS).map(([k, [label]]) => <option key={k} value={k}>{label}</option>)}
+              </select>
+              {folders.length > 0 && (
+                <select aria-label="Filter by folder" className="form-input" value={folder} onChange={e => setFolder(e.target.value)}>
+                  <option value="">All folders</option>
+                  {folders.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              )}
+              {allTags.length > 0 && (
+                <select aria-label="Filter by tag" className="form-input" value={tag} onChange={e => setTag(e.target.value)}>
+                  <option value="">All tags</option>
+                  {allTags.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              )}
+              {folder && (
+                <Link className="btn btn-ghost btn-sm" to={`/analytics?folder=${encodeURIComponent(folder)}&slugs=${qrCodes.filter(q => q.client === folder).map(q => q.slug).join(',')}`}>
+                  Folder analytics →
+                </Link>
+              )}
+            </div>
+
+            {selected && (
+              <div className="select-bar">
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', marginRight: '6px' }}>
+                  <input type="checkbox" aria-label="Select all shown" checked={shown.length > 0 && shown.every(q => selected.has(q.slug))}
+                    onChange={e => setSelected(new Set(e.target.checked ? shown.map(q => q.slug) : []))} />
+                  {selected.size} selected
+                </label>
+                {selected.size > 0 && <>
+                  <button className="btn btn-ghost btn-sm" onClick={() => askBulk('folder', 'Move to folder', 'Type a folder name (new or existing). Leave it empty to take the codes out of their folder.', 'Move')}>Move to folder</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => askBulk('tag', 'Add a tag', 'Type a tag to add to the selected codes.', 'Add tag')}>Add tag</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => bulk('activate')}>Activate</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => bulk('deactivate')}>Deactivate</button>
+                  {tab !== 'link' && <button className="btn btn-ghost btn-sm" disabled={busy} onClick={downloadZip}>{busy ? 'Building ZIP…' : 'Download ZIP'}</button>}
+                  <button className="btn btn-ghost btn-sm" style={{ color: 'var(--coral)' }} onClick={() => showModal({
+                    type: 'confirm', title: `Delete ${selected.size} code${selected.size === 1 ? '' : 's'}`, isDestructive: true, confirmText: 'Delete permanently',
+                    message: 'The selected codes and all their scan history will be deleted. Printed codes will stop working. This cannot be undone.',
+                    onConfirm: () => bulk('delete'),
+                  })}>Delete</button>
+                </>}
+              </div>
+            )}
+
+            {shown.length === 0 ? (
               <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text3)' }}>
-                No QR codes yet. <Link to="/create" style={{ color: 'var(--coral)', textDecoration: 'none' }}>Create your first one</Link>.
+                {needle || folder || tag ? 'Nothing matches these filters.'
+                  : tab === 'link' ? 'No short links yet. Paste a link above and press Shorten.'
+                  : tab === 'page' ? <>No pages yet. <Link to="/pages" style={{ color: 'var(--coral)', textDecoration: 'none' }}>Build your first page</Link>.</>
+                  : <>No QR codes yet. <Link to="/create" style={{ color: 'var(--coral)', textDecoration: 'none' }}>Create your first one</Link>.</>}
               </div>
             ) : (
               <div className="qr-table-wrap">
                 <table className="qr-table">
                   <thead>
                     <tr>
-                      <th>QR Code</th>
+                      {selected && <th></th>}
+                      <th>{tab === 'link' ? 'Short link' : tab === 'page' ? 'Page' : 'QR Code'}</th>
                       <th>Scans</th>
                       <th>Status</th>
                       <th></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {qrCodes.map(qr => {
+                    {shown.map(qr => {
                       const qrStats = stats[qr.id] || {};
+                      const isLink = qr.kind === 'link';
                       let inactiveReason = 'Paused';
                       if (qr.expiry_date && new Date(qr.expiry_date) < new Date()) inactiveReason = 'Expired';
                       if (qr.rate_limit?.enabled && qrStats.total_scans > qr.rate_limit.max_scans) inactiveReason = 'Scan Limit Reached';
 
                       return (
                         <tr key={qr.id}>
+                          {selected && (
+                            <td>
+                              <input type="checkbox" aria-label={`Select ${qr.title || qr.slug}`} checked={selected.has(qr.slug)}
+                                onChange={e => setSelected(prev => { const next = new Set(prev); if (e.target.checked) next.add(qr.slug); else next.delete(qr.slug); return next; })} />
+                            </td>
+                          )}
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <div
-                                className="qr-thumb"
-                                style={{ cursor: 'pointer' }}
-                                title="View QR code"
-                                onClick={() => setViewQR(qr)}
-                              >
-                                <canvas id={`thumb-${qr.id}`} width="32" height="32"></canvas>
-                              </div>
-                              <div>
+                              {!isLink && (
+                                <div
+                                  className="qr-thumb"
+                                  style={{ cursor: 'pointer' }}
+                                  title="View QR code"
+                                  onClick={() => setViewQR(qr)}
+                                >
+                                  <canvas id={`thumb-${qr.id}`} width="32" height="32"></canvas>
+                                </div>
+                              )}
+                              <div style={{ minWidth: 0 }}>
                                 <div className="qr-row-name">{qr.title || 'Untitled'}</div>
-                                <div className="qr-row-slug">{shortHost()}/{qr.slug}</div>
+                                <div className="qr-row-slug">
+                                  {isLink ? getQRContent(qr).replace(/^https?:\/\//, '') : `${shortHost()}/${qr.slug}`}
+                                  {isLink && (
+                                    <button className="btn btn-ghost btn-sm" style={{ marginLeft: '6px', padding: '0 6px', fontSize: '11px' }}
+                                      onClick={() => navigator.clipboard.writeText(getQRContent(qr)).then(() => showToast('success', 'Link copied!'))}>Copy</button>
+                                  )}
+                                </div>
+                                {isLink && <div style={{ fontSize: '11px', color: 'var(--text3)', maxWidth: '320px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>→ {qr.destination_url}</div>}
+                                {(qr.client || qr.tags?.length > 0) && (
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+                                    {qr.client && <span className="chip tag-chip" title="Folder">📁 {qr.client}</span>}
+                                    {(qr.tags || []).map((t: string) => <span key={t} className="chip tag-chip" style={{ cursor: 'pointer' }} onClick={() => setTag(t)}>{t}</span>)}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </td>
@@ -440,11 +637,13 @@ export default function Dashboard() {
                           </td>
                           <td>
                             <div style={{ display: 'flex', gap: '8px' }}>
-                              <button className="btn btn-ghost btn-sm" onClick={() => setViewQR(qr)} title="View & download QR">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/>
-                                </svg>
-                              </button>
+                              {!isLink && (
+                                <button className="btn btn-ghost btn-sm" onClick={() => setViewQR(qr)} title="View & download QR">
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/>
+                                  </svg>
+                                </button>
+                              )}
                               <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/analytics/${qr.slug}`)}>Stats →</button>
                               <button className="btn btn-ghost btn-sm" onClick={() => navigate(qr.qr_type === 'page' ? pageEditPath(qr) : `/edit/${qr.id}`)}>Edit</button>
                               <button className="btn btn-ghost btn-sm" style={{ color: 'var(--coral)' }} onClick={() => handleDelete(qr.id, qr.slug)}>Delete</button>
