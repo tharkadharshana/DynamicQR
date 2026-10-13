@@ -2,6 +2,12 @@
 
 One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-review-findings.md](11-review-findings.md).
 
+## Roadmap added (branch `docs/roadmap-competitor-parity`)
+
+- `docs/ROADMAP.md`: the plan for phases 5–12, with the competitor facts it is based on, the per-change workflow, and a progress checklist.
+- `CLAUDE.md` at the repo root: the working agreement for Claude Code sessions (branch per phase, tests and docs in the same PR, migrations run by the owner, QA recipe, code rules).
+- Competitor screenshots moved into `docs/competitors/`.
+
 ## Lighthouse fixes (branch `perf/lighthouse-fixes`)
 
 Production audit, Lighthouse 13 on mobile, 2026-10-11:
