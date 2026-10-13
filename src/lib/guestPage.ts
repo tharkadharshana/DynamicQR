@@ -317,5 +317,11 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('guestPage.ts'
   const tr = { ...pg, content_data: { ...pg.content_data, i18n: { si: { blocks: [{ name: 'සිං' }] } } } };
   assert((renderGuestPage(tr, 'si', 'https://s.lk/abcdefg') as any).body.includes('<h1>සිං</h1>'), 'per-block translation');
   assert(!(renderGuestPage({ ...pg, slug: undefined }, 'en', 'https://s.lk/p') as any).body.includes('/l/2'), 'preview (no slug) links directly');
-  console.log('guestPage self-check ok');
+  // Kit pages without blocks must render byte-for-byte as before the Pages builder (hash of the pre-Phase-7 output).
+  const kit = { qr_type: 'page', title: 'Café', branding: true, content_data: { name: 'Café <Lagoon>', subtitle: 'Galle', color: '#123456', offer: { text: 'Kottu' }, links: [{ label: 'Menu', url: 'https://x.lk/m' }, { label: 'Bad', url: 'javascript:1' }], wifi: { ssid: 'W', password: 'p' }, i18n: { si: { name: 'කැෆේ', labels: ['මෙනුව'] } } } };
+  globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode((renderGuestPage(kit, 'si', 'https://s.lk/abc') as any).body)).then(buf => {
+    const h = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    assert(h === '4892ea289ea5518269dc5aeee8cd95781ea851fe09f23054f827203399096c76', 'legacy Kit page output changed: ' + h);
+    console.log('guestPage self-check ok');
+  });
 }
