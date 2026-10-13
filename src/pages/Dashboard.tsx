@@ -541,6 +541,7 @@ export default function Dashboard() {
                 </label>
                 {selected.size > 0 && <>
                   <button className="btn btn-ghost btn-sm" onClick={() => askBulk('folder', 'Move to folder', 'Type a folder name (new or existing). Leave it empty to take the codes out of their folder.', 'Move')}>Move to folder</button>
+                  {(planData?.limits?.workspaces ?? 1) > 1 && !planData?.is_member && <button className="btn btn-ghost btn-sm" onClick={() => askBulk('workspace', 'Move to workspace', 'Type the workspace name, or "default" for the default workspace.', 'Move')}>Move to workspace</button>}
                   <button className="btn btn-ghost btn-sm" onClick={() => askBulk('tag', 'Add a tag', 'Type a tag to add to the selected codes.', 'Add tag')}>Add tag</button>
                   <button className="btn btn-ghost btn-sm" onClick={() => bulk('activate')}>Activate</button>
                   <button className="btn btn-ghost btn-sm" onClick={() => bulk('deactivate')}>Deactivate</button>

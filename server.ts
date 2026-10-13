@@ -23,7 +23,7 @@ import { buildDigest } from './src/lib/digest.js';
 import { formDefError, validateSubmission } from './src/lib/forms.js';
 import { pickRoute, routeCtx, rulesError, primaryLang } from './src/lib/routing.js';
 import { signStandardWebhook, verifyStandardWebhook, newWebhookSecret, WEBHOOK_EVENTS } from './src/lib/webhooks.js';
-import { PLANS, TRIAL_LIMITS, GRACE_DAYS, DEFAULT_ADDONS, PRICES, PAID_PLANS, PlanId, PaidPlan, PlanLimits, UserAddons, Currency, BillingInterval } from './src/lib/plans.js';
+import { MAX_WEBHOOKS, PLANS, TRIAL_LIMITS, GRACE_DAYS, DEFAULT_ADDONS, PRICES, PAID_PLANS, PlanId, PaidPlan, PlanLimits, UserAddons, Currency, BillingInterval } from './src/lib/plans.js';
 
 // Direct table helpers (replaced the Firestore-compat shim in Phase 3).
 async function row(table: string, col: string, val: string): Promise<any | null> {
@@ -175,6 +175,13 @@ async function startServer() {
     if (typeof want !== 'string') return want;
     const { data } = await supabase.from('workspaces').select('id').eq('id', want).eq('owner_uid', owner).maybeSingle().then(r => r, () => ({ data: null }));
     return data ? want : false;
+  }
+  /** A workspace id or name (or 'default'/empty) of this owner → its id; null = the default workspace; undefined = unknown. */
+  async function workspaceRef(owner: string, v: unknown): Promise<string | null | undefined> {
+    if (v === null || v === '' || String(v).toLowerCase() === 'default') return null;
+    const { data } = await supabase.from('workspaces').select('id, name').eq('owner_uid', owner);
+    const want = String(v).toLowerCase();
+    return (data || []).find(w => w.id === v || w.name.toLowerCase() === want)?.id;
   }
   const inWorkspace = (user: any, q: any) => user.workspace === undefined || (q.workspace_id || null) === user.workspace;
 
@@ -431,7 +438,7 @@ async function startServer() {
       const license = await getLicense(uid);
 
       const allQrs = await rows('qr_codes', 'user_uid', uid);
-      const allSlugs: string[] = allQrs.map(q => q.slug);
+      const allSlugs: string[] = allQrs.filter(q => inWorkspace((req as any).user, q)).map(q => q.slug); // caps below stay account-wide
       const activeQrs = allQrs.filter(q => q.is_active !== false && !isLink(q)).length;
       const remaining_qr = Math.max(0, license.limits.qr_codes - activeQrs);
       const activeDynamic = allQrs.filter(q => q.is_active !== false && q.is_dynamic !== false && !isLink(q)).length;
@@ -575,7 +582,7 @@ async function startServer() {
   app.get('/api/user/export', authenticate, async (req, res) => {
     try {
       const uid = (req as any).user.uid;
-      const qrs = (await rows('qr_codes', 'user_uid', uid)).map(q => ({ id: q.slug, ...publicQr(q) }));
+      const qrs = (await rows('qr_codes', 'user_uid', uid)).filter(q => inWorkspace((req as any).user, q)).map(q => ({ id: q.slug, ...publicQr(q) }));
       const profile = (await row('profiles', 'id', uid)) || {};
       
       const exportData = {
@@ -1180,7 +1187,7 @@ async function startServer() {
       if (statsErr) throw new Error(`Database save failed: ${statsErr.message}`);
 
       logEvent(uid, 'qr_created', slug);
-      await deliver(uid, 'qr.created', publicQr(qrDoc));
+      await deliverSoon(uid, 'qr.created', publicQr(qrDoc));
       res.status(201).json(qrDoc);
     } catch (error: any) {
       logger.error('QR creation error details:', {
@@ -1237,8 +1244,14 @@ async function startServer() {
       if (!Array.isArray(slugs) || !slugs.length || slugs.length > 500 || !slugs.every(x => typeof x === 'string')) {
         return res.status(400).json({ error: 'slugs must be 1–500 slugs' });
       }
-      if (!['folder', 'tag', 'untag', 'activate', 'deactivate', 'delete'].includes(action)) {
-        return res.status(400).json({ error: 'action must be folder, tag, untag, activate, deactivate or delete' });
+      if (!['folder', 'workspace', 'tag', 'untag', 'activate', 'deactivate', 'delete'].includes(action)) {
+        return res.status(400).json({ error: 'action must be folder, workspace, tag, untag, activate, deactivate or delete' });
+      }
+      let targetWs: string | null | undefined;
+      if (action === 'workspace') {
+        if ((req as any).user.workspaceLocked) return res.status(403).json({ error: 'Only the owner can move codes between workspaces', code: 'OWNER_ONLY' });
+        targetWs = await workspaceRef(uid, value);
+        if (targetWs === undefined) return res.status(400).json({ error: 'Unknown workspace', code: 'WORKSPACE' });
       }
       const { data: owned, error } = await supabase.from('qr_codes').select('slug, is_active, is_dynamic, kind, qr_type, tags, gtin, workspace_id').eq('user_uid', uid).in('slug', slugs);
       if (error) throw error;
@@ -1249,8 +1262,9 @@ async function startServer() {
       let done: string[] = [];
       const all = mine.map(q => q.slug);
       if (!all.length) return res.json({ done: [], failed });
-      if (action === 'folder' || action === 'deactivate') {
-        const patch = action === 'folder' ? { client: typeof value === 'string' && value.trim() ? value.trim().slice(0, 60) : null } : { is_active: false };
+      if (action === 'folder' || action === 'deactivate' || action === 'workspace') {
+        const patch = action === 'folder' ? { client: typeof value === 'string' && value.trim() ? value.trim().slice(0, 60) : null }
+          : action === 'workspace' ? { workspace_id: targetWs } : { is_active: false };
         const { error: e } = await supabase.from('qr_codes').update({ ...patch, updated_at: nowIso() }).in('slug', all);
         if (e) throw e;
         done = all;
@@ -1322,6 +1336,12 @@ async function startServer() {
       const { destination_url, title, style, is_active, options, content_data, client } = req.body;
       const updateData: any = {};
       if (client !== undefined) updateData.client = typeof client === 'string' && client.trim() ? client.trim().slice(0, 60) : null;
+      if (req.body.workspace_id !== undefined && (req as any).qr) {
+        if ((req as any).user.workspaceLocked) return res.status(403).json({ error: 'Only the owner can move codes between workspaces', code: 'OWNER_ONLY' });
+        const ws = await workspaceRef((req as any).qr.user_uid, req.body.workspace_id);
+        if (ws === undefined) return res.status(400).json({ error: 'Unknown workspace', code: 'WORKSPACE' });
+        updateData.workspace_id = ws;
+      }
       if (req.body.domain !== undefined && (req as any).qr) {
         updateData.domain = req.body.domain ? String(req.body.domain).toLowerCase() : null;
         if (updateData.domain && !(await activeDomains((req as any).qr.user_uid)).includes(updateData.domain)) {
@@ -1454,7 +1474,8 @@ async function startServer() {
       if (updErr) throw updErr;
       await purgeEdge(slug);
       if (cur?.gtin && updateData.gtin !== undefined && updateData.gtin !== cur.gtin) purgeEdge(`gs1:${cur.gtin}`);
-      if (cur) await deliver(cur.user_uid, 'qr.updated', { slug, ...updateData });
+      // Only public fields: never the password hash or the whole content_data.
+      if (cur) await deliverSoon(cur.user_uid, 'qr.updated', { slug, ...Object.fromEntries(Object.entries(updateData).filter(([k]) => ['title', 'destination_url', 'is_active', 'qr_type', 'is_dynamic', 'client', 'tags', 'domain', 'workspace_id', 'gtin', 'updated_at'].includes(k))) });
       res.json({ success: true, slug });
     } catch (error: any) {
       logger.error('QR update error:', error);
@@ -1470,7 +1491,7 @@ async function startServer() {
       // qr_stats and scan_events rows go with it (on delete cascade).
       const { error } = await supabase.from('qr_codes').delete().eq('slug', slug);
       if (error) throw error;
-      await deliver((req as any).qr.user_uid, 'qr.deleted', { slug, title: (req as any).qr.title });
+      await deliverSoon((req as any).qr.user_uid, 'qr.deleted', { slug, title: (req as any).qr.title });
       res.json({ message: 'QR code deleted successfully' });
       purgeEdge(slug);
       if ((req as any).qr?.gtin) purgeEdge(`gs1:${(req as any).qr.gtin}`);
@@ -1490,7 +1511,7 @@ async function startServer() {
     const uid = (req as any).user.uid;
     let qrs: any[];
     if (req.params.slug) {
-      const { data, error } = await supabase.from('qr_codes').select('slug, title, is_active, created_at').eq('slug', req.params.slug);
+      const { data, error } = await supabase.from('qr_codes').select('slug, title, is_active, created_at').eq('slug', req.params.slug).eq('user_uid', uid);
       if (error) throw error;
       qrs = data || [];
     } else {
@@ -1698,7 +1719,7 @@ async function startServer() {
   });
 
   app.get('/api/team', authenticate, async (req, res) => {
-    const { data, error } = await supabase.from('workspace_members').select('*')
+    const { data, error } = await supabase.from('workspace_members').select('id, member_email, member_uid, role, created_at, workspace_id')
       .eq('owner_uid', (req as any).user.uid).order('created_at');
     if (error) return res.status(500).json({ error: 'Failed to list members' });
     res.json((data || []).map(m => ({ ...m, joined: !!m.member_uid })));
@@ -1841,15 +1862,21 @@ async function startServer() {
   const webhookUrlError = (u: unknown): string | null => {
     let url: URL;
     try { url = new URL(String(u)); } catch { return 'Enter a full URL'; }
-    const local = /^(localhost|127\.0\.0\.1)$/.test(url.hostname);
+    const host = url.hostname.toLowerCase().replace(/\.$/, ''); // "localhost." is localhost
+    const local = host === 'localhost' || host.endsWith('.localhost') || host === '127.0.0.1';
     if (process.env.NODE_ENV === 'test' && local && url.protocol === 'http:') return null; // QA's local receiver
     if (url.protocol !== 'https:') return 'Webhook URLs must use https';
-    if (local || /^(0\.|10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[|.*\.(local|internal)$)/i.test(url.hostname)) return 'Webhook URLs must be public';
+    if (local || !host.includes('.') || /^(0\.|10\.|127\.|169\.254\.|192\.168\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|172\.(1[6-9]|2\d|3[01])\.|\[)/.test(host)
+        || /\.(local|internal|lan|home\.arpa|localdomain)$/.test(host)) return 'Webhook URLs must be public';
     return null;
   };
 
   // Delivers one event to the owner's endpoints that subscribed to it, signed like Standard Webhooks.
   // ponytail: retries 3 times inside the request (0.5 s, 1 s); move to a queue if endpoints are slow or many.
+  /** Never throws and never waits more than 2.5 s: used by handlers a person is waiting on. The rest of the retries are best effort. */
+  const deliverSoon = (uid: string | undefined, event: string, data: any) =>
+    Promise.race([deliver(uid, event, data).catch(() => []), new Promise(r => setTimeout(r, 2500))]);
+
   async function deliver(uid: string | undefined, event: string, data: any, onlyId?: string): Promise<number[]> {
     if (!uid) return [];
     let q = supabase.from('webhooks').select('id, url, secret, events').eq('uid', uid);
@@ -1857,7 +1884,7 @@ async function startServer() {
     const { data: hooks, error } = await q;
     const targets = (hooks || []).filter(h => onlyId || (h.events || []).includes(event));
     if (error || !targets.length) return [];
-    if (!onlyId && !(await getLicense(uid)).limits.webhooks) return []; // stops when the plan lapses
+    if (!(await getLicense(uid)).limits.webhooks) return []; // stops when the plan lapses, test pings included
     return Promise.all(targets.map(async h => {
       const id = `msg_${crypto.randomUUID()}`, body = JSON.stringify({ type: event, timestamp: nowIso(), data });
       let status = 0;
@@ -1894,7 +1921,7 @@ async function startServer() {
       return res.status(400).json({ error: `events must be some of ${WEBHOOK_EVENTS.join(', ')}` });
     }
     const { count } = await supabase.from('webhooks').select('id', { count: 'exact', head: true }).eq('uid', uid);
-    if ((count || 0) >= 10) return res.status(403).json({ error: 'Up to 10 webhooks per account', code: 'LIMIT_WEBHOOKS' });
+    if ((count || 0) >= MAX_WEBHOOKS) return res.status(403).json({ error: `Up to ${MAX_WEBHOOKS} webhooks per account`, code: 'LIMIT_WEBHOOKS' });
     const secret = newWebhookSecret();
     const { data, error } = await supabase.from('webhooks').insert({ uid, url: String(req.body.url), secret, events }).select('id, url, events, created_at').single();
     if (error) return res.status(500).json({ error: 'Failed to add webhook' });
@@ -1906,9 +1933,9 @@ async function startServer() {
     res.json({ status, ok: status >= 200 && status < 300 });
   });
   app.delete('/api/webhooks/:id', writeLimiter, authenticate, sessionOwner, async (req, res) => {
-    const { error } = await supabase.from('webhooks').delete().eq('id', req.params.id).eq('uid', (req as any).user.uid);
+    const { data, error } = await supabase.from('webhooks').delete().eq('id', req.params.id).eq('uid', (req as any).user.uid).select('id');
     if (error) return res.status(400).json({ error: 'Invalid webhook id' });
-    res.json({ success: true });
+    res.status(data?.length ? 200 : 404).json(data?.length ? { success: true } : { error: 'Not found' });
   });
 
   // ── Cron (vercel.json "crons"; Vercel sends Authorization: Bearer $CRON_SECRET) ──
@@ -1987,7 +2014,7 @@ async function startServer() {
     const ip_hash = typeof visitor === 'string' ? visitor.slice(0, 64) : null;
     const { error } = await supabase.from('form_submissions').insert({ slug: qr.slug, data: result.data, ip_hash });
     if (error) throw error;
-    await deliver(qr.user_uid, 'form.submitted', { slug: qr.slug, data: result.data, submitted_at: nowIso() });
+    await deliverSoon(qr.user_uid, 'form.submitted', { slug: qr.slug, data: result.data, submitted_at: nowIso() });
     const to = qr.content_data?.notify_email;
     // Awaited: on Vercel the function may freeze once the response is sent. Re-checked so an old definition cannot mail strangers.
     if (to && await notifyAllowed(qr.user_uid, to)) {

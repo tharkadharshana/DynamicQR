@@ -28,7 +28,8 @@ alter table public.workspaces enable row level security;
 alter table public.qr_codes add column if not exists workspace_id uuid references public.workspaces(id) on delete set null;
 create index if not exists qr_codes_workspace_idx on public.qr_codes(workspace_id) where workspace_id is not null;
 -- A member invited to one workspace only sees that one; null = every workspace.
-alter table public.workspace_members add column if not exists workspace_id uuid references public.workspaces(id) on delete set null;
+-- Deleting the workspace removes the scoped member (cascade), never widens their access to every workspace.
+alter table public.workspace_members add column if not exists workspace_id uuid references public.workspaces(id) on delete cascade;
 
 -- Several custom domains per account (Pro 1, Team 10, Business 50): each code prints with one of them.
 alter table public.qr_codes add column if not exists domain text;

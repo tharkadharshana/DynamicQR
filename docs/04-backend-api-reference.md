@@ -124,7 +124,7 @@ Returns an array of the user's `qr_codes` rows (`password_hash` removed, `has_pa
 
 ### `POST /api/qr/bulk` (user, write)
 
-Body `{slugs: [...1–500], action: 'folder'|'tag'|'untag'|'activate'|'deactivate'|'delete', value?}`. Ownership is checked per slug, every changed code is purged at the edge, and activation goes through the plan caps one code at a time. Returns `{done: [slugs], failed: [{slug, error}]}`.
+Body `{slugs: [...1–500], action: 'folder'|'workspace'|'tag'|'untag'|'activate'|'deactivate'|'delete', value?}` (`workspace` takes a workspace name or id, or `default`). Ownership is checked per slug, every changed code is purged at the edge, and activation goes through the plan caps one code at a time. Returns `{done: [slugs], failed: [{slug, error}]}`.
 
 ### `GET /api/qr/:slug` (user and owner)
 

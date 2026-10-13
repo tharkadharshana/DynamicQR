@@ -1730,7 +1730,12 @@ async function run() {
     await sleep(300);
     check('qr.deleted delivered', received.some(r => r.type === 'qr.deleted' && r.slug === wq.body?.slug && r.ok));
     check('A tampered body fails the shared verifier', !verifyStandardWebhook({ 'webhook-id': 'm', 'webhook-timestamp': String(Math.floor(Date.now() / 1000)), 'webhook-signature': 'v1,AAAA' }, '{}', secret));
-    await api(`/api/webhooks/${made.body?.id}`, { method: 'DELETE', token });
+    const hookDel = await api(`/api/webhooks/${made.body?.id}`, { method: 'DELETE', token });
+    const hookDel2 = await api(`/api/webhooks/${made.body?.id}`, { method: 'DELETE', token });
+    check('Deleting a webhook twice → 200 then 404', hookDel.status === 200 && hookDel2.status === 404, `${hookDel.status}/${hookDel2.status}`);
+    const dotHost = await hook({ url: 'https://metadata.google.internal./x', events: ['qr.created'] });
+    const subLocal = await hook({ url: 'https://x.localhost/x', events: ['qr.created'] });
+    check('Trailing-dot internal names and *.localhost are refused', dotHost.status === 400 && subLocal.status === 400, `${dotHost.status}/${subLocal.status}`);
     await new Promise(r => receiver.close(r));
 
     // Workspaces: two workspaces, a member held to B cannot see A's codes.
@@ -1763,6 +1768,14 @@ async function run() {
       check('…nor open a code from workspace A', mGet.status === 403, `got ${mGet.status}`);
     } else check('Invite and sign in a workspace member', false, `invite=${invB.status} token=${!!wmTok}`);
     if (wm?.user?.id) await admin.auth.admin.deleteUser(wm.user.id);
+    // Moving codes between workspaces: one by PUT, many by the bulk action; the member held to B can't.
+    const mv = await api(`/api/qr/${inA.body?.slug}`, { method: 'PUT', token, body: JSON.stringify({ workspace_id: wsB.id }) });
+    const inBnow = (await api('/api/qr', { token, headers: { 'X-Workspace': wsB.id } })).body;
+    check('PUT workspace_id moves a code to another workspace', mv.status === 200 && inBnow.some((q: any) => q.slug === inA.body?.slug), `status=${mv.status}`);
+    const bulkMv = await api('/api/qr/bulk', { method: 'POST', token, body: JSON.stringify({ slugs: [inA.body?.slug], action: 'workspace', value: 'QA A' }) });
+    check('Bulk "workspace" by name moves it back', bulkMv.status === 200 && bulkMv.body?.done?.length === 1, JSON.stringify(bulkMv.body));
+    const unknownWs = await api(`/api/qr/${inA.body?.slug}`, { method: 'PUT', token, body: JSON.stringify({ workspace_id: 'no-such-workspace' }) });
+    check('An unknown workspace → 400', unknownWs.status === 400, `got ${unknownWs.status}`);
     const delWs = await api(`/api/workspaces/${wsA.id}`, { method: 'DELETE', token });
     const afterDel = (await api('/api/qr', { token, headers: { 'X-Workspace': 'default' } })).body;
     check('Deleting a workspace moves its codes to the default one', delWs.status === 200 && afterDel.some((q: any) => q.slug === inA.body?.slug), `status=${delWs.status}`);
