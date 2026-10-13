@@ -176,7 +176,7 @@ If a skill is missing in the cloud session, follow its rules from this document 
 - [x] Phase 9: Forms
 - [x] Phase 10: Tracking and smart routing
 - [x] Phase 11: Business tier
-- [ ] Phase 12: Public tools and help
+- [x] Phase 12: Public tools and help
 
 ### Kickoff prompt for the cloud session
 

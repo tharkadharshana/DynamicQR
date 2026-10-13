@@ -90,6 +90,13 @@ Form cards (name and type, style, options, Visitor Guard) plus a live preview.
 - Downloads render at the chosen output size, then the preview returns to 180 px. Logos are resized on the device before saving.
 - On a 403 (`LIMIT_QR_CODES`, `LIMIT_DYNAMIC_QR`, `FEATURE_*`) it shows a toast and goes to `/billing`.
 
+### Public tools, What's new and Help (Phase 12)
+
+- Routes outside the sign-in switch in [App.tsx](../src/App.tsx), all lazy: `/tools` (index), `/tools/qr-scanner`, `/tools/utm-builder`, `/tools/google-review-link`, `/tools/whatsapp-link`, `/tools/qr-generator`, and `/whats-new`. They share `ToolsLayout` (header, footer link hub) and set their own title and description. The names `tools`, `whats-new` and `help` are in `RESERVED_SLUGS`, so a code can never take them, and the Worker passes them through.
+- The scanner reads the camera in the browser only (nothing is sent anywhere) and never opens a link by itself. `jsqr` loads only on that page. The generator makes static codes and points to dynamic codes for anything that may change.
+- `HelpButton` is a floating WhatsApp link shown in the app and on Pricing and the tools; it renders nothing when `SITE.whatsapp` is empty.
+- The Landing footer is a link hub of real pages only (tools, What's new, legal), and Landing has sections for Pages, Forms, Short links and Business whose numbers come from `PLANS`.
+
 ### Pages — [Pages.tsx](../src/pages/Pages.tsx) and [PageEditor.tsx](../src/pages/PageEditor.tsx) (Phase 7)
 
 - `/pages` lists page codes with their short URL; the QR is shown on demand. `/pages/new` is the template picker: "Start from scratch", the 12 templates as live iframe previews, and the Restaurant Kit wizard.

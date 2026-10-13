@@ -44,6 +44,7 @@ All five phases are merged: safe and working, credible, Restaurant Kit, retentio
 - **Forms (Phase 9):** a form builder with validated, spam-controlled answers, email notifications and CSV export. Migration 009 adds `form_submissions`.
 - **Tracking and smart routing (Phase 10):** cities, languages, referrers, opt-in GPS with a map, and routing rules by device, country, language and time. Migration 010 adds the tracking columns and the new `record_scan`.
 - **Business tier (Phase 11):** signed webhooks, workspaces, several custom domains per account and a regrouped Settings menu. Migration 011 adds `webhooks`, `workspaces`, `qr_codes.workspace_id`/`domain` and `workspace_members.workspace_id`.
+- **Public tools, help and What's new (Phase 12):** a QR scanner, UTM builder, Google review and WhatsApp link makers and a static QR generator at `/tools`, a help button, and a customer-facing change list. No migration.
 - Run the migrations in order: 001 → 002 → 003 → 004 → 005 → 006 → 007 → 008 → 009 → 010 → 011 ([doc 10](10-operations.md#deployment)).
 - The phase plan for phases 0–4 is in [doc 11](11-review-findings.md#recommended-order-of-work).
 - **What is next:** [ROADMAP.md](ROADMAP.md) plans phases 5–12 (competitor parity with Hovercode and Bitly: a Business tier, more code types, a Pages builder with templates, short links and folders, forms, advanced tracking, webhooks and workspaces, public tools). It also holds the working agreement for every change. Competitor screenshots are in [competitors/](competitors/).
@@ -67,6 +68,7 @@ src/                    React SPA
   components/           DynamicQRLayout (app shell), QRViewerModal, modals, toasts, ErrorBoundary
   lib/pageTemplates.ts  the 12 Pages templates
   lib/forms.ts          form field types, definition check, answer validation
+  lib/changelog.ts      customer-facing What's new entries
   lib/webhooks.ts       Standard Webhooks signer/verifier (Polar in, our webhooks out), Node only
   lib/routing.ts        smart routing: pickRoute(), rulesError(), the app-store preset
   lib/qrContent.ts      getQRContent()/vcardText() and SHORT_DOMAIN: what every QR encodes (shared with server)
