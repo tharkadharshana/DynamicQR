@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../supabase';
 import QRCodeStyling from 'qr-code-styling';
+import { pageEditPath } from './Pages';
 import { apiFetch } from '../lib/api';
 import { useUI } from '../shared/UIContext';
 import { getQRContent, stylingOptions, resizeLogo, SHORT_DOMAIN, shortHost, buildDestination, SOCIALS, gtinValid, FRAME_TEXTS, DOT_STYLES, normDotStyle } from '../lib/qrContent';
@@ -79,8 +80,8 @@ export default function CreateQR() {
       const fetchQR = async () => {
         try {
           const data = await apiFetch(`/api/qr/${id}`);
-          // Guest pages are edited in the Restaurant Kit.
-          if (data.qr_type === 'page') { navigate(`/kit?edit=${id}`, { replace: true }); return; }
+          // Block pages are edited in the Pages builder, older Kit pages in the Restaurant Kit.
+          if (data.qr_type === 'page') { navigate(pageEditPath(data), { replace: true }); return; }
 
           setQrType(data.content_data?.kind || (data.content_data?.wa_phone ? 'whatsapp' : data.qr_type || 'url'));
           setGtin(data.gtin || '');
@@ -354,7 +355,7 @@ export default function CreateQR() {
                   {MAIN_TYPES.map(([t, label]) => (
                     <button key={t} className={`qr-type-tab ${qrType === t ? 'active' : ''}`} onClick={() => pickType(t)}>{label}</button>
                   ))}
-                  <button className="qr-type-tab" onClick={() => navigate('/kit')}>Page →</button>
+                  <button className="qr-type-tab" onClick={() => navigate('/pages/new')}>Page →</button>
                   <select className={`qr-type-tab ${MORE_TYPES.some(([t]) => t === qrType) ? 'active' : ''}`} aria-label="More code types"
                     value={MORE_TYPES.some(([t]) => t === qrType) ? qrType : ''} onChange={(e) => e.target.value && pickType(e.target.value)}>
                     <option value="">More ▾</option>

@@ -11,6 +11,8 @@ const DynamicQRLayout = lazy(() => import('./components/DynamicQRLayout'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const CreateQR = lazy(() => import('./pages/CreateQR'));
 const Kit = lazy(() => import('./pages/Kit'));
+const Pages = lazy(() => import('./pages/Pages'));
+const PageEditor = lazy(() => import('./pages/PageEditor'));
 const Bulk = lazy(() => import('./pages/Bulk'));
 const ApiDocs = lazy(() => import('./pages/ApiDocs'));
 const KitPrint = lazy(() => import('./pages/KitPrint'));
@@ -100,6 +102,9 @@ export default function App() {
                 <Route index element={<Dashboard />} />
                 <Route path="create" element={<CreateQR />} />
                 <Route path="kit" element={<Kit />} />
+                <Route path="pages" element={<Pages />} />
+                <Route path="pages/new" element={<PageEditor />} />
+                <Route path="pages/:slug/edit" element={<PageEditor />} />
                 <Route path="bulk" element={<Bulk />} />
                 <Route path="api-docs" element={<ApiDocs />} />
                 <Route path="kit/print/:slug" element={<KitPrint />} />

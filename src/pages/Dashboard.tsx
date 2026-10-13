@@ -6,6 +6,7 @@ import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
 import { apiFetch } from '../lib/api';
 import { useUI } from '../shared/UIContext';
 import QRViewerModal from '../components/QRViewerModal';
+import { pageEditPath } from './Pages';
 import { getQRContent, SHORT_DOMAIN, shortHost } from '../lib/qrContent';
 
 // "Swap today's offer": edit a guest page's offer in place; live on the next scan, no reprint.
@@ -445,7 +446,7 @@ export default function Dashboard() {
                                 </svg>
                               </button>
                               <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/analytics/${qr.slug}`)}>Stats →</button>
-                              <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/edit/${qr.id}`)}>Edit</button>
+                              <button className="btn btn-ghost btn-sm" onClick={() => navigate(qr.qr_type === 'page' ? pageEditPath(qr) : `/edit/${qr.id}`)}>Edit</button>
                               <button className="btn btn-ghost btn-sm" style={{ color: 'var(--coral)' }} onClick={() => handleDelete(qr.id, qr.slug)}>Delete</button>
                             </div>
                           </td>
