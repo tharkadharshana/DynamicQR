@@ -2,6 +2,13 @@
 
 One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-review-findings.md](11-review-findings.md).
 
+## Phase 10: Tracking and smart routing (branch `feat/tracking-routing`)
+
+- **Cities, languages and referrer domains.** The Worker sends `cf.city`, the language and an event id with each scan; migration 010 adds `scan_events.lang/lat/lng`, `qr_stats.cities/languages/referrers`, and a 13-argument `record_scan` next to the old one. New analytics views `cities`, `languages`, `referrers` and `geo`.
+- **Opt-in GPS** (Pro and up): an interstitial with a consent line, a 4 s timeout, a fix rounded to 3 decimals posted to `/<slug>/geo`, then the redirect. The map uses Leaflet and OpenStreetMap tiles (the one new dependency).
+- **Smart routing** (Pro and up): `content_data.rules`, first match wins, by device, OS, country, language, weekday and time window, in one pure `pickRoute()` in `src/lib/routing.ts` with a self-check, used by the Worker and the dev redirect. The app-store type now saves its pair as rules. Rules are not served when the plan lapses.
+- Pricing lists smart routing and GPS. The privacy policy covers location. QA section 33. **Needs a Worker deploy.**
+
 ## Phase 9: Forms (branch `feat/forms`)
 
 - **Form codes** (`qr_type 'form'`): the definition lives in `content_data`; `src/lib/forms.ts` holds the field types, the definition check and the submission validator, with a self-check. `renderGuestPage` renders native inputs and a honeypot, the thank-you page, and the form with its error.

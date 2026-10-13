@@ -164,6 +164,12 @@ After the gates pass, the Worker calls `renderGuestPage(config, lang, url)` from
 - **Safety.** All text is HTML-escaped. Link URLs must start with `http(s)://`, `tel:` or `mailto:`; anything else (`javascript:`, `data:`) is dropped.
 - **Size.** `content_data` is capped at 20 KB by the API and travels inside the cached config.
 
+### Smart routing and GPS (Phase 10)
+
+- **Routing.** `/internal/slug` passes `rules` when the owner's plan has `smart_routing`. On redirect the Worker takes `pickRoute(rules, routeCtx(ua, cf.country, Accept-Language))`, then the legacy app-store pair, then `destination_url`, and appends UTM tags last. Time windows use the rule's `tz` (default `Asia/Colombo`) and wrap past midnight.
+- **GPS.** When `gps` is set (plan has `gps_tracking`), a GET gets a small interstitial instead of the 302: it asks for the location once, waits at most 4 s, POSTs `{e, lat, lng}` (rounded to 3 decimals) to `/<slug>/geo`, then goes to the same target. A refusal or a timeout goes on too. The scan was already counted; the Worker's random `event_id` (sent with the scan) links the fix to it, and `/internal/geo` only fills a scan of that slug from the last 10 minutes that has no fix yet.
+- **Tracking.** The scan report now carries `city` and `region` from `request.cf`, the `Accept-Language` primary subtag and `event_id`; the server derives the referrer domain.
+
 ### Form answers (Phase 9)
 
 A `POST` to a form code, after the gates (a PIN unlock POST is told apart), is an answer, not a scan. The Worker counts accepted answers (`formsub:<slug>:<visitor>`, 5) and attempts (`formtry:…`, 20) per visitor per 15 minutes in KV, then shows a 429 page, forwards the fields to `POST /internal/form/:slug` with the secret header, and renders the thank-you page, or the form again with the error and the typed values (400), or a retry message (503).
