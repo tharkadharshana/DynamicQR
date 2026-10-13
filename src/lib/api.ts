@@ -17,6 +17,15 @@ async function getToken(): Promise<string> {
   return session.access_token;
 }
 
+const WS_KEY = 'scnr_workspace';
+/** Selected workspace: '' = all, 'default', or a workspace id. Kept per browser. */
+export function getWorkspace(): string {
+  try { return localStorage.getItem(WS_KEY) || ''; } catch { return ''; }
+}
+export function setWorkspace(v: string) {
+  try { v ? localStorage.setItem(WS_KEY, v) : localStorage.removeItem(WS_KEY); } catch { /* private mode */ }
+}
+
 /**
  * Authenticated fetch wrapper.
  * Throws an ApiError with status + message on non-2xx responses.
@@ -32,6 +41,7 @@ export async function apiFetch<T = any>(
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
+      ...(getWorkspace() ? { 'X-Workspace': getWorkspace() } : {}),
       ...(options.headers || {}),
     },
   });
