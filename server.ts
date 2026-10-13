@@ -21,6 +21,7 @@ import { renderGuestPage, pickLang, appTarget, FILE_TYPES, blockTarget, esc as e
 import { gtinValid, isReservedSlug, CUSTOM_SLUG_RE, normTags, withUtm } from './src/lib/qrContent.js';
 import { buildDigest } from './src/lib/digest.js';
 import { formDefError, validateSubmission } from './src/lib/forms.js';
+import { pickRoute, routeCtx, rulesError } from './src/lib/routing.js';
 import { PLANS, TRIAL_LIMITS, GRACE_DAYS, DEFAULT_ADDONS, PRICES, PAID_PLANS, PlanId, PaidPlan, PlanLimits, UserAddons, Currency, BillingInterval } from './src/lib/plans.js';
 
 // Direct table helpers (replaced the Firestore-compat shim in Phase 3).
@@ -1014,6 +1015,8 @@ async function startServer() {
       if (type === 'event' && (!content_data?.start || isNaN(new Date(content_data.start).getTime()))) {
         return res.status(400).json({ error: 'An event needs a valid start time' });
       }
+      const routeErr = rulesError(content_data?.rules);
+      if (routeErr) return res.status(400).json({ error: routeErr, code: 'INVALID_RULES' });
       const formErr = type === 'form' ? formDefError(content_data) : null;
       if (formErr) return res.status(400).json({ error: formErr, code: 'INVALID_FORM' });
       if (type === 'form' && !(await notifyAllowed(user.uid, content_data?.notify_email))) {
@@ -1083,6 +1086,8 @@ async function startServer() {
       if (options?.password_protect && !license.limits.password_protect) {
         return res.status(403).json({ error: 'Password protection requires Pro plan', code: 'FEATURE_PASSWORD' });
       }
+      if (content_data?.rules?.length && !license.limits.smart_routing) return res.status(403).json({ error: 'Smart routing needs the Pro plan or above', code: 'FEATURE_ROUTING' });
+      if (content_data?.gps === true && !license.limits.gps_tracking) return res.status(403).json({ error: 'GPS tracking needs the Pro plan or above', code: 'FEATURE_GPS' });
       if (options?.expiry_date_enabled && !license.limits.expiry_gate) {
         return res.status(403).json({ error: 'Expiry dates require Pro plan', code: 'FEATURE_EXPIRY' });
       }
@@ -1343,6 +1348,15 @@ async function startServer() {
         if (type === 'form' && !(await notifyAllowed(cur.user_uid, (content_data ?? cur.content_data)?.notify_email))) {
           return res.status(400).json({ error: "Notifications can go to your account email or a team member's", code: 'INVALID_FORM' });
         }
+        if (content_data !== undefined) {
+          const routeErr = rulesError(content_data?.rules);
+          if (routeErr) return res.status(400).json({ error: routeErr, code: 'INVALID_RULES' });
+          if (content_data?.rules?.length || content_data?.gps === true) {
+            const { limits } = await getLicense(cur.user_uid);
+            if (content_data?.rules?.length && !limits.smart_routing) return res.status(403).json({ error: 'Smart routing needs the Pro plan or above', code: 'FEATURE_ROUTING' });
+            if (content_data?.gps === true && !limits.gps_tracking) return res.status(403).json({ error: 'GPS tracking needs the Pro plan or above', code: 'FEATURE_GPS' });
+          }
+        }
         // Static → dynamic (asked for, or implied by an event or a GTIN). Dynamic never goes back: the print encodes the slug.
         const toDynamic = cur.is_dynamic === false && (req.body.is_dynamic === true || type === 'event' || type === 'form' || !!(updateData.gtin ?? cur.gtin));
         if (toDynamic) updateData.is_dynamic = true;
@@ -1542,6 +1556,18 @@ async function startServer() {
       const s = stats.find(x => x.slug === q.slug) || {};
       return { id: q.slug, slug: q.slug, title: q.title, total_scans: s.total_scans || 0, unique_scans: s.unique_scans || 0 };
     }).sort((a, b) => b.total_scans - a.total_scans),
+    // Phase 10: all-time maps like `countries`, and the opt-in GPS points.
+    cities: ({ stats }) => Object.entries(sumMap(stats, 'cities')).map(([city, scans]) => ({ city, scans })).sort((a, b) => b.scans - a.scans).slice(0, 10),
+    languages: ({ stats }) => pctRows(sumMap(stats, 'languages'), 'language').slice(0, 10),
+    referrers: ({ stats }) => pctRows(sumMap(stats, 'referrers'), 'referrer').slice(0, 10),
+    // ponytail: the newest 1,000 fixes; cluster server-side if a code collects far more.
+    geo: async ({ slugs }) => {
+      if (!slugs.length) return [];
+      const { data, error } = await supabase.from('scan_events').select('lat, lng, scanned_at').in('slug', slugs)
+        .not('lat', 'is', null).order('scanned_at', { ascending: false }).limit(1000);
+      if (error) throw error;
+      return data || [];
+    },
     // Pages: clicks per tracked link, labelled from the page's current blocks. CTR = clicks / scans of that page.
     clicks: async ({ stats }) => {
       const withClicks = stats.filter(s => s.clicks && Object.keys(s.clicks).length);
@@ -1794,9 +1820,7 @@ async function startServer() {
     }
   });
 
-  // Internal endpoint for Cloudflare Worker to send rich CF payload
-  // Forms: the Worker forwards a POST here (after its gates and its per-visitor KV counter).
-  // The stored definition is the trust boundary: unknown fields are stripped, a filled honeypot is dropped silently.
+  // One form answer: validated against the stored definition, stored, and emailed to the owner when asked.
   async function submitForm(slug: string, fields: Record<string, unknown>, visitor: unknown): Promise<[number, any]> {
     const qr = await row('qr_codes', 'slug', slug);
     if (!qr || qr.qr_type !== 'form' || qr.is_active === false) return [404, { error: 'Form not found' }];
@@ -1819,6 +1843,22 @@ async function startServer() {
     }
     return [200, { ok: true }];
   }
+
+  // GPS (opt-in per code): the interstitial's fix, linked to its scan by the Worker's event id. Rounded to 3 decimals (~100 m).
+  app.post('/internal/geo', async (req, res) => {
+    if (!process.env.INTERNAL_SECRET || req.headers['x-internal-secret'] !== process.env.INTERNAL_SECRET) return res.status(401).send('Unauthorized');
+    const { slug, event_id } = req.body || {};
+    const lat = Number(req.body?.lat), lng = Number(req.body?.lng);
+    if (typeof slug !== 'string' || !/^[0-9a-f-]{36}$/i.test(String(event_id)) || !(Math.abs(lat) <= 90) || !(Math.abs(lng) <= 180)) {
+      return res.status(400).json({ error: 'slug, event_id, lat and lng required' });
+    }
+    const round = (n: number) => Math.round(n * 1000) / 1000;
+    // Only a scan from the last 10 minutes without a fix yet, so a replayed id cannot move old points.
+    const { error } = await supabase.from('scan_events').update({ lat: round(lat), lng: round(lng) })
+      .eq('id', event_id).eq('slug', slug).is('lat', null).gte('scanned_at', new Date(Date.now() - 600000).toISOString());
+    if (error) { logger.error('Geo update failed', { message: error.message }); return res.status(500).send('Failed'); }
+    res.status(204).end();
+  });
 
   // Forms: the Worker forwards a POST here (after its gates and its per-visitor KV counter).
   // The stored definition is the trust boundary: unknown fields are stripped, a filled honeypot is dropped silently.
@@ -1920,6 +1960,9 @@ async function startServer() {
         content_data: qr.qr_type && qr.qr_type !== 'url' ? qr.content_data || {} : undefined,
         slug: qr.slug,
         utm: (qr.qr_type || 'url') === 'url' ? qr.content_data?.utm : undefined, // appended on redirect; existing params win
+        // Phase 10 (Pro and up): routing rules, and the opt-in GPS interstitial. Dropped when the plan lapses.
+        rules: (qr.qr_type || 'url') === 'url' && license.limits.smart_routing && Array.isArray(qr.content_data?.rules) ? qr.content_data.rules : undefined,
+        gps: (qr.qr_type || 'url') === 'url' && license.limits.gps_tracking && qr.content_data?.gps === true ? true : undefined,
         app: (qr.qr_type || 'url') === 'url' && qr.content_data?.kind === 'app' ? qr.content_data.app : undefined, // device picks the store
         branding: !license.limits.remove_branding, // "Made with Scnr" on Free guest pages
         owner_plan: license.effectivePlan,
@@ -2001,7 +2044,9 @@ async function startServer() {
       if (rendered?.kind === 'redirect') return res.redirect(302, rendered.location);
       if (rendered?.kind === 'html') return res.type('html').send(rendered.body);
 
-      const destination = withUtm(appTarget(qrData.content_data?.app, req.headers['user-agent'] || '') || qrData.destination_url, qrData.content_data?.utm);
+      const ua = req.headers['user-agent'] || '';
+      const ctx = routeCtx(ua, String(req.headers['cf-ipcountry'] || ''), String(req.headers['accept-language'] || ''));
+      const destination = withUtm(pickRoute(qrData.content_data?.rules, ctx) || appTarget(qrData.content_data?.app, ua) || qrData.destination_url, qrData.content_data?.utm);
       if (!destination) {
         return res.status(404).send('Destination not found');
       }
@@ -2078,10 +2123,17 @@ async function captureAnalyticsFromPayload(payload: any, qrOwnerUid?: string) {
   if (isBot(ua)) return;
   const isUnique = payload.is_unique !== false;
   const parsed = parseUA(ua || '');
+  let refHost = '';
+  try { refHost = referer ? new URL(referer).hostname.replace(/^www\./, '').slice(0, 100) : ''; } catch { /* not a URL */ }
   const args = {
     p_slug: slug, p_owner: qrOwnerUid || null, p_country: country || 'Unknown',
     p_device: parsed.device, p_browser: parsed.browser, p_os: parsed.os,
     p_referer: referer || '', p_is_unique: isUnique, p_failed: status === 'failed_password',
+    // Phase 10 (migration 010): the Worker's event id (links a GPS fix to this scan), city, language, referrer domain.
+    p_id: /^[0-9a-f-]{36}$/i.test(payload.event_id || '') ? payload.event_id : null,
+    p_city: typeof payload.city === 'string' ? payload.city.slice(0, 80) : '',
+    p_lang: String(payload.lang || '').slice(0, 2).toLowerCase().replace(/[^a-z]/g, ''),
+    p_ref_host: refHost,
   };
   const { error } = await supabase.rpc('record_scan', args);
   if (error) throw new Error(`record_scan failed: ${error.message}`);

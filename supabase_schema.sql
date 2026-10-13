@@ -90,7 +90,10 @@ create table if not exists public.qr_stats (
   os            jsonb not null default '{}'::jsonb,
   devices       jsonb not null default '{}'::jsonb,
   monthly_scans jsonb not null default '{}'::jsonb,
-  clicks        jsonb not null default '{}'::jsonb,  -- Pages link clicks { "2": 14, "1-0": 3 } (migration 007)
+  clicks        jsonb not null default '{}'::jsonb,
+  cities        jsonb not null default '{}'::jsonb,  -- migration 010
+  languages     jsonb not null default '{}'::jsonb,
+  referrers     jsonb not null default '{}'::jsonb,  -- Pages link clicks { "2": 14, "1-0": 3 } (migration 007)
   updated_at    timestamptz not null default now()
 );
 
@@ -112,7 +115,10 @@ create table if not exists public.scan_events (
   browser     text,
   referer     text,
   ip_hash     text,
-  is_unique   boolean not null default false
+  is_unique   boolean not null default false,
+  lang        text,              -- migration 010
+  lat         double precision,  -- opt-in GPS, 3 decimals (migration 010)
+  lng         double precision
 );
 
 create index if not exists scan_events_slug_idx on public.scan_events(slug);
@@ -196,3 +202,5 @@ create table if not exists public.form_submissions (
 create index if not exists form_submissions_slug_created_idx on public.form_submissions(slug, created_at desc);
 alter table public.form_submissions enable row level security;
 -- No policies: RLS denies anon/authenticated. The API uses the service-role key, which bypasses RLS.
+
+-- record_scan: see migrations 003 and 010 (the 13-argument version records city, language, referrer domain and the event id).

@@ -49,7 +49,9 @@
  *      filters, bulk deactivate/folder/tag/delete with a foreign slug, UTM append
  *  32. Forms: Free cap 0, definition check, edge render + honeypot, valid answer, missing field,
  *      honeypot dropped, unknown field stripped, CSV, not a scan, 6th answer 429, export, delete
- *  33. Cleanup
+ *  33. Tracking: city/language/referrer maps (code and account), opt-in GPS interstitial and
+ *      rounded fix (no overwrite, secret), smart routing (iOS, country, fallback, invalid, Free gate)
+ *  34. Cleanup
  */
 import 'dotenv/config';
 import crypto from 'crypto';
@@ -59,6 +61,7 @@ import { waLink } from './src/lib/site.ts';
 import { getQRContent, setShortDomain, buildDestination, gtinValid } from './src/lib/qrContent.ts';
 import { csvToObjects, toCsv } from './src/lib/csv.ts';
 import { PAGE_TEMPLATES } from './src/lib/pageTemplates.ts';
+import { pickRoute, routeCtx } from './src/lib/routing.ts';
 
 // ─── config ──────────────────────────────────────────────────────────────────
 const API             = process.env.QA_API_URL || 'http://localhost:3000';
@@ -663,7 +666,7 @@ async function run() {
   // ── 15b. Worker gate engine (in-process) ─────────────────────────────────────
   // Runs worker/worker.js directly in Node against this API, with an in-memory KV.
   // Worker test helpers (also used by section 24): run worker.js in-process against this API with a fake KV.
-    const runWorker = async (path: string, opts: { kv?: Map<string, string>; ua?: string; method?: string; form?: Record<string, string>; apiUrl?: string; mainHost?: string } = {}) => {
+    const runWorker = async (path: string, opts: { kv?: Map<string, string>; ua?: string; method?: string; form?: Record<string, string>; apiUrl?: string; mainHost?: string; cf?: Record<string, string>; lang?: string } = {}) => {
       const kv = opts.kv || new Map<string, string>();
       if (/\/(undefined)?$/.test(path)) return { status: 0, location: null, body: 'no slug (QR create failed)', kv };
       const env = {
@@ -684,10 +687,11 @@ async function run() {
       const ctx = { waitUntil: (p: Promise<any>) => { pending.push(p); } };
       const req = new Request(`https://qa.scnr.test${path}`, {
         method: opts.method || 'GET',
-        headers: { 'User-Agent': opts.ua || 'QA-Worker/1.0', 'CF-Connecting-IP': '198.51.100.7' },
+        headers: { 'User-Agent': opts.ua || 'QA-Worker/1.0', 'CF-Connecting-IP': '198.51.100.7', ...(opts.lang ? { 'Accept-Language': opts.lang } : {}) },
         body: opts.form ? new URLSearchParams(opts.form) : undefined,
         redirect: 'manual',
       });
+      if (opts.cf) Object.defineProperty(req, 'cf', { value: opts.cf }); // what Cloudflare adds in production
       const res: Response = await (worker as any).fetch(req, env, ctx);
       await Promise.allSettled(pending);
       return { status: res.status, location: res.headers.get('location'), type: res.headers.get('content-type'), body: await res.text(), kv };
@@ -1609,8 +1613,63 @@ async function run() {
     check('Delete one submission', del.status === 200 && Array.isArray(after) && !after.some((x: any) => x.id === subs?.[0]?.id), `status=${del.status}`);
   }
 
-  // ── 33. Cleanup ──────────────────────────────────────────────────────────────
-  section('33. Cleanup');
+  // ── 33. Tracking and smart routing: city, language, referrer, GPS, rules ─────
+  section('33. Tracking — city/language/referrer maps, opt-in GPS, smart routing rules');
+  {
+    await admin.from('profiles').update({ plan: 'pro', plan_expires_at: new Date(Date.now() + 30 * 86400000).toISOString(), is_trial: false }).eq('id', uid);
+    const mk = (body: any) => api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'url', is_dynamic: true, ...body }) });
+    check('pickRoute self-check: iOS rule, weekday hours, fallback', pickRoute([{ if: { os: ['iOS'] }, url: 'https://i.lk' }], routeCtx('iPhone', '', '')) === 'https://i.lk'
+      && pickRoute([{ if: { os: ['iOS'] }, url: 'https://i.lk' }], routeCtx('Windows NT', '', '')) === '');
+
+    // City, language and referrer domain recorded per scan and summed like countries.
+    const t = (await mk({ title: 'QA tracking', destination_url: 'https://example.com/t' })).body?.slug;
+    await runWorker(`/${t}`, { ua: 'QA-city-1', cf: { country: 'LK', city: 'Kandy' }, lang: 'si-LK,si;q=0.9' });
+    const cities = (await api(`/api/analytics/${t}/cities`, { token })).body;
+    const langs = (await api(`/api/analytics/${t}/languages`, { token })).body;
+    check('City recorded (Kandy)', Array.isArray(cities) && cities[0]?.city === 'Kandy' && cities[0]?.scans === 1, JSON.stringify(cities));
+    check('Language recorded (si)', Array.isArray(langs) && langs[0]?.language === 'si', JSON.stringify(langs));
+    const acc = (await api(`/api/analytics/account/${uid}/cities`, { token })).body;
+    check('City appears in account analytics', Array.isArray(acc) && acc.some((c: any) => c.city === 'Kandy'), JSON.stringify(acc));
+    await api('/internal/scan', { method: 'POST', internal: true, body: JSON.stringify({ slug: t, ua: 'Mozilla/5.0 (Windows NT 10.0)', country: 'LK', referer: 'https://www.instagram.com/p/xyz', is_unique: true, status: 'success' }) });
+    const refs = (await api(`/api/analytics/${t}/referrers`, { token })).body;
+    check('Referrer domain recorded (instagram.com)', Array.isArray(refs) && refs.some((x: any) => x.referrer === 'instagram.com'), JSON.stringify(refs));
+
+    // Opt-in GPS: an interstitial is served, and a posted fix is stored rounded to 3 decimals.
+    const g = (await mk({ title: 'QA GPS', destination_url: 'https://example.com/gps', content_data: { gps: true } })).body?.slug;
+    const page = await runWorker(`/${g}`, { ua: 'QA-gps' });
+    const eventId = page.body.match(/e:"([0-9a-f-]{36})"/)?.[1];
+    check('GPS on: interstitial with the destination and a consent line', page.status === 200 && page.body.includes('getCurrentPosition') && page.body.includes('https://example.com/gps') && page.body.includes('You can say no') && !!eventId, `status=${page.status}`);
+    await sleep(500);
+    const fix = await api('/internal/geo', { method: 'POST', internal: true, body: JSON.stringify({ slug: g, event_id: eventId, lat: 6.927123, lng: 79.861987 }) });
+    const geo = (await api(`/api/analytics/${g}/geo`, { token })).body;
+    check('A posted fix is stored rounded to 3 decimals', fix.status === 204 && Array.isArray(geo) && geo[0]?.lat === 6.927 && geo[0]?.lng === 79.862, `status=${fix.status} ${JSON.stringify(geo)}`);
+    const again = await api('/internal/geo', { method: 'POST', internal: true, body: JSON.stringify({ slug: g, event_id: eventId, lat: 1, lng: 1 }) });
+    const geo2 = (await api(`/api/analytics/${g}/geo`, { token })).body;
+    check('A second fix for the same scan does not move it', again.status === 204 && geo2?.[0]?.lat === 6.927, JSON.stringify(geo2));
+    const noSecret = await api('/internal/geo', { method: 'POST', body: JSON.stringify({ slug: g, event_id: eventId, lat: 1, lng: 1 }) });
+    check('/internal/geo without the secret → 401', noSecret.status === 401, `got ${noSecret.status}`);
+
+    // Smart routing: first matching rule wins, else the destination.
+    const rules = [{ if: { os: ['iOS'] }, url: 'https://apps.apple.com/app/id9' }, { if: { country: ['LK'] }, url: 'https://example.com/lk' }];
+    const rt = (await mk({ title: 'QA routing', destination_url: 'https://example.com/default', content_data: { rules } })).body?.slug;
+    const ios = await runWorker(`/${rt}`, { ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)', cf: { country: 'US' } });
+    const lk = await runWorker(`/${rt}`, { ua: 'Mozilla/5.0 (Windows NT 10.0)', cf: { country: 'LK' } });
+    const other = await runWorker(`/${rt}`, { ua: 'Mozilla/5.0 (Windows NT 10.0)', cf: { country: 'GB' } });
+    check('Routing: iPhone → iOS rule', ios.location === 'https://apps.apple.com/app/id9', `got ${ios.location}`);
+    check('Routing: Sri Lanka → country rule', lk.location === 'https://example.com/lk', `got ${lk.location}`);
+    check('Routing: no match → destination', other.location === 'https://example.com/default', `got ${other.location}`);
+    const badRules = await mk({ title: 'QA bad rules', destination_url: 'https://example.com/x', content_data: { rules: [{ if: { days: [9] }, url: 'https://x.lk' }] } });
+    check('Invalid rules → 400 INVALID_RULES', badRules.status === 400 && badRules.body?.code === 'INVALID_RULES', `got ${badRules.status}`);
+    await admin.from('profiles').update({ plan: 'free', plan_expires_at: null, is_trial: false, trial_expires_at: new Date(Date.now() - 86400000).toISOString() }).eq('id', uid);
+    const freeRules = await api(`/api/qr/${rt}`, { method: 'PUT', token, body: JSON.stringify({ content_data: { rules } }) });
+    check('Free: saving rules → 403 FEATURE_ROUTING', freeRules.status === 403 && freeRules.body?.code === 'FEATURE_ROUTING', `got ${freeRules.status}`);
+    const lapsedCfg = (await api(`/internal/slug/${rt}`, { internal: true })).body;
+    check('On Free, stored rules are not served to the edge', lapsedCfg?.rules === undefined, JSON.stringify(lapsedCfg?.rules));
+    await admin.from('profiles').update({ plan: 'pro', plan_expires_at: new Date(Date.now() + 30 * 86400000).toISOString() }).eq('id', uid);
+  }
+
+  // ── 34. Cleanup ──────────────────────────────────────────────────────────────
+  section('34. Cleanup');
   {
     const del = await api('/api/user/account', { method: 'DELETE', token });
     check('DELETE /api/user/account → 200', del.status === 200, `status=${del.status} ${JSON.stringify(del.body)}`);

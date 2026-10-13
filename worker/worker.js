@@ -1,6 +1,7 @@
 // Guest pages + vCard/Text/Email/Wi-Fi rendering, shared with the dev server (Wrangler bundles the TS import).
 import { renderGuestPage, pickLang, appTarget, FILE_TYPES, blockTarget, pageVcard } from '../src/lib/guestPage';
 import { RESERVED_SLUGS, isReservedSlug, withUtm } from '../src/lib/qrContent';
+import { pickRoute, routeCtx } from '../src/lib/routing';
 
 // Small branded HTML page for every non-redirect outcome. Never show a bare error on a printed code.
 const page = (title, bodyHtml, status, accent = '#E85D3A') => new Response(`<!DOCTYPE html>
@@ -20,6 +21,17 @@ const page = (title, bodyHtml, status, accent = '#E85D3A') => new Response(`<!DO
 </head>
 <body><div class="card">${bodyHtml}</div></body>
 </html>`, { status, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+
+// Opt-in GPS: ask once, wait at most 4 s, post the fix rounded to 3 decimals, then go on. A "no" or a timeout goes on too.
+const js = (v) => JSON.stringify(v).replace(/</g, '\\u003c');
+const gpsPage = (target, geoUrl, eventId) => new Response(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Opening…</title>
+<style>body{font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f4f4f6;color:#16171b}.card{background:#fff;padding:28px;border-radius:16px;max-width:360px;text-align:center}p{color:#55565c;font-size:14px;line-height:1.5}a{color:#E85D3A}</style></head>
+<body><div class="card"><h2>Opening…</h2><p>The owner of this code asks for your approximate location (about 100 m) to see where scans happen. You can say no; you will go on either way.</p>
+<noscript><a href="${esc(target)}">Continue</a></noscript></div>
+<script>(function(){var t=${js(target)},done=false;function go(){if(!done){done=true;location.replace(t)}}setTimeout(go,4500);
+if(!navigator.geolocation)return go();navigator.geolocation.getCurrentPosition(function(p){
+fetch(${js(geoUrl)},{method:'POST',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify({e:${js(eventId)},lat:Math.round(p.coords.latitude*1e3)/1e3,lng:Math.round(p.coords.longitude*1e3)/1e3})}).finally(go)},go,{timeout:4000,maximumAge:600000})})()</script>
+</body></html>`, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -97,6 +109,20 @@ export default {
     // Validate it looks like a QR slug
     if (!isSlug) {
       return fetch(request);
+    }
+
+    // GPS fix from the opt-in interstitial: forwarded to the origin, which only fills a fresh scan of this slug.
+    if (request.method === 'POST' && url.pathname === `/${slug}/geo` && apiUrl) {
+      const fix = await request.json().catch(() => null);
+      if (fix && typeof fix.e === 'string') {
+        ctx.waitUntil(fetch(`${apiUrl}/internal/geo`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-internal-secret': internalSecret },
+          body: JSON.stringify({ slug, event_id: fix.e, lat: fix.lat, lng: fix.lng }),
+          signal: AbortSignal.timeout(4000),
+        }).catch(err => console.error(`Geo sync error: ${err.message}`)));
+      }
+      return new Response(null, { status: 204 });
     }
 
     // --- ANALYTICS CONTEXT ---
@@ -295,6 +321,8 @@ export default {
       ctx.waitUntil(env.QR_CACHE.put(visitorKey, '1', { expirationTtl: Math.max(ttl, 60) }));
     }
 
+    const eventId = crypto.randomUUID(); // links an opt-in GPS fix to this scan
+
     // --- ANALYTICS --- never on the redirect's critical path.
     // ponytail: quota is decided from the 300s-cached config, so an owner can overshoot by <= 5 min of traffic.
     if (apiUrl && !isLangSwitch) {
@@ -306,6 +334,9 @@ export default {
           referer: request.headers.get('Referer') || '',
           lang: request.headers.get('Accept-Language') || '',
           country: cf.country || 'Unknown',
+          city: cf.city || '',
+          region: cf.region || '',
+          event_id: eventId,
           asn: cf.asn || null,
           colo: cf.colo || 'Unknown',
           tls: cf.tlsVersion || 'Unknown',
@@ -327,6 +358,10 @@ export default {
     if (rendered?.kind === 'redirect') {
       return new Response(null, { status: 302, headers: { Location: rendered.location } });
     }
-    return Response.redirect(withUtm(appTarget(config.app, ua) || config.destination_url, config.utm), 302);
+    // Smart routing (first matching rule), then the legacy app-store pair, then the destination; UTM tags last.
+    const target = withUtm(pickRoute(config.rules, routeCtx(ua, cf.country || '', request.headers.get('Accept-Language') || ''))
+      || appTarget(config.app, ua) || config.destination_url, config.utm);
+    if (config.gps && request.method === 'GET') return gpsPage(target, `/${slug}/geo`, eventId);
+    return Response.redirect(target, 302);
   }
 };
