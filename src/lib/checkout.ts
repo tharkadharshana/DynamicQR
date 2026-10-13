@@ -1,12 +1,12 @@
 import { apiFetch } from './api';
-import type { BillingInterval, Currency } from './plans';
+import type { BillingInterval, Currency, PaidPlan } from './plans';
 
 /**
  * Start a paid-plan checkout. LKR → PayHere (hosted form post). USD → Polar card checkout when enabled,
  * otherwise PayHere in USD. Shared by Pricing and Billing.
  */
 export async function startCheckout(
-  plan: 'pro' | 'team',
+  plan: PaidPlan,
   interval: BillingInterval,
   currency: Currency,
   planData: { is_sandbox?: boolean; polar_enabled?: boolean } | null,

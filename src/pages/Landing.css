@@ -739,9 +739,9 @@
 .landing-page .pricing-header .section-p { margin: 0 auto; }
 .landing-page .pricing-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   gap: 16px;
-  max-width: 900px;
+  max-width: 1160px;
   margin: 0 auto;
 }
 .landing-page .plan {
