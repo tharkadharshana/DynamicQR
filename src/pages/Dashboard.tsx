@@ -11,9 +11,9 @@ import QRViewerModal from '../components/QRViewerModal';
 import { pageEditPath } from './Pages';
 import { getQRContent, SHORT_DOMAIN, shortHost, stylingOptions, framedSvg, slugProblem } from '../lib/qrContent';
 
-// Dashboard tabs over the one loaded list. Phase 9 adds ['form', 'Forms'] here.
-const TABS: [string, string][] = [['qr', 'QR codes'], ['page', 'Pages'], ['link', 'Short links']];
-const tabOf = (q: any) => (q.kind === 'link' ? 'link' : q.qr_type === 'page' ? 'page' : 'qr');
+// Dashboard tabs over the one loaded list.
+const TABS: [string, string][] = [['qr', 'QR codes'], ['page', 'Pages'], ['link', 'Short links'], ['form', 'Forms']];
+const tabOf = (q: any) => (q.kind === 'link' ? 'link' : q.qr_type === 'page' ? 'page' : q.qr_type === 'form' ? 'form' : 'qr');
 const SORTS: Record<string, [string, (a: any, b: any) => number]> = {
   newest: ['Newest', (a, b) => String(b.created_at).localeCompare(String(a.created_at))],
   oldest: ['Oldest', (a, b) => String(a.created_at).localeCompare(String(b.created_at))],
@@ -504,7 +504,7 @@ export default function Dashboard() {
               <div style={{ display: 'flex', gap: '6px' }}>
                 <button className="btn btn-ghost btn-sm" onClick={() => setSelected(selected ? null : new Set())}>{selected ? 'Done' : 'Select'}</button>
                 {planData?.limits?.bulk_create && <button className="btn btn-ghost btn-sm" onClick={() => navigate('/bulk')}>Bulk</button>}
-                {tab !== 'link' && <button className="btn btn-ghost btn-sm" onClick={() => navigate(tab === 'page' ? '/pages' : '/create')}>+ New</button>}
+                {tab !== 'link' && <button className="btn btn-ghost btn-sm" onClick={() => navigate(tab === 'page' ? '/pages' : tab === 'form' ? '/forms/new' : '/create')}>+ New</button>}
               </div>
             </div>
 
@@ -558,6 +558,7 @@ export default function Dashboard() {
               <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text3)' }}>
                 {needle || folder || tag ? 'Nothing matches these filters.'
                   : tab === 'link' ? 'No short links yet. Paste a link above and press Shorten.'
+                  : tab === 'form' ? <>No forms yet. <Link to="/forms/new" style={{ color: 'var(--coral)', textDecoration: 'none' }}>Build your first form</Link>.</>
                   : tab === 'page' ? <>No pages yet. <Link to="/pages" style={{ color: 'var(--coral)', textDecoration: 'none' }}>Build your first page</Link>.</>
                   : <>No QR codes yet. <Link to="/create" style={{ color: 'var(--coral)', textDecoration: 'none' }}>Create your first one</Link>.</>}
               </div>
@@ -567,7 +568,7 @@ export default function Dashboard() {
                   <thead>
                     <tr>
                       {selected && <th></th>}
-                      <th>{tab === 'link' ? 'Short link' : tab === 'page' ? 'Page' : 'QR Code'}</th>
+                      <th>{tab === 'link' ? 'Short link' : tab === 'page' ? 'Page' : tab === 'form' ? 'Form' : 'QR Code'}</th>
                       <th>Scans</th>
                       <th>Status</th>
                       <th></th>
@@ -648,7 +649,8 @@ export default function Dashboard() {
                                 </button>
                               )}
                               <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/analytics/${qr.slug}`)}>Stats →</button>
-                              <button className="btn btn-ghost btn-sm" onClick={() => navigate(qr.qr_type === 'page' ? pageEditPath(qr) : `/edit/${qr.id}`)}>Edit</button>
+                              <button className="btn btn-ghost btn-sm" onClick={() => navigate(qr.qr_type === 'page' ? pageEditPath(qr) : qr.qr_type === 'form' ? `/forms/${qr.slug}/edit` : `/edit/${qr.id}`)}>Edit</button>
+                              {qr.qr_type === 'form' && <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/forms/${qr.slug}/responses`)}>Responses</button>}
                               <button className="btn btn-ghost btn-sm" style={{ color: 'var(--coral)' }} onClick={() => handleDelete(qr.id, qr.slug)}>Delete</button>
                             </div>
                           </td>

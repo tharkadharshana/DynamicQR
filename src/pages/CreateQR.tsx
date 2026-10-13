@@ -91,6 +91,7 @@ export default function CreateQR() {
           const data = await apiFetch(`/api/qr/${id}`);
           // Block pages are edited in the Pages builder, older Kit pages in the Restaurant Kit.
           if (data.qr_type === 'page') { navigate(pageEditPath(data), { replace: true }); return; }
+          if (data.qr_type === 'form') { navigate(`/forms/${data.slug}/edit`, { replace: true }); return; }
 
           setQrType(data.content_data?.kind || (data.content_data?.wa_phone ? 'whatsapp' : data.qr_type || 'url'));
           setGtin(data.gtin || '');
