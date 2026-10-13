@@ -1,5 +1,5 @@
 // Guest pages + vCard/Text/Email/Wi-Fi rendering, shared with the dev server (Wrangler bundles the TS import).
-import { renderGuestPage, pickLang, appTarget, FILE_TYPES, blockTarget } from '../src/lib/guestPage';
+import { renderGuestPage, pickLang, appTarget, FILE_TYPES, blockTarget, pageVcard } from '../src/lib/guestPage';
 
 // Small branded HTML page for every non-redirect outcome. Never show a bare error on a printed code.
 const page = (title, bodyHtml, status, accent = '#E85D3A') => new Response(`<!DOCTYPE html>
@@ -60,7 +60,7 @@ export default {
     // Known frontend routes - always pass through to the origin
     const FRONTEND_ROUTES = new Set([
       '', 'create', 'edit', 'analytics', 'settings', 'billing',
-      'login', 'legal', 'pricing', 'api-docs'
+      'login', 'legal', 'pricing', 'api-docs', 'pages', 'kit', 'bulk'
     ]);
 
     // 1. Internal / Hidden Routes
@@ -216,9 +216,9 @@ export default {
 
     // Pages "Engagements": /<slug>/l/<key> → the link on the page, counted as a click, not a scan.
     // Runs after the gates, so a PIN-protected page's links stay behind its PIN.
-    const click = url.pathname.match(/^\/[^/]+\/l\/(\d{1,3}(?:-\d{1,3})?)$/);
-    if (click && !gs1) {
-      const target = qrType === 'page' ? blockTarget(config.content_data, click[1]) : null;
+    const click = url.pathname.match(/^\/[^/]+\/l\/([a-z0-9]{1,12}(?:-\d{1,3})?)$/);
+    if (click && !gs1 && qrType === 'page') {
+      const target = blockTarget(config.content_data, click[1]);
       if (!target) return page('Link not found', '<h2>Link not found</h2><p>This link is no longer on the page.</p>', 404);
       if (apiUrl) {
         ctx.waitUntil(fetch(`${apiUrl}/internal/click`, {
@@ -232,7 +232,7 @@ export default {
     }
 
     // Switching language on a guest page (?lang=) or saving its contact (?vcf=1) is not a new scan.
-    const isLangSwitch = qrType !== 'url' && (url.searchParams.has('lang') || url.searchParams.has('vcf'));
+    const isLangSwitch = qrType !== 'url' && (url.searchParams.has('lang') || (qrType === 'page' && url.searchParams.get('vcf') === '1' && !!pageVcard(config.content_data)));
 
     // --- SCAN LIMIT CHECK (only after the other gates pass) ---
     // ponytail: count lives in a per-edge KV copy refreshed from the DB every 300s; can overshoot under bursty multi-region traffic.

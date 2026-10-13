@@ -5,7 +5,7 @@ import {
   PieChart, Pie, Cell, BarChart, Bar
 } from 'recharts';
 import { supabase } from '../supabase';
-import { apiFetch } from '../lib/api';
+import { apiFetch, formatNumber } from '../lib/api';
 import { shortHost } from '../lib/qrContent';
 import QRViewerModal from '../components/QRViewerModal';
 
@@ -35,6 +35,13 @@ export default function Analytics() {
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [viewQR, setViewQR] = useState<any | null>(null);
+  const [clicks, setClicks] = useState<any[]>([]);
+
+  // Pages: clicks per button, social link and product (Engagements card).
+  useEffect(() => {
+    setClicks([]);
+    if (qrDetails?.qr_type === 'page') apiFetch(`/api/analytics/${qrDetails.slug}/clicks`).then(d => setClicks(Array.isArray(d) ? d : [])).catch(() => {});
+  }, [qrDetails?.slug, qrDetails?.qr_type]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -537,6 +544,28 @@ export default function Analytics() {
             </div>
           </div>
         </div>
+
+        {qrDetails?.qr_type === 'page' && (
+          <div className="card mb16">
+            <div className="section-row"><span className="section-title">Engagements</span></div>
+            <div className="qr-table-wrap">
+              <table className="qr-table">
+                <thead><tr><th>Link</th><th>Clicks</th><th>CTR</th></tr></thead>
+                <tbody>
+                  {clicks.length === 0 ? (
+                    <tr><td colSpan={3} style={{ padding: '20px', textAlign: 'center', color: 'var(--text3)' }}>No clicks yet</td></tr>
+                  ) : clicks.map(c => (
+                    <tr key={c.key}>
+                      <td title={c.url}>{c.label}</td>
+                      <td>{formatNumber(c.clicks)}</td>
+                      <td>{Number(c.ctr || 0).toFixed(1)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* Recent Scans Table */}
         <div className="card">

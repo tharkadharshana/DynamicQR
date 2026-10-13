@@ -119,18 +119,23 @@ export function videoEmbed(u: unknown): string {
   return vm ? `https://player.vimeo.com/video/${vm[1]}` : '';
 }
 
+/** Tracking key of block i: its stable `id` (set by the editor, so reordering keeps click counts), else its index. */
+const blockKey = (b: any, i: number) => (/^[a-z0-9]{3,12}$/.test(String(b?.id || '')) ? b.id : String(i));
+
 /**
- * Click target for a tracked link: key "i" (button / image block i) or "i-j" (item j of a socials or products block).
+ * Click target for a tracked link: key "<k>" (button / image block) or "<k>-j" (item j of a socials or products block),
+ * where <k> is the block's id or, for blocks without one, its index.
  * Used by the renderer and by the Worker's /<slug>/l/<key> route, so a click can only reach a link that is on the page.
  */
 export function blockTarget(d: any, key: string): { url: string; label: string } | null {
-  const m = String(key).match(/^(\d{1,3})(?:-(\d{1,3}))?$/);
-  const b = m && pageBlocks(d)[Number(m[1])];
+  const m = String(key).match(/^([a-z0-9]{1,12})(?:-(\d{1,3}))?$/);
+  const blocks = pageBlocks(d);
+  const b = m && (blocks.find(x => x.id === m[1]) || (/^\d+$/.test(m[1]) ? blocks[Number(m[1])] : null));
   if (!b) return null;
   const item = m![2] !== undefined && Array.isArray(b.items) ? b.items[Number(m![2])] : null;
   if (b.kind === 'button' && m![2] === undefined) return safeUrl(b.url) ? { url: safeUrl(b.url), label: b.label || 'Button' } : null;
   if (b.kind === 'image' && m![2] === undefined) return safeUrl(b.link) ? { url: safeUrl(b.link), label: b.alt || 'Image' } : null;
-  if (b.kind === 'socials' && item && SOCIALS[item.network]) {
+  if (b.kind === 'socials' && item && Object.hasOwn(SOCIALS, item.network)) {
     const url = buildDestination(item.network, item);
     return url ? { url, label: item.network } : null;
   }
@@ -149,11 +154,14 @@ export function pageVcard(d: any): string | null {
 
 function renderBlocks(config: any, d: any, lang: Lang, t: Record<string, string>, langLinks: string): string {
   const track = (key: string, url: string) => (config.slug ? `/${encodeURIComponent(config.slug)}/l/${key}` : url);
-  return pageBlocks(d, lang).map((b: any, i: number) => {
+  let langs = langLinks; // the language switch goes in the first header, or on top when there is none
+  const html = pageBlocks(d, lang).map((b: any, idx: number) => {
+    const i = blockKey(b, idx);
     switch (b.kind) {
       case 'header': {
-        const av = https(b.avatar);
-        return `<div class="top hdr">${langLinks}${av ? `<img class="av" src="${esc(av)}" alt="">` : ''}<h1>${esc(b.name)}</h1>${b.tagline ? `<p>${esc(b.tagline)}</p>` : ''}</div>`;
+        const av = https(b.avatar), l = langs;
+        langs = '';
+        return `<div class="top hdr">${l}${av ? `<img class="av" src="${esc(av)}" alt="">` : ''}<h1>${esc(b.name)}</h1>${b.tagline ? `<p>${esc(b.tagline)}</p>` : ''}</div>`;
       }
       case 'socials': {
         const items = (Array.isArray(b.items) ? b.items : []).map((it: any, j: number) => {
@@ -163,16 +171,16 @@ function renderBlocks(config: any, d: any, lang: Lang, t: Record<string, string>
         return items ? `<div class="socs">${items}</div>` : '';
       }
       case 'button': {
-        const tgt = blockTarget(d, String(i));
-        return tgt && b.label ? `<a class="btn" href="${esc(track(String(i), tgt.url))}" rel="noopener">${esc(b.label)}<span>›</span></a>` : '';
+        const tgt = blockTarget(d, i);
+        return tgt && b.label ? `<a class="btn" href="${esc(track(i, tgt.url))}" rel="noopener">${esc(b.label)}<span>›</span></a>` : '';
       }
       case 'text': return b.text ? `<div class="box"><pre>${esc(b.text)}</pre></div>` : '';
       case 'image': {
         const src = https(b.url);
         if (!src) return '';
         const img = `<img class="img" src="${esc(src)}" alt="${esc(b.alt)}" loading="lazy">`;
-        const tgt = blockTarget(d, String(i));
-        return tgt ? `<a href="${esc(track(String(i), tgt.url))}" rel="noopener">${img}</a>` : img;
+        const tgt = blockTarget(d, i);
+        return tgt ? `<a href="${esc(track(i, tgt.url))}" rel="noopener">${img}</a>` : img;
       }
       case 'video': {
         const src = videoEmbed(b.url);
@@ -198,6 +206,7 @@ function renderBlocks(config: any, d: any, lang: Lang, t: Record<string, string>
       default: return '';
     }
   }).join('\n');
+  return (langs ? `<div class="top" style="min-height:24px">${langs}</div>` : '') + html;
 }
 
 /** config: the cached gate config (qr_type, content_data, title, branding). url: the scanned URL (for language links). */
@@ -322,6 +331,13 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('guestPage.ts'
   globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode((renderGuestPage(kit, 'si', 'https://s.lk/abc') as any).body)).then(buf => {
     const h = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
     assert(h === '4892ea289ea5518269dc5aeee8cd95781ea851fe09f23054f827203399096c76', 'legacy Kit page output changed: ' + h);
-    console.log('guestPage self-check ok');
+    // Stable block ids: a reorder keeps the key → link mapping; prototype names are not networks.
+  const idPage = { blocks: [{ kind: 'button', id: 'k3x9q', label: 'A', url: 'https://a.lk' }, { kind: 'socials', id: 'soc01', items: [{ network: 'constructor', handle: 'x' }] }] };
+  assert(blockTarget(idPage, 'k3x9q')?.url === 'https://a.lk' && blockTarget({ blocks: [...idPage.blocks].reverse() }, 'k3x9q')?.url === 'https://a.lk', 'id keys survive a reorder');
+  assert(blockTarget(idPage, 'soc01-0') === null, 'prototype names are not social networks');
+  assert((renderGuestPage({ qr_type: 'page', slug: 's1', content_data: idPage }, 'en', 'https://s.lk/s1') as any).body.includes('href="/s1/l/k3x9q"'), 'tracked by id');
+  const noHdr = renderGuestPage({ qr_type: 'page', content_data: { blocks: [{ kind: 'text', text: 'x' }], i18n: { si: { blocks: [{ text: 'සිං' }] } } } }, 'si', 'https://s.lk/p') as any;
+  assert(noHdr.body.includes('class="langs"'), 'language switch without a header');
+  console.log('guestPage self-check ok');
   });
 }

@@ -105,7 +105,7 @@ export const cleanHandle = (h: unknown) =>
 export function buildDestination(kind: string, d: any = {}): string {
   const enc = encodeURIComponent;
   const phone = String(d.phone || '').replace(/[^\d+]/g, '');
-  if (SOCIALS[kind]) { const h = cleanHandle(d.handle); return h ? SOCIALS[kind](h) : ''; }
+  if (Object.hasOwn(SOCIALS, kind)) { const h = cleanHandle(d.handle); return h ? SOCIALS[kind](h) : ''; }
   switch (kind) {
     case 'google_review': return d.place_id ? `https://search.google.com/local/writereview?placeid=${enc(String(d.place_id).trim())}` : '';
     case 'phone': return phone ? `tel:${phone}` : '';

@@ -165,7 +165,7 @@ After the gates pass, the Worker calls `renderGuestPage(config, lang, url)` from
 
 ### Page clicks and Save as contact (Phase 7)
 
-- Buttons, linked images, social icons and product cards link to `/<slug>/l/<key>` (`key` is the block index, or `i-j` for item `j` of a socials or products block). After the gates (so a PIN page's links stay behind its PIN), the Worker resolves the key with `blockTarget()` from the cached config, sends `POST /internal/click` in `waitUntil`, and 302s. Only links that are on the page resolve; anything else is a 404 page. A click is not a scan.
+- Buttons, linked images, social icons and product cards link to `/<slug>/l/<key>` (`key` is the block's stable `id`, set by the editor so a reorder keeps the counts, or its index for blocks without one; `<key>-j` for item `j` of a socials or products block). After the gates (so a PIN page's links stay behind its PIN), the Worker resolves the key with `blockTarget()` from the cached config, sends `POST /internal/click` in `waitUntil`, and 302s. Only links that are on the page resolve; anything else is a 404 page. A click is not a scan.
 - `?vcf=1` on a page with a contact block downloads a vCard. Like `?lang=`, it is not counted as a scan.
 
 ### GS1 Digital Link and app-store codes (Phase 6)
