@@ -19,7 +19,7 @@ import { customAlphabet } from 'nanoid';
 import logger from "./logger.js";
 import { renderGuestPage, pickLang } from './src/lib/guestPage.js';
 import { buildDigest } from './src/lib/digest.js';
-import { PLANS, TRIAL_LIMITS, GRACE_DAYS, DEFAULT_ADDONS, PRICES, PlanId, UserAddons, Currency, BillingInterval } from './src/lib/plans.js';
+import { PLANS, TRIAL_LIMITS, GRACE_DAYS, DEFAULT_ADDONS, PRICES, PAID_PLANS, PlanId, PaidPlan, UserAddons, Currency, BillingInterval } from './src/lib/plans.js';
 
 // Direct table helpers (replaced the Firestore-compat shim in Phase 3).
 async function row(table: string, col: string, val: string): Promise<any | null> {
@@ -180,7 +180,7 @@ async function startServer() {
         const { data: key } = await supabase.from('api_keys').select('id, uid').eq('key_hash', sha256(token)).is('revoked_at', null).maybeSingle();
         if (!key) return res.status(401).json({ error: 'Invalid or revoked API key' });
         const license = await getLicense(key.uid);
-        if (!license.limits.api_access) return res.status(403).json({ error: 'API access requires the Team plan', code: 'FEATURE_API' });
+        if (!license.limits.api_access) return res.status(403).json({ error: 'API access requires the Team or Business plan', code: 'FEATURE_API' });
         (req as any).user = { uid: key.uid, realUid: key.uid, email: null, viaApiKey: true };
         supabase.from('api_keys').update({ last_used_at: nowIso() }).eq('id', key.id).then(() => {});
         return next();
@@ -230,6 +230,14 @@ async function startServer() {
   };
 
   const QR_TYPES = ['url', 'vcard', 'wifi', 'text', 'email', 'page'];
+  // A short link is a dynamic URL row with kind='link': no QR image, counted against short_links only.
+  const isLink = (q: any) => q.kind === 'link';
+  // Per-object caps on top of the QR caps. Pages and forms are QR codes too; links are not.
+  const OBJECT_CAPS = [
+    { field: 'short_links', code: 'LIMIT_SHORT_LINKS', is: (q: any) => isLink(q) },
+    { field: 'pages', code: 'LIMIT_PAGES', is: (q: any) => q.qr_type === 'page' },
+    { field: 'forms', code: 'LIMIT_FORMS', is: (q: any) => q.qr_type === 'form' },
+  ] as const;
   const CONTENT_MAX = 20_000;
 
   // Activation funnel (see migrations/queries.sql). Never blocks or fails the request.
@@ -318,7 +326,7 @@ async function startServer() {
       qr_codes: baseLimits.qr_codes + (addons.extra_qr_codes || 0),
       monthly_scans: baseLimits.monthly_scans + (addons.extra_scans || 0),
       analytics_days: baseLimits.analytics_days,
-      custom_domain: baseLimits.custom_domain || addons.custom_domain,
+      custom_domains: Math.max(baseLimits.custom_domains, addons.custom_domain ? 1 : 0),
       api_access: baseLimits.api_access || addons.api_access,
     };
 
@@ -360,11 +368,13 @@ async function startServer() {
 
       const allQrs = await rows('qr_codes', 'user_uid', uid);
       const allSlugs: string[] = allQrs.map(q => q.slug);
-      const activeQrs = allQrs.filter(q => q.is_active !== false).length;
+      const activeQrs = allQrs.filter(q => q.is_active !== false && !isLink(q)).length;
       const remaining_qr = Math.max(0, license.limits.qr_codes - activeQrs);
-      const activeDynamic = allQrs.filter(q => q.is_active !== false && q.is_dynamic !== false).length;
-      // Lapse rule: dynamic codes above the allowance pause when the grace period ends.
-      const dynamicOverAllowance = Math.max(0, activeDynamic - license.limits.dynamic_qr_codes);
+      const activeDynamic = allQrs.filter(q => q.is_active !== false && q.is_dynamic !== false && !isLink(q)).length;
+      const activeLinks = allQrs.filter(q => q.is_active !== false && isLink(q)).length;
+      // Lapse rule: dynamic codes and short links above the allowance pause when the grace period ends.
+      const dynamicOverAllowance = Math.max(0, activeDynamic - license.limits.dynamic_qr_codes)
+        + Math.max(0, activeLinks - license.limits.short_links);
       const pause_on = license.graceEndsAt && dynamicOverAllowance > 0 ? license.graceEndsAt.toISOString() : null;
 
       const currentMonth = new Date().toISOString().slice(0, 7);
@@ -622,8 +632,8 @@ async function startServer() {
       if (!['monthly', 'annual'].includes(interval)) {
         return res.status(400).json({ error: 'interval must be monthly or annual' });
       }
-      if (!['pro', 'team'].includes(plan)) {
-        return res.status(400).json({ error: 'plan must be pro or team' });
+      if (!PAID_PLANS.includes(plan)) {
+        return res.status(400).json({ error: `plan must be one of ${PAID_PLANS.join(', ')}` });
       }
 
       const merchant_id = process.env.PAYHERE_MERCHANT_ID;
@@ -635,7 +645,7 @@ async function startServer() {
 
       // LKR by default; USD through PayHere only as the fallback when Polar is not configured.
       const currency: Currency = req.body.currency === 'USD' ? 'USD' : 'LKR';
-      const amount = PRICES[plan as 'pro' | 'team'][currency][interval as BillingInterval].toFixed(2);
+      const amount = PRICES[plan as PaidPlan][currency][interval as BillingInterval].toFixed(2);
       const order_id = `ORDER_${uid}_${Date.now()}`;
 
       // The server-side order is the source of truth for uid/plan/amount at notify time.
@@ -779,6 +789,8 @@ async function startServer() {
     add(process.env.POLAR_PRODUCT_PRO_ANNUAL, 'pro', 'annual');
     add(process.env.POLAR_PRODUCT_TEAM_MONTHLY, 'team', 'monthly');
     add(process.env.POLAR_PRODUCT_TEAM_ANNUAL, 'team', 'annual');
+    add(process.env.POLAR_PRODUCT_BUSINESS_MONTHLY, 'business', 'monthly');
+    add(process.env.POLAR_PRODUCT_BUSINESS_ANNUAL, 'business', 'annual');
     return map;
   };
 
@@ -796,13 +808,13 @@ async function startServer() {
       const user = (req as any).user;
       const { plan, interval } = req.body;
       if (!['monthly', 'annual'].includes(interval)) return res.status(400).json({ error: 'interval must be monthly or annual' });
-      if (!['pro', 'team'].includes(plan)) return res.status(400).json({ error: 'plan must be pro or team' });
+      if (!PAID_PLANS.includes(plan)) return res.status(400).json({ error: `plan must be one of ${PAID_PLANS.join(', ')}` });
 
       const token = process.env.POLAR_ACCESS_TOKEN;
       const productId = Object.entries(polarProducts()).find(([, v]) => v[0] === plan && v[1] === interval)?.[0];
       if (!token || !productId) return res.status(503).json({ error: 'Card payments are not available yet. Please pay in LKR.' });
 
-      const amount = PRICES[plan as 'pro' | 'team'].USD[interval as BillingInterval].toFixed(2);
+      const amount = PRICES[plan as PaidPlan].USD[interval as BillingInterval].toFixed(2);
       const order_id = `POLAR_${user.uid}_${Date.now()}`;
       const { error: orderErr } = await supabase.from('subscriptions').insert({
         uid: user.uid, plan, interval, order_id, amount, currency: 'USD', provider: 'polar', status: 'pending',
@@ -862,7 +874,7 @@ async function startServer() {
           uid, plan, interval, provider: 'polar',
           paymentId: `${data.id}:${data.current_period_end}`, // one grant per subscription period
           orderId: orderId || `POLAR_SUB_${data.id}`,
-          amount: order?.amount || PRICES[plan as 'pro' | 'team'].USD[interval as BillingInterval].toFixed(2),
+          amount: order?.amount || PRICES[plan as PaidPlan].USD[interval as BillingInterval].toFixed(2),
           currency: 'USD',
           expiresAt: new Date(data.current_period_end),
         });
@@ -904,6 +916,10 @@ async function startServer() {
       const type = qr_type || 'url';
       if (!QR_TYPES.includes(type)) {
         return res.status(400).json({ error: `qr_type must be one of ${QR_TYPES.join(', ')}` });
+      }
+      const kind = req.body.kind || 'qr';
+      if (kind !== 'qr' && !(kind === 'link' && type === 'url' && requestedDynamic !== false)) {
+        return res.status(400).json({ error: "kind must be 'qr', or 'link' for a dynamic url" });
       }
       if (content_data !== undefined && JSON.stringify(content_data).length > CONTENT_MAX) {
         return res.status(400).json({ error: 'content_data is too large (max 20 KB)' });
@@ -953,11 +969,21 @@ async function startServer() {
       logger.info(`Checking limits for plan: ${license.effectivePlan}`, { limits: license.limits });
 
 
-      const myQrs = await rows('qr_codes', 'user_uid', uid);
-      const activeCount = myQrs.filter(q => q.is_active !== false).length;
+      const myQrs = (await rows('qr_codes', 'user_uid', uid)).filter(q => q.is_active !== false);
+      const newRow = { kind, qr_type: type };
+      for (const cap of OBJECT_CAPS) {
+        if (!cap.is(newRow)) continue;
+        const current = myQrs.filter(cap.is).length;
+        const limit = license.limits[cap.field];
+        if (current >= limit) {
+          return res.status(403).json({ error: `Your plan includes ${limit} ${cap.field.replace('_', ' ')}. Upgrade for more.`, code: cap.code, limit, current });
+        }
+      }
+      const myCodes = myQrs.filter(q => !isLink(q));
+      const activeCount = myCodes.length;
       
       // Sentinel -1 check for unlimited
-      if (license.limits.qr_codes !== -1 && activeCount >= license.limits.qr_codes) {
+      if (kind === 'qr' && license.limits.qr_codes !== -1 && activeCount >= license.limits.qr_codes) {
         logger.warn(`User ${uid} reached plan limit (${activeCount}/${license.limits.qr_codes})`);
         return res.status(403).json({ 
           error: 'Plan limit reached. Upgrade to create more QRs.',
@@ -967,8 +993,8 @@ async function startServer() {
         });
       }
 
-      const activeDynamic = myQrs.filter(q => q.is_active !== false && q.is_dynamic !== false).length;
-      if (is_dynamic && activeDynamic >= license.limits.dynamic_qr_codes) {
+      const activeDynamic = myCodes.filter(q => q.is_dynamic !== false).length;
+      if (kind === 'qr' && is_dynamic && activeDynamic >= license.limits.dynamic_qr_codes) {
         return res.status(403).json({
           error: 'Dynamic QR limit reached. Upgrade for more dynamic codes.',
           code: 'LIMIT_DYNAMIC_QR',
@@ -1014,6 +1040,8 @@ async function startServer() {
         user_uid: user.uid,
         destination_url: destination_url || '',
         qr_type: type,
+        // Only written when not the default, so plain creates keep working before migration 005.
+        ...(kind === 'link' ? { kind } : {}),
         // Only written when set, so creates keep working before migration 004 adds the column.
         ...(typeof client === 'string' && client.trim() ? { client: client.trim().slice(0, 60) } : {}),
         content_data: content_data || null,
@@ -1372,7 +1400,7 @@ async function startServer() {
     try {
       const uid = (req as any).user.uid;
       const license = await getLicense(uid);
-      if (!license.limits.api_access) return res.status(403).json({ error: 'API access requires the Team plan', code: 'FEATURE_API' });
+      if (!license.limits.api_access) return res.status(403).json({ error: 'API access requires the Team or Business plan', code: 'FEATURE_API' });
       const key = `sk_live_${crypto.randomBytes(24).toString('base64url')}`;
       const name = typeof req.body?.name === 'string' && req.body.name.trim() ? req.body.name.trim().slice(0, 60) : 'API key';
       const { data, error } = await supabase.from('api_keys')
@@ -1456,7 +1484,7 @@ async function startServer() {
     try {
       const uid = (req as any).user.uid;
       const license = await getLicense(uid);
-      if (!license.limits.custom_domain) return res.status(403).json({ error: 'A custom domain is part of the Team plan', code: 'FEATURE_CUSTOM_DOMAIN' });
+      if (license.limits.custom_domains < 1) return res.status(403).json({ error: 'A custom domain needs the Pro plan or above', code: 'FEATURE_CUSTOM_DOMAIN' });
       const hostname = String(req.body?.hostname || '').trim().toLowerCase();
       if (!/^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/.test(hostname)) return res.status(400).json({ error: 'Enter a hostname like qr.yourbusiness.lk' });
       if (await row('custom_domains', 'uid', uid)) return res.status(409).json({ error: 'Remove your current domain first (1 per account)' });
@@ -1593,9 +1621,10 @@ async function startServer() {
         const { count, error } = await supabase.from('qr_codes')
           .select('slug', { count: 'exact', head: true })
           .eq('user_uid', qr.user_uid).eq('is_active', true).eq('is_dynamic', true)
+          .eq('kind', isLink(qr) ? 'link' : 'qr')
           .lt('created_at', qr.created_at);
         if (error) throw error;
-        paused = (count || 0) >= license.limits.dynamic_qr_codes;
+        paused = (count || 0) >= (isLink(qr) ? license.limits.short_links : license.limits.dynamic_qr_codes);
       }
 
       // Compact gate config for the Worker. Policy (quota, visitor guard) is decided here, from the
@@ -1615,7 +1644,7 @@ async function startServer() {
         title: qr.title || '',
         qr_type: qr.qr_type || 'url',
         content_data: qr.qr_type && qr.qr_type !== 'url' ? qr.content_data || {} : undefined,
-        branding: license.effectivePlan === 'free' && !license.isTrial, // "Made with Scnr" on Free guest pages
+        branding: !license.limits.remove_branding, // "Made with Scnr" on Free guest pages
         owner_plan: license.effectivePlan,
       };
 
