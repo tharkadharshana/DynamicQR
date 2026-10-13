@@ -85,7 +85,8 @@ On Vercel each serverless instance keeps its own counters, so these limits are s
 {
   "title": "Menu",                       // ≤120 chars
   "destination_url": "https://…",        // must parse with new URL(), or ''
-  "qr_type": "url|vcard|wifi|text|email|page",   // anything else → 400
+  "qr_type": "url|vcard|wifi|text|email|page|event",   // anything else → 400
+  "gtin": "4006381333931",               // optional GS1 GTIN-8/12/13/14: check digit validated (400 INVALID_GTIN), stored as GTIN-14, unique (409 GTIN_TAKEN); forces dynamic
   "kind": "qr|link",                     // default qr; link = short link: dynamic url with a destination_url (else 400)
   "is_dynamic": true,
   "content_data": { … },                 // type-specific (see doc 05), max 20 KB
@@ -129,6 +130,10 @@ Returns `{ success: true, slug }`.
 ### `DELETE /api/qr/:slug` (user and owner, write)
 
 Deletes the `qr_codes` row. `qr_stats` and `scan_events` go with it (on delete cascade). Then it calls `purgeEdge(slug)` without waiting.
+
+### `POST /api/files` (user, write)
+
+Body `{type: 'pdf'|'png'|'jpg'|'webp', size: <bytes>}`. Checks `size` against the plan's `file_mb` (403 `LIMIT_FILE_SIZE` with `limit_mb`), then returns `201 {path, token, signedUrl, contentType, publicUrl}`. The browser uploads directly with `supabase.storage.from('files').uploadToSignedUrl(path, token, file)`, so no file bytes go through Vercel. Files live under `files/<uid>/`; deleting the account removes them.
 
 ### `POST /api/events` (user)
 
@@ -200,6 +205,7 @@ The add-on checkout was removed in Phase 0: there was no UI and the webhook bran
 | Method / path | Auth | Purpose |
 |---|---|---|
 | `GET /internal/slug/:slug` | secret | Compact gate config including the policy fields `quota_exceeded`, `paused` (lapse rule), `title`, `visitor_guard`, the resolved `visitor_rate_limit`, and for non-URL codes `qr_type`, `content_data` and `branding` ([doc 03](03-scan-flow-and-gate-engine.md#3-config-lookup)) |
+| `GET /internal/gs1/:gtin` | secret | `{slug}` of the code that owns the GTIN; 400 on a bad check digit, 404 if none |
 | `POST /internal/scan` | secret | Records the scan only (the quota is enforced by the Worker from the config). Returns `OK` or `404`. |
 
 Vercel routes `/internal/*` to the function (added in Phase 0).

@@ -155,11 +155,17 @@ After the gates pass, the Worker calls `renderGuestPage(config, lang, url)` from
 | `vcard` | `.vcf` download (`text/vcard`) |
 | `text` | HTML page with the text (escaped) |
 | `email` | `302` to `mailto:` |
+| `event` | `.ics` download (`text/calendar`), one VEVENT with floating local times |
 | `wifi` | Page with the network and a copyable password (a *static* Wi-Fi code joins directly, so the kit prints a static one next to the guest page) |
 
 - **Language** comes from `?lang=en|si|ta`, then `Accept-Language`, then English. Sinhala and Tamil text uses Noto Sans from Google Fonts. **A language switch (`?lang=` on a non-URL code) is not counted as a scan** and does not touch the scan or visitor counters.
 - **Safety.** All text is HTML-escaped. Link URLs must start with `http(s)://`, `tel:` or `mailto:`; anything else (`javascript:`, `data:`) is dropped.
 - **Size.** `content_data` is capped at 20 KB by the API and travels inside the cached config.
+
+### GS1 Digital Link and app-store codes (Phase 6)
+
+- **GS1.** A path `/01/<GTIN>[/10/<batch>…]` is resolved before the slug: the Worker reads `gs1:<GTIN-14>` from KV, or asks `GET /internal/gs1/<gtin>` (secret header) for the owning slug and caches it for 300 s. From there it is the normal gate flow and the scan counts on that slug. A wrong check digit returns a 400 page, an unknown GTIN a 404 page.
+- **App store.** A URL code with `content_data.app = {ios, android}`: `/internal/slug` passes `app`, and `appTarget(app, ua)` in [guestPage.ts](../src/lib/guestPage.ts) sends iPhones and iPads to `ios` and Android to `android`; everyone else gets `destination_url`. Phase 10's routing rules replace this.
 
 ## Known limits
 

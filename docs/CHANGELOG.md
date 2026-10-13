@@ -2,6 +2,18 @@
 
 One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-review-findings.md](11-review-findings.md).
 
+## Phase 6: Code types and QR design (branch `feat/code-types-design`)
+
+- **New URL types** built by one pure `buildDestination(kind, data)` in `src/lib/qrContent.ts`, with a self-check: Google review (Place ID), Instagram, Facebook, TikTok, YouTube, LinkedIn, X, phone, SMS, location and PDF. They store `qr_type 'url'` and `content_data.kind`, like WhatsApp, so analytics needed nothing new.
+- **PDF codes.** `POST /api/files` checks the plan's `file_mb` and returns a signed upload URL; the browser uploads straight to the public `files` bucket. Replacing the file keeps the same code. Deleting the account removes the user's files.
+- **GS1 Digital Link.** `qr_codes.gtin` (unique), check digit validated on create, edit and at the edge; the code encodes `/01/<GTIN-14>`, which the Worker resolves through `/internal/gs1/<gtin>`.
+- **Event codes** (`qr_type 'event'`) download an `.ics` from `renderGuestPage`.
+- **App-store codes.** iPhone → App Store, Android → Play, everyone else → the fallback URL (`appTarget()` in `guestPage.ts`, used by the Worker and the dev redirect).
+- **Design.** Six dot styles, corner dot style, gradient, circle shape, frames with a call to action (`framedSvg()`), and a saved brand style (`profiles.brand_style`).
+- **CreateQR tabs** reorganised like Hovercode's, with a More menu.
+- Migration 006 (`gtin`, `brand_style`, the `files` bucket); QA section 29; self-checks in `qrContent.ts` and `guestPage.ts`.
+- **Needs a Worker deploy** (GS1 paths, `.ics`, app routing).
+
 ## Phase 5: Plans v2 (branch `feat/plans-v2`)
 
 - **Business tier.** $79 / LKR 25,990 a month (10× for a year). `PlanId`, `PRICES`, PayHere checkout, Polar checkout and the Polar product map all accept `business`; new env vars `POLAR_PRODUCT_BUSINESS_MONTHLY` and `…_ANNUAL`.
