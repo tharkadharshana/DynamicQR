@@ -183,14 +183,14 @@ const n = (x: number) => x.toLocaleString('en-US');
 
 /**
  * The feature list every pricing surface shows, generated from PLANS so there is no second copy.
- * ponytail: lists shipped features only. Add forms (Phase 9), and workspaces,
+ * ponytail: lists shipped features only. Add workspaces,
  * webhooks and the domain count (Phase 11) here when each ships; pricing must never claim what the app can't do yet.
  */
 export function planFeatures(plan: PlanId): string[] {
   const l = PLANS[plan];
   return [
     plan === 'free' ? `${l.qr_codes} QR codes in total (${l.dynamic_qr_codes} dynamic)` : `${n(l.dynamic_qr_codes)} dynamic QR codes in total`,
-    `${n(l.short_links)} short links, ${n(l.pages)} hosted page${l.pages === 1 ? '' : 's'}`,
+    `${n(l.short_links)} short links, ${n(l.pages)} hosted page${l.pages === 1 ? '' : 's'}${l.forms ? `, ${n(l.forms)} forms` : ''}`,
     `${n(l.monthly_scans)} scans per month`,
     `${l.analytics_days >= 365 ? `${l.analytics_days / 365} year${l.analytics_days === 365 ? '' : 's'}` : `${l.analytics_days} days`} of analytics`,
     'Colours, shapes and logo',

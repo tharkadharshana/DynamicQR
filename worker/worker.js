@@ -30,6 +30,8 @@ const sha256Hex = async (s) => {
 
 const PIN_MAX_FAILS = 5;
 const PIN_LOCK_SECONDS = 900;
+const FORM_MAX_SUBMITS = 5;    // per visitor per form, per 15 minutes (spam control with the honeypot)
+const FORM_WINDOW_SECONDS = 900;
 
 export default {
   async fetch(request, env, ctx) {
@@ -164,6 +166,7 @@ export default {
       return page('Too many scans', '<h2>Slow down!</h2><p>You have reached the scan limit for this QR code from this device. Please try again later.</p>', 429, '#d97706');
     }
 
+    let pinPosted = false; // a PIN unlock is a POST too; it must not count as a form answer
     if (config.password_hash) {
       const sessionKey = `uniq:${slug}:${visitorHash}:pw_ok`;
       const failKey = `pwfail:${slug}:${visitorHash}`;
@@ -177,6 +180,7 @@ export default {
 
         let isWrong = false;
         if (request.method === 'POST') {
+          pinPosted = true;
           const body = await request.formData();
           const submittedHash = await sha256Hex(`${body.get('password')}${slug}`); // salted with slug, matches server
           if (submittedHash === config.password_hash) {
@@ -227,6 +231,33 @@ export default {
         }).catch(err => console.error(`Click sync error: ${err.message}`)));
       }
       return new Response(null, { status: 302, headers: { Location: target.url } });
+    }
+
+    // Forms: a POST is an answer, not a scan. KV caps answers per visitor; the origin validates and stores.
+    if (qrType === 'form' && request.method === 'POST' && !pinPosted) {
+      const lang = pickLang(url.searchParams.get('lang'), request.headers.get('Accept-Language'));
+      const html = (state, status = 200) => new Response(renderGuestPage(config, lang, request.url, state).body,
+        { status, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+      const subKey = `formsub:${slug}:${visitorHash}`;
+      const subs = await env.QR_CACHE.get(subKey).then(v => parseInt(v) || 0);
+      if (subs >= FORM_MAX_SUBMITS) {
+        return page('Too many answers', '<h2>Too many answers</h2><p>Please wait 15 minutes before sending this form again.</p>', 429, '#d97706');
+      }
+      ctx.waitUntil(env.QR_CACHE.put(subKey, String(subs + 1), { expirationTtl: FORM_WINDOW_SECONDS }));
+      const fields = {};
+      for (const [k, v] of await request.formData()) if (typeof v === 'string') fields[k] = v;
+      let res = null;
+      try {
+        res = await fetch(`${apiUrl}/internal/form/${slug}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-internal-secret': internalSecret },
+          body: JSON.stringify({ fields, visitor: visitorHash }),
+          signal: AbortSignal.timeout(8000),
+        });
+      } catch (err) { console.error(`Form submit failed: ${err.message}`); }
+      if (res && res.ok) return html({ done: true });
+      if (res && res.status === 400) return html({ error: (await res.json().catch(() => ({}))).error || 'Please check your answers.', values: fields }, 400);
+      return html({ error: 'We could not send your answer. Please try again in a minute.', values: fields }, 503);
     }
 
     // Switching language on a guest page (?lang=) or saving its contact (?vcf=1) is not a new scan.

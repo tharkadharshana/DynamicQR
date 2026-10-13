@@ -182,3 +182,17 @@ returns void language sql security definer set search_path = public as $$
 $$;
 revoke all on function public.record_click(text, text) from public, anon, authenticated;
 grant execute on function public.record_click(text, text) to service_role;
+
+-- ──────────────────────────────────────────────────────────────
+-- FORM_SUBMISSIONS (migration 009). The definition is qr_codes.content_data of a qr_type 'form' code.
+-- ──────────────────────────────────────────────────────────────
+create table if not exists public.form_submissions (
+  id          uuid primary key default gen_random_uuid(),
+  slug        text not null references public.qr_codes(slug) on delete cascade,
+  data        jsonb not null default '{}'::jsonb,
+  ip_hash     text,                     -- the Worker's daily, salted visitor hash; never the IP
+  created_at  timestamptz not null default now()
+);
+create index if not exists form_submissions_slug_created_idx on public.form_submissions(slug, created_at desc);
+alter table public.form_submissions enable row level security;
+-- No policies: RLS denies anon/authenticated. The API uses the service-role key, which bypasses RLS.

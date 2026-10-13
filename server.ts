@@ -20,6 +20,7 @@ import logger from "./logger.js";
 import { renderGuestPage, pickLang, appTarget, FILE_TYPES, blockTarget } from './src/lib/guestPage.js';
 import { gtinValid, isReservedSlug, CUSTOM_SLUG_RE, normTags, withUtm } from './src/lib/qrContent.js';
 import { buildDigest } from './src/lib/digest.js';
+import { formDefError, validateSubmission } from './src/lib/forms.js';
 import { PLANS, TRIAL_LIMITS, GRACE_DAYS, DEFAULT_ADDONS, PRICES, PAID_PLANS, PlanId, PaidPlan, PlanLimits, UserAddons, Currency, BillingInterval } from './src/lib/plans.js';
 
 // Direct table helpers (replaced the Firestore-compat shim in Phase 3).
@@ -230,7 +231,7 @@ async function startServer() {
     }
   };
 
-  const QR_TYPES = ['url', 'vcard', 'wifi', 'text', 'email', 'page', 'event'];
+  const QR_TYPES = ['url', 'vcard', 'wifi', 'text', 'email', 'page', 'event', 'form'];
   // GTIN-14 as stored (unique) and encoded in the GS1 Digital Link path. null clears it.
   const normGtin = (g: unknown) => (g === null || g === '' ? null : gtinValid(g) ? String(g).padStart(14, '0') : undefined);
   // A short link is a dynamic URL row with kind='link': no QR image, counted against short_links only.
@@ -273,6 +274,7 @@ async function startServer() {
 
   // Never send the PIN hash to a browser.
   const publicQr = ({ password_hash, ...qr }: any) => ({ ...qr, has_password: !!password_hash });
+  const escHtml = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 
   // Drop the Worker's cached config so an edit is live on the next scan (else up to the 300s KV TTL).
   // The Worker owns /internal/purge on APP_URL's domain.
@@ -547,7 +549,13 @@ async function startServer() {
           country: profile.country,
           timezone: profile.timezone
         },
-        qr_codes: qrs
+        qr_codes: qrs,
+        form_submissions: await (async () => {
+          const formSlugs = qrs.filter(q => q.qr_type === 'form').map(q => q.slug);
+          if (!formSlugs.length) return [];
+          const { data } = await supabase.from('form_submissions').select('slug, data, created_at').in('slug', formSlugs).limit(50000);
+          return data || [];
+        })(),
       };
       
       res.setHeader('Content-Type', 'application/json');
@@ -990,6 +998,8 @@ async function startServer() {
       if (type === 'event' && (!content_data?.start || isNaN(new Date(content_data.start).getTime()))) {
         return res.status(400).json({ error: 'An event needs a valid start time' });
       }
+      const formErr = type === 'form' ? formDefError(content_data) : null;
+      if (formErr) return res.status(400).json({ error: formErr, code: 'INVALID_FORM' });
       const gtin = req.body.gtin === undefined ? null : normGtin(req.body.gtin);
       if (gtin === undefined) return res.status(400).json({ error: 'gtin must be a GTIN-8, 12, 13 or 14 with a valid check digit', code: 'INVALID_GTIN' });
       // Custom back-half (Pro and up): charset, not a route, not taken. The primary key settles races (23505 → 409).
@@ -1000,7 +1010,7 @@ async function startServer() {
       }
       const tags = normTags(req.body.tags);
       // Guest pages, events and GS1 codes only exist as dynamic codes; every other type can be either.
-      const is_dynamic = type === 'page' || type === 'event' || !!gtin || requestedDynamic !== false;
+      const is_dynamic = type === 'page' || type === 'event' || type === 'form' || !!gtin || requestedDynamic !== false;
       const uid = user.uid;
 
       // Input validation
@@ -1159,6 +1169,24 @@ async function startServer() {
     }
   });
 
+  // Form submissions (owner): newest first, up to 5,000; delete one.
+  app.get('/api/forms/:slug/submissions', authenticate, requireOwnership, async (req, res) => {
+    try {
+      const { data, error } = await supabase.from('form_submissions').select('id, data, created_at')
+        .eq('slug', req.params.slug).order('created_at', { ascending: false }).limit(5000);
+      if (error) throw error;
+      res.json(data || []);
+    } catch (error: any) {
+      logger.error('Submissions list error', { message: error.message });
+      res.status(500).json({ error: 'Failed to list submissions' });
+    }
+  });
+  app.delete('/api/forms/:slug/submissions/:id', writeLimiter, authenticate, requireOwnership, async (req, res) => {
+    const { error, count } = await supabase.from('form_submissions').delete({ count: 'exact' }).eq('slug', req.params.slug).eq('id', req.params.id);
+    if (error) return res.status(400).json({ error: 'Invalid submission id' });
+    res.status(count ? 200 : 404).json({ deleted: count || 0 });
+  });
+
   // Select mode: one action on many codes. Ownership is checked per slug; every changed code is purged at the edge.
   app.post('/api/qr/bulk', writeLimiter, authenticate, async (req, res) => {
     try {
@@ -1275,8 +1303,11 @@ async function startServer() {
           const d = content_data ?? cur.content_data;
           if (!d?.start || isNaN(new Date(d.start).getTime())) return res.status(400).json({ error: 'An event needs a valid start time' });
         }
+        if (type === 'form' && formDefError(content_data ?? cur.content_data)) {
+          return res.status(400).json({ error: formDefError(content_data ?? cur.content_data), code: 'INVALID_FORM' });
+        }
         // Static → dynamic (asked for, or implied by an event or a GTIN). Dynamic never goes back: the print encodes the slug.
-        const toDynamic = cur.is_dynamic === false && (req.body.is_dynamic === true || type === 'event' || !!(updateData.gtin ?? cur.gtin));
+        const toDynamic = cur.is_dynamic === false && (req.body.is_dynamic === true || type === 'event' || type === 'form' || !!(updateData.gtin ?? cur.gtin));
         if (toDynamic) updateData.is_dynamic = true;
         // Switching a row back on, or making it dynamic, must fit the plan caps like creating it.
         if ((is_active === true && cur.is_active === false) || toDynamic) {
@@ -1679,6 +1710,19 @@ async function startServer() {
     }
   });
 
+  // Transactional email through Resend (digest, form notifications). Returns false when not configured or on failure.
+  const sendEmail = async (to: string, subject: string, html: string, from = process.env.DIGEST_FROM || 'Scnr <digest@scnr.app>') => {
+    const key = process.env.RESEND_API_KEY;
+    if (!key) return false;
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to, subject, html }),
+      signal: AbortSignal.timeout(8000),
+    }).catch(() => null);
+    return !!r?.ok;
+  };
+
   // Weekly (Mondays): email each owner their last-7-days scans, busiest hour and top code.
   // ?dry=1 builds the digests without sending (used by QA). ?uid= limits to one account.
   // ponytail: sends serially inside one function call; fine for hundreds of owners, move to a queue beyond that.
@@ -1703,14 +1747,7 @@ async function startServer() {
           .in('slug', qrs.map(x => x.slug)).gte('scanned_at', since).limit(50000);
         if (sErr) throw sErr;
         const d = buildDigest({ businessName: o.company || '', timezone: o.timezone || 'Asia/Colombo', qrs, scans: scans || [], appUrl });
-        if (!dry) {
-          const r = await fetch('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ from: process.env.DIGEST_FROM || 'Scnr <digest@scnr.app>', to: o.email, subject: d.subject, html: d.html }),
-          });
-          if (!r.ok) logger.warn('Digest send failed', { uid: o.id, status: r.status });
-        }
+        if (!dry && !(await sendEmail(o.email, d.subject, d.html))) logger.warn('Digest send failed', { uid: o.id });
         out.push({ uid: o.id, total: d.total, busiestHour: d.busiestHour, top: d.top, subject: d.subject });
       }
       res.json({ sent: dry ? 0 : out.length, digests: dry ? out : undefined });
@@ -1721,6 +1758,35 @@ async function startServer() {
   });
 
   // Internal endpoint for Cloudflare Worker to send rich CF payload
+  // Forms: the Worker forwards a POST here (after its gates and its per-visitor KV counter).
+  // The stored definition is the trust boundary: unknown fields are stripped, a filled honeypot is dropped silently.
+  app.post('/internal/form/:slug', async (req, res) => {
+    try {
+      if (!process.env.INTERNAL_SECRET || req.headers['x-internal-secret'] !== process.env.INTERNAL_SECRET) return res.status(401).send('Unauthorized');
+      const qr = await row('qr_codes', 'slug', req.params.slug);
+      if (!qr || qr.qr_type !== 'form' || qr.is_active === false) return res.status(404).json({ error: 'Form not found' });
+      const result = validateSubmission(qr.content_data, req.body?.fields || {});
+      if ('error' in result) return res.status(400).json({ error: result.error });
+      if (result.spam) return res.json({ ok: true });
+      const ip_hash = typeof req.body?.visitor === 'string' ? req.body.visitor.slice(0, 64) : null;
+      const { error } = await supabase.from('form_submissions').insert({ slug: qr.slug, data: result.data, ip_hash });
+      if (error) throw error;
+      res.json({ ok: true });
+      const to = qr.content_data?.notify_email;
+      if (to) {
+        const rowsHtml = Object.entries(result.data).map(([k, v]) => {
+          const label = (qr.content_data.fields || []).find((f: any) => f.id === k)?.label || k;
+          return `<tr><td style="padding:4px 12px 4px 0;color:#666">${escHtml(label)}</td><td>${escHtml(v)}</td></tr>`;
+        }).join('');
+        sendEmail(to, `New response: ${String(qr.content_data.title || qr.title || 'your form').slice(0, 80)}`,
+          `<p>Someone filled in <b>${escHtml(qr.content_data.title || qr.title)}</b>.</p><table>${rowsHtml}</table>`).catch(() => {});
+      }
+    } catch (error: any) {
+      logger.error('Form submit error', { message: error.message });
+      res.status(500).json({ error: 'Could not save your answer' });
+    }
+  });
+
   // Pages "Engagements": the Worker reports a click on /<slug>/l/<key> (in waitUntil, after its 302).
   app.post('/internal/click', async (req, res) => {
     if (!process.env.INTERNAL_SECRET || req.headers['x-internal-secret'] !== process.env.INTERNAL_SECRET) return res.status(401).send('Unauthorized');
