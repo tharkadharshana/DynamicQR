@@ -6,7 +6,7 @@ export type FieldType = typeof FIELD_TYPES[number];
 export interface FormField { id: string; type: FieldType; label: string; required?: boolean; options?: string[] }
 export const HONEYPOT = '_hp'; // a hidden input people never fill; bots do
 
-const ID_RE = /^[a-z0-9_]{1,20}$/;
+const ID_RE = /^[a-z0-9][a-z0-9_]{0,19}$/; // no leading underscore: '_hp' is the honeypot
 const EMAIL_RE = /^[^\s@<>]{1,64}@[^\s@<>]{1,190}\.[^\s@<>]{2,}$/;
 
 /** The stored definition's fields, dropping anything malformed. */
@@ -23,6 +23,9 @@ export function formDefError(d: any): string | null {
   if (formFields(d).length !== fields.length) return `Each field needs an id (a–z, 0–9, _), a label and a type (${FIELD_TYPES.join(', ')})`;
   if (new Set(fields.map((f: any) => f.id)).size !== fields.length) return 'Field ids must be unique';
   if (fields.some((f: any) => f.type === 'select' && (!Array.isArray(f.options) || !f.options.length))) return 'A select field needs options';
+  // Options must be what a browser submits back: trimmed strings with single spaces.
+  if (fields.some((f: any) => Array.isArray(f.options) && (f.options.length > 50 || f.options.some((o: unknown) =>
+    typeof o !== 'string' || !o || o.length > 100 || o !== o.trim().replace(/\s+/g, ' '))))) return 'Options must be up to 50 trimmed texts of up to 100 characters';
   if (d.notify_email && !EMAIL_RE.test(String(d.notify_email))) return 'notify_email is not a valid email address';
   return null;
 }
@@ -70,6 +73,8 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('forms.ts')) {
   assert(formDefError(def) === null, 'valid definition');
   assert(formDefError({ fields: [] }) && formDefError({ fields: [{ id: 'A!', type: 'text', label: 'x' }] }) && formDefError({ fields: [{ id: 'a', type: 'select', label: 'x' }] }), 'bad definitions');
   assert(formDefError({ fields: [{ id: 'a', type: 'text', label: 'x' }, { id: 'a', type: 'text', label: 'y' }] }) === 'Field ids must be unique', 'duplicate ids');
+  assert(formDefError({ fields: [{ id: '_hp', type: 'text', label: 'x' }] }) && formDefError({ fields: [{ id: 's', type: 'select', label: 'x', options: [1] }] })
+    && formDefError({ fields: [{ id: 's', type: 'select', label: 'x', options: ['  A  B '] }] }), 'honeypot id and untrimmed options refused');
   const good = validateSubmission(def, { name: ' Ann ', email: 'a@b.lk', size: 'M', stars: '5', ok: 'on', when: '2026-10-13', n: '3.5', evil: 'x' }) as any;
   assert(good.ok && good.data.name === 'Ann' && good.data.stars === 5 && good.data.ok === true && good.data.n === 3.5, 'valid submission');
   assert(!('evil' in good.data), 'unknown fields stripped');

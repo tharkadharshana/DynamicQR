@@ -166,7 +166,7 @@ After the gates pass, the Worker calls `renderGuestPage(config, lang, url)` from
 
 ### Form answers (Phase 9)
 
-A `POST` to a form code, after the gates (a PIN unlock POST is told apart), is an answer, not a scan. The Worker counts answers per visitor in KV (`formsub:<slug>:<visitor>`, 5 per 15 minutes, then a 429 page), forwards the fields to `POST /internal/form/:slug` with the secret header, and renders the thank-you page, or the form again with the error and the typed values (400), or a retry message (503).
+A `POST` to a form code, after the gates (a PIN unlock POST is told apart), is an answer, not a scan. The Worker counts accepted answers (`formsub:<slug>:<visitor>`, 5) and attempts (`formtry:…`, 20) per visitor per 15 minutes in KV, then shows a 429 page, forwards the fields to `POST /internal/form/:slug` with the secret header, and renders the thank-you page, or the form again with the error and the typed values (400), or a retry message (503).
 
 ### UTM tags (Phase 8)
 

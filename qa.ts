@@ -1576,7 +1576,9 @@ async function run() {
     await admin.from('profiles').update({ plan: 'pro', plan_expires_at: new Date(Date.now() + 30 * 86400000).toISOString(), is_trial: false }).eq('id', uid);
     const badDef = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'form', title: 'QA bad form', content_data: { fields: [{ id: 'x', type: 'select', label: 'Pick' }] } }) });
     check('A select field without options → 400 INVALID_FORM', badDef.status === 400 && badDef.body?.code === 'INVALID_FORM', `got ${badDef.status}`);
-    const f = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'form', title: 'QA form', content_data: def }) });
+    const stranger = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'form', title: 'QA relay', content_data: { ...def, notify_email: 'someone-else@example.com' } }) });
+    check('notify_email outside the account → 400 (no mail relay)', stranger.status === 400 && stranger.body?.code === 'INVALID_FORM', `got ${stranger.status}`);
+    const f = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'form', title: 'QA form', content_data: { ...def, notify_email: TEST_EMAIL } }) });
     const fs = f.body?.slug;
     check('Pro: create a form → 201, dynamic', f.status === 201 && f.body?.is_dynamic === true, `status=${f.status}`);
 
@@ -1594,10 +1596,10 @@ async function run() {
     check('CSV export includes the answer', toCsv([['name', 'email'], ...(subs || []).map((x: any) => [x.data.name, x.data.email])]).includes('Ann,ann@example.com'));
     const sum = (await api(`/api/analytics/${fs}/summary`, { token })).body;
     check('Answers are not scans (1 scan from the view)', sum?.total_scans === 1, `got ${sum?.total_scans}`);
-    await runWorker(`/${fs}`, { kv, ua: 'QA-form', method: 'POST', form: { name: 'Four' } });
-    await runWorker(`/${fs}`, { kv, ua: 'QA-form', method: 'POST', form: { name: 'Five' } });
-    const sixth = await runWorker(`/${fs}`, { kv, ua: 'QA-form', method: 'POST', form: { name: 'Six' } });
-    check('6th answer from one visitor in 15 min → 429', sixth.status === 429, `got ${sixth.status}`);
+    // Accepted so far: Ann and the bot (2). A typo (400) does not count, so 3 more are accepted, then the 6th is refused.
+    for (const n of ['Four', 'Five', 'Six']) await runWorker(`/${fs}`, { kv, ua: 'QA-form', method: 'POST', form: { name: n } });
+    const sixth = await runWorker(`/${fs}`, { kv, ua: 'QA-form', method: 'POST', form: { name: 'Seven' } });
+    check('6th accepted answer from one visitor in 15 min → 429', sixth.status === 429, `got ${sixth.status}`);
     const direct = await api(`/internal/form/${fs}`, { method: 'POST', body: JSON.stringify({ fields: { name: 'x' } }) });
     check('/internal/form without the secret → 401', direct.status === 401, `got ${direct.status}`);
     const exp = (await api('/api/user/export', { token })).body;

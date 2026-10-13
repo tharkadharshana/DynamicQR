@@ -30,7 +30,8 @@ const sha256Hex = async (s) => {
 
 const PIN_MAX_FAILS = 5;
 const PIN_LOCK_SECONDS = 900;
-const FORM_MAX_SUBMITS = 5;    // per visitor per form, per 15 minutes (spam control with the honeypot)
+const FORM_MAX_SUBMITS = 5;    // accepted answers per visitor per form, per 15 minutes (spam control with the honeypot)
+const FORM_MAX_TRIES = 20;     // all POSTs, so typos don't lock a visitor out but a flood still stops at the edge
 const FORM_WINDOW_SECONDS = 900;
 
 export default {
@@ -182,7 +183,7 @@ export default {
         let isWrong = false;
         if (request.method === 'POST') {
           pinPosted = true;
-          const body = await request.formData();
+          const body = await request.formData().catch(() => new FormData());
           const submittedHash = await sha256Hex(`${body.get('password')}${slug}`); // salted with slug, matches server
           if (submittedHash === config.password_hash) {
             await env.QR_CACHE.put(sessionKey, '1', { expirationTtl: 86400 });
@@ -239,24 +240,29 @@ export default {
       const lang = pickLang(url.searchParams.get('lang'), request.headers.get('Accept-Language'));
       const html = (state, status = 200) => new Response(renderGuestPage(config, lang, request.url, state).body,
         { status, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
-      const subKey = `formsub:${slug}:${visitorHash}`;
-      const subs = await env.QR_CACHE.get(subKey).then(v => parseInt(v) || 0);
-      if (subs >= FORM_MAX_SUBMITS) {
+      const subKey = `formsub:${slug}:${visitorHash}`, tryKey = `formtry:${slug}:${visitorHash}`;
+      const [subs, tries] = await Promise.all([subKey, tryKey].map(k => env.QR_CACHE.get(k).then(v => parseInt(v) || 0)));
+      if (subs >= FORM_MAX_SUBMITS || tries >= FORM_MAX_TRIES) {
         return page('Too many answers', '<h2>Too many answers</h2><p>Please wait 15 minutes before sending this form again.</p>', 429, '#d97706');
       }
-      ctx.waitUntil(env.QR_CACHE.put(subKey, String(subs + 1), { expirationTtl: FORM_WINDOW_SECONDS }));
+      ctx.waitUntil(env.QR_CACHE.put(tryKey, String(tries + 1), { expirationTtl: FORM_WINDOW_SECONDS }));
       const fields = {};
-      for (const [k, v] of await request.formData()) if (typeof v === 'string') fields[k] = v;
+      try {
+        for (const [k, v] of await request.formData()) if (typeof v === 'string') fields[k] = v;
+      } catch { return html({ error: 'Please send the form from this page.' }, 400); }
       let res = null;
       try {
         res = await fetch(`${apiUrl}/internal/form/${slug}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-internal-secret': internalSecret },
           body: JSON.stringify({ fields, visitor: visitorHash }),
-          signal: AbortSignal.timeout(8000),
+          signal: AbortSignal.timeout(15000), // the origin stores the answer and sends the owner's email first
         });
       } catch (err) { console.error(`Form submit failed: ${err.message}`); }
-      if (res && res.ok) return html({ done: true });
+      if (res && res.ok) {
+        ctx.waitUntil(env.QR_CACHE.put(subKey, String(subs + 1), { expirationTtl: FORM_WINDOW_SECONDS }));
+        return html({ done: true });
+      }
       if (res && res.status === 400) return html({ error: (await res.json().catch(() => ({}))).error || 'Please check your answers.', values: fields }, 400);
       return html({ error: 'We could not send your answer. Please try again in a minute.', values: fields }, 503);
     }

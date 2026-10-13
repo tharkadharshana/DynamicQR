@@ -11,7 +11,7 @@ export type Rendered =
   | { kind: 'ics'; body: string; filename: string }
   | { kind: 'redirect'; location: string };
 
-const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+export const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 // Only links a guest can safely open. Anything else (javascript:, data:) is dropped.
 const safeUrl = (u: unknown) => (/^(https?:\/\/|tel:|mailto:)/i.test(String(u || '')) ? String(u) : '');
 
