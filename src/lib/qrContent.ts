@@ -163,6 +163,9 @@ export const RESERVED_SLUGS = new Set([
 export const CUSTOM_SLUG_RE = /^[A-Za-z0-9-]{3,40}$/;
 /** A custom back-half that would collide with a route or a pass-through prefix (api*, internal*, assets*). */
 export const isReservedSlug = (s: string) => RESERVED_SLUGS.has(s.toLowerCase()) || /^(api|internal|assets)/i.test(s);
+/** The editor's message for a typed back-half, or '' when it is fine (or empty). */
+export const slugProblem = (s: string) =>
+  !s ? '' : !CUSTOM_SLUG_RE.test(s) ? 'Use 3–40 letters, numbers or dashes.' : isReservedSlug(s) ? `"${s}" is reserved. Pick another back-half.` : '';
 
 export const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'] as const;
 /** Append UTM tags from content_data.utm ({source, medium, …}); a parameter already in the URL wins. */
@@ -171,11 +174,12 @@ export function withUtm(url: string, utm: any): string {
   let u: URL;
   try { u = new URL(url); } catch { return url; }
   if (!/^https?:$/.test(u.protocol)) return url;
+  let added = false;
   for (const k of UTM_KEYS) {
     const v = utm[k.slice(4)];
-    if (v && !u.searchParams.has(k)) u.searchParams.set(k, String(v).slice(0, 100));
+    if (v && !u.searchParams.has(k)) { u.searchParams.set(k, String(v).slice(0, 100)); added = true; }
   }
-  return u.toString();
+  return added ? u.toString() : url; // untouched when nothing is added, so signed or unusual URLs stay byte-for-byte
 }
 
 /** Tags: lower-case, trimmed, unique, at most 10 of up to 30 characters; null when the input is not an array. */
@@ -206,6 +210,7 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('qrContent.ts'
   assert(stylingOptions({ shape: 'circle', gradient_color: '#ff0000', dot_style: 'diamond' }, 'x', 10).dotsOptions.type === 'classy', 'legacy dot style');
   assert(stylingOptions({ shape: 'circle', gradient_color: '#ff0000' }, 'x', 10).shape === 'circle', 'circle');
   assert(withUtm('https://a.lk/p?utm_source=keep&x=1', { source: 'qr', medium: 'print' }) === 'https://a.lk/p?utm_source=keep&x=1&utm_medium=print', 'utm keeps existing params');
+  assert(withUtm('https://example.com', { source: '' }) === 'https://example.com', 'utm: nothing added → unchanged');
   assert(withUtm('tel:+94', { source: 'qr' }) === 'tel:+94' && withUtm('https://a.lk', null) === 'https://a.lk', 'utm only on http(s)');
   assert(JSON.stringify(normTags([' Menu ', 'menu', 'A<b>', '', 1])) === '["menu","ab","1"]' && normTags('x') === null, 'tags');
   assert(isReservedSlug('Pricing') && isReservedSlug('api-x') && !isReservedSlug('menu-2026') && CUSTOM_SLUG_RE.test('menu-2026') && !CUSTOM_SLUG_RE.test('a/b'), 'reserved slugs');

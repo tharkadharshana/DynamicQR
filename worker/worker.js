@@ -1,6 +1,6 @@
 // Guest pages + vCard/Text/Email/Wi-Fi rendering, shared with the dev server (Wrangler bundles the TS import).
 import { renderGuestPage, pickLang, appTarget, FILE_TYPES, blockTarget, pageVcard } from '../src/lib/guestPage';
-import { RESERVED_SLUGS, withUtm } from '../src/lib/qrContent';
+import { RESERVED_SLUGS, isReservedSlug, withUtm } from '../src/lib/qrContent';
 
 // Small branded HTML page for every non-redirect outcome. Never show a bare error on a printed code.
 const page = (title, bodyHtml, status, accent = '#E85D3A') => new Response(`<!DOCTYPE html>
@@ -72,7 +72,8 @@ export default {
     }
 
     // Generated slugs (nanoid alphabet, 7 chars) and custom back-halves (3–40 letters, digits, dashes).
-    const isSlug = !!gs1 || !FRONTEND_ROUTES.has(slug.toLowerCase()) && /^[A-Za-z0-9-]{3,40}$/.test(slug);
+    // isReservedSlug also covers the api*/internal*/assets* prefixes, so those still leave a custom domain for MAIN_HOST.
+    const isSlug = !!gs1 || !isReservedSlug(slug) && /^[A-Za-z0-9-]{3,40}$/.test(slug);
     // A customer's custom short domain (Team) only serves codes; anything else goes to the main site.
     if (!isSlug && env.MAIN_HOST && url.host !== env.MAIN_HOST) {
       return Response.redirect(`https://${env.MAIN_HOST}${url.pathname}${url.search}`, 302);

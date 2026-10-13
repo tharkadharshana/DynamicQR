@@ -5,7 +5,7 @@ import QRCodeStyling from 'qr-code-styling';
 import { pageEditPath } from './Pages';
 import { apiFetch } from '../lib/api';
 import { useUI } from '../shared/UIContext';
-import { getQRContent, stylingOptions, resizeLogo, SHORT_DOMAIN, shortHost, buildDestination, SOCIALS, gtinValid, FRAME_TEXTS, DOT_STYLES, normDotStyle, CUSTOM_SLUG_RE, isReservedSlug, normTags, withUtm } from '../lib/qrContent';
+import { getQRContent, stylingOptions, resizeLogo, SHORT_DOMAIN, shortHost, buildDestination, SOCIALS, gtinValid, FRAME_TEXTS, DOT_STYLES, normDotStyle, slugProblem, CUSTOM_SLUG_RE, isReservedSlug, normTags, withUtm } from '../lib/qrContent';
 import { waLink } from '../lib/site';
 import { downloadQR } from '../components/QRViewerModal';
 
@@ -23,8 +23,6 @@ const DYNAMIC_ONLY = ['gs1', 'event', 'app'];
 const UTM_FIELDS = ['source', 'medium', 'campaign', 'term', 'content'];
 
 /** A custom back-half's problem in plain words, or '' when it is fine (the server checks the same rules). */
-export const slugProblem = (s: string) =>
-  !s ? '' : !CUSTOM_SLUG_RE.test(s) ? 'Use 3–40 letters, numbers or dashes.' : isReservedSlug(s) ? `"${s}" is reserved. Pick another back-half.` : '';
 
 export default function CreateQR() {
   const { id } = useParams();

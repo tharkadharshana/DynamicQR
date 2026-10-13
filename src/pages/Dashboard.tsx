@@ -9,8 +9,7 @@ import { apiFetch } from '../lib/api';
 import { useUI } from '../shared/UIContext';
 import QRViewerModal from '../components/QRViewerModal';
 import { pageEditPath } from './Pages';
-import { slugProblem } from './CreateQR';
-import { getQRContent, SHORT_DOMAIN, shortHost, stylingOptions, framedSvg } from '../lib/qrContent';
+import { getQRContent, SHORT_DOMAIN, shortHost, stylingOptions, framedSvg, slugProblem } from '../lib/qrContent';
 
 // Dashboard tabs over the one loaded list. Phase 9 adds ['form', 'Forms'] here.
 const TABS: [string, string][] = [['qr', 'QR codes'], ['page', 'Pages'], ['link', 'Short links']];
@@ -267,6 +266,10 @@ export default function Dashboard() {
   const shownKey = shown.map(q => q.id).join();
   const folders = [...new Set(qrCodes.map(q => q.client).filter(Boolean))].sort() as string[];
   const allTags = [...new Set(qrCodes.flatMap(q => q.tags || []))].sort() as string[];
+  // A filter whose folder or tag no longer exists would hide everything with no control to clear it.
+  useEffect(() => { if (folder && !folders.includes(folder)) setFolder(''); if (tag && !allTags.includes(tag)) setTag(''); }, [qrCodes]);
+  // Bulk actions only ever touch what is on screen: a tab or filter change clears the selection.
+  useEffect(() => { setSelected(s => (s ? new Set() : s)); }, [tab, folder, tag, search]);
   const noCustomSlug = !!planData && !planData.limits?.custom_slug;
 
   useEffect(() => {
