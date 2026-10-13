@@ -22,6 +22,7 @@ import { gtinValid, isReservedSlug, CUSTOM_SLUG_RE, normTags, withUtm } from './
 import { buildDigest } from './src/lib/digest.js';
 import { formDefError, validateSubmission } from './src/lib/forms.js';
 import { pickRoute, routeCtx, rulesError } from './src/lib/routing.js';
+import { signStandardWebhook, verifyStandardWebhook, newWebhookSecret, WEBHOOK_EVENTS } from './src/lib/webhooks.js';
 import { PLANS, TRIAL_LIMITS, GRACE_DAYS, DEFAULT_ADDONS, PRICES, PAID_PLANS, PlanId, PaidPlan, PlanLimits, UserAddons, Currency, BillingInterval } from './src/lib/plans.js';
 
 // Direct table helpers (replaced the Firestore-compat shim in Phase 3).
@@ -153,17 +154,29 @@ async function startServer() {
 
   // Owner uid when this user is a member of a Team workspace (invite claimed on first sign-in).
   // ponytail: one indexed query per authenticated request; cache per token if it shows up in latency.
-  async function workspaceOwner(user: any): Promise<string | null> {
+  async function workspaceOwner(user: any): Promise<{ owner: string; workspace: string | null } | null> {
     const email = String(user.email || '').toLowerCase().replace(/"/g, '');
-    const { data, error } = await supabase.from('workspace_members').select('id, owner_uid, member_uid')
+    const { data, error } = await supabase.from('workspace_members').select('id, owner_uid, member_uid, workspace_id')
       .or(`member_uid.eq.${user.id},member_email.eq."${email}"`).limit(1);
     const m = !error && data?.[0];
     if (!m || m.owner_uid === user.id) return null;
     const license = await getLicense(m.owner_uid);
     if (license.limits.seats <= 1) return null; // owner no longer on a multi-seat plan
     if (!m.member_uid) await supabase.from('workspace_members').update({ member_uid: user.id }).eq('id', m.id);
-    return m.owner_uid;
+    return { owner: m.owner_uid, workspace: m.workspace_id || null }; // a member invited to one workspace is held to it
   }
+
+  // Business workspaces. user.workspace: undefined = every workspace (no header, the API default), null = the
+  // default workspace ("X-Workspace: default"), a uuid = that workspace. Caps stay account-wide.
+  async function resolveWorkspace(req: express.Request, owner: string, memberWs: string | null): Promise<string | null | undefined | false> {
+    const h = req.headers['x-workspace'];
+    const want = h === undefined || h === '' ? undefined : h === 'default' ? null : String(h);
+    if (memberWs) return want === undefined || want === memberWs ? memberWs : false;
+    if (typeof want !== 'string') return want;
+    const { data } = await supabase.from('workspaces').select('id').eq('id', want).eq('owner_uid', owner).maybeSingle().then(r => r, () => ({ data: null }));
+    return data ? want : false;
+  }
+  const inWorkspace = (user: any, q: any) => user.workspace === undefined || (q.workspace_id || null) === user.workspace;
 
   // Middlewares
   const authenticate = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -184,7 +197,9 @@ async function startServer() {
         if (!key) return res.status(401).json({ error: 'Invalid or revoked API key' });
         const license = await getLicense(key.uid);
         if (!license.limits.api_access) return res.status(403).json({ error: 'API access requires the Team or Business plan', code: 'FEATURE_API' });
-        (req as any).user = { uid: key.uid, realUid: key.uid, email: null, viaApiKey: true };
+        const ws = await resolveWorkspace(req, key.uid, null);
+        if (ws === false) return res.status(403).json({ error: 'Unknown workspace', code: 'WORKSPACE' });
+        (req as any).user = { uid: key.uid, realUid: key.uid, email: null, viaApiKey: true, workspace: ws };
         supabase.from('api_keys').update({ last_used_at: nowIso() }).eq('id', key.id).then(() => {});
         return next();
       }
@@ -192,8 +207,11 @@ async function startServer() {
       const { data: { user }, error } = await supabase.auth.getUser(token);
       if (error || !user) throw error || new Error("User not found");
       // Team members act on the owner's workspace (uid); realUid is who signed in.
-      const owner = await workspaceOwner(user);
-      (req as any).user = { ...user, uid: owner || user.id, realUid: user.id, email: user.email, isMember: !!owner };
+      const m = await workspaceOwner(user);
+      const uid = m?.owner || user.id;
+      const ws = await resolveWorkspace(req, uid, m?.workspace || null);
+      if (ws === false) return res.status(403).json({ error: 'You do not have access to this workspace', code: 'WORKSPACE' });
+      (req as any).user = { ...user, uid, realUid: user.id, email: user.email, isMember: !!m, workspace: ws, workspaceLocked: !!m?.workspace };
       next();
     } catch (error: any) {
       logger.error(`Auth error for ${req.path}:`, { 
@@ -221,7 +239,7 @@ async function startServer() {
 
       const qr = await row('qr_codes', 'slug', slug);
       if (!qr) return res.status(404).send('Not found');
-      if (qr.user_uid !== user.uid) {
+      if (qr.user_uid !== user.uid || !inWorkspace(user, qr)) {
         return res.status(403).send('Forbidden');
       }
       (req as any).qr = qr;
@@ -329,10 +347,12 @@ async function startServer() {
   });
 
   // Verified custom short domain (Team), or null. Missing table (before migration 004) → null.
-  async function activeDomain(uid: string): Promise<string | null> {
-    const { data } = await supabase.from('custom_domains').select('hostname, status').eq('uid', uid).maybeSingle();
-    return data?.status === 'active' ? data.hostname : null;
+  /** Verified custom domains (Pro 1, Team 10, Business 50). */
+  async function activeDomains(uid: string): Promise<string[]> {
+    const { data } = await supabase.from('custom_domains').select('hostname').eq('uid', uid).eq('status', 'active').order('created_at');
+    return (data || []).map(d => d.hostname);
   }
+  const activeDomain = async (uid: string) => (await activeDomains(uid))[0] || null; // the account default for printing
 
   async function getLicense(uid: string): Promise<{
     effectivePlan: PlanId;
@@ -474,6 +494,7 @@ async function startServer() {
         },
         is_member: !!(req as any).user.isMember,
         custom_domain: await activeDomain(uid),
+        custom_domains: await activeDomains(uid),
         active_dynamic: activeDynamic,
         dynamic_over_allowance: dynamicOverAllowance,
         pause_on,
@@ -882,14 +903,6 @@ async function startServer() {
     return map;
   };
 
-  // Standard Webhooks: base64 HMAC-SHA256 of `${id}.${timestamp}.${rawBody}`, keyed with the secret's UTF-8 bytes.
-  const verifyPolarSignature = (headers: any, rawBody: string, secret: string): boolean => {
-    const id = headers['webhook-id'], ts = headers['webhook-timestamp'], sigHeader = headers['webhook-signature'];
-    if (!id || !ts || !sigHeader) return false;
-    if (Math.abs(Date.now() / 1000 - Number(ts)) > 300) return false; // replay window: 5 minutes
-    const expected = crypto.createHmac('sha256', Buffer.from(secret, 'utf8')).update(`${id}.${ts}.${rawBody}`).digest('base64');
-    return String(sigHeader).split(' ').some(part => safeEqual(part.split(',')[1] || '', expected));
-  };
 
   app.post('/api/billing/polar/checkout', writeLimiter, authenticate, sessionOwner, async (req, res) => {
     try {
@@ -937,7 +950,7 @@ async function startServer() {
     try {
       const secret = process.env.POLAR_WEBHOOK_SECRET;
       const raw = (req as any).rawBody?.toString('utf8') || '';
-      if (!secret || !verifyPolarSignature(req.headers, raw, secret)) {
+      if (!secret || !verifyStandardWebhook(req.headers, raw, secret)) {
         logger.warn('Polar webhook: invalid signature');
         return res.status(401).send('Invalid signature');
       }
@@ -1031,6 +1044,9 @@ async function startServer() {
         if (isReservedSlug(customSlug)) return res.status(400).json({ error: `"${customSlug}" is reserved. Pick another back-half.`, code: 'RESERVED_SLUG' });
       }
       const tags = normTags(req.body.tags);
+      // Which verified custom domain the code prints with (Business has up to 50). null/absent = the account default.
+      const domain = req.body.domain ? String(req.body.domain).toLowerCase() : null;
+      if (domain && !(await activeDomains(user.uid)).includes(domain)) return res.status(400).json({ error: 'domain must be one of your verified custom domains', code: 'INVALID_DOMAIN' });
       // Guest pages, events and GS1 codes only exist as dynamic codes; every other type can be either.
       const is_dynamic = type === 'page' || type === 'event' || type === 'form' || !!gtin || requestedDynamic !== false;
       const uid = user.uid;
@@ -1128,6 +1144,8 @@ async function startServer() {
         ...(kind === 'link' ? { kind } : {}),
         ...(gtin ? { gtin } : {}),
         ...(tags?.length ? { tags } : {}),
+        ...(user.workspace ? { workspace_id: user.workspace } : {}),
+        ...(domain ? { domain } : {}),
         // Only written when set, so creates keep working before migration 004 adds the column.
         ...(typeof client === 'string' && client.trim() ? { client: client.trim().slice(0, 60) } : {}),
         content_data: content_data || null,
@@ -1162,6 +1180,7 @@ async function startServer() {
       if (statsErr) throw new Error(`Database save failed: ${statsErr.message}`);
 
       logEvent(uid, 'qr_created', slug);
+      await deliver(uid, 'qr.created', publicQr(qrDoc));
       res.status(201).json(qrDoc);
     } catch (error: any) {
       logger.error('QR creation error details:', {
@@ -1181,7 +1200,8 @@ async function startServer() {
       const q = req.query as Record<string, string>;
       const mine = (await rows('qr_codes', 'user_uid', uid)).filter(r =>
         (!q.kind || (r.kind || 'qr') === q.kind) && (!q.qr_type || (r.qr_type || 'url') === q.qr_type)
-        && (!q.tag || (r.tags || []).includes(String(q.tag).toLowerCase())) && (!q.folder || r.client === q.folder));
+        && (!q.tag || (r.tags || []).includes(String(q.tag).toLowerCase())) && (!q.folder || r.client === q.folder)
+        && inWorkspace((req as any).user, r));
       const statsMap: Record<string, any> = {};
       for (const st of await statsFor(mine.map(q => q.slug))) statsMap[st.slug] = st;
       const qrs = mine.map(q => ({ id: q.slug, ...publicQr(q), stats: statsMap[q.slug] || null }));
@@ -1220,11 +1240,11 @@ async function startServer() {
       if (!['folder', 'tag', 'untag', 'activate', 'deactivate', 'delete'].includes(action)) {
         return res.status(400).json({ error: 'action must be folder, tag, untag, activate, deactivate or delete' });
       }
-      const { data: owned, error } = await supabase.from('qr_codes').select('slug, is_active, is_dynamic, kind, qr_type, tags, gtin').eq('user_uid', uid).in('slug', slugs);
+      const { data: owned, error } = await supabase.from('qr_codes').select('slug, is_active, is_dynamic, kind, qr_type, tags, gtin, workspace_id').eq('user_uid', uid).in('slug', slugs);
       if (error) throw error;
       const tag = normTags([value])?.[0];
       if ((action === 'tag' || action === 'untag') && !tag) return res.status(400).json({ error: 'value must be a tag' });
-      const mine = owned || [];
+      const mine = (owned || []).filter(q => inWorkspace((req as any).user, q));
       const failed: { slug: string; error: string }[] = slugs.filter(sl => !mine.some(o => o.slug === sl)).map(sl => ({ slug: sl, error: 'not found' }));
       let done: string[] = [];
       const all = mine.map(q => q.slug);
@@ -1302,6 +1322,12 @@ async function startServer() {
       const { destination_url, title, style, is_active, options, content_data, client } = req.body;
       const updateData: any = {};
       if (client !== undefined) updateData.client = typeof client === 'string' && client.trim() ? client.trim().slice(0, 60) : null;
+      if (req.body.domain !== undefined && (req as any).qr) {
+        updateData.domain = req.body.domain ? String(req.body.domain).toLowerCase() : null;
+        if (updateData.domain && !(await activeDomains((req as any).qr.user_uid)).includes(updateData.domain)) {
+          return res.status(400).json({ error: 'domain must be one of your verified custom domains', code: 'INVALID_DOMAIN' });
+        }
+      }
       if (req.body.tags !== undefined) {
         updateData.tags = normTags(req.body.tags);
         if (!updateData.tags) return res.status(400).json({ error: 'tags must be an array of strings' });
@@ -1425,6 +1451,7 @@ async function startServer() {
       if (updErr) throw updErr;
       await purgeEdge(slug);
       if (cur?.gtin && updateData.gtin !== undefined && updateData.gtin !== cur.gtin) purgeEdge(`gs1:${cur.gtin}`);
+      if (cur) await deliver(cur.user_uid, 'qr.updated', { slug, ...updateData });
       res.json({ success: true, slug });
     } catch (error: any) {
       logger.error('QR update error:', error);
@@ -1440,6 +1467,7 @@ async function startServer() {
       // qr_stats and scan_events rows go with it (on delete cascade).
       const { error } = await supabase.from('qr_codes').delete().eq('slug', slug);
       if (error) throw error;
+      await deliver((req as any).qr.user_uid, 'qr.deleted', { slug, title: (req as any).qr.title });
       res.json({ message: 'QR code deleted successfully' });
       purgeEdge(slug);
       if ((req as any).qr?.gtin) purgeEdge(`gs1:${(req as any).qr.gtin}`);
@@ -1464,10 +1492,10 @@ async function startServer() {
       qrs = data || [];
     } else {
       if (req.params.uid !== uid && req.params.uid !== (req as any).user.realUid) { res.status(403).send('Forbidden'); return null; }
-      const { data, error } = await supabase.from('qr_codes').select('slug, title, is_active, created_at').eq('user_uid', uid);
+      const { data, error } = await supabase.from('qr_codes').select('slug, title, is_active, created_at, workspace_id').eq('user_uid', uid);
       if (error) throw error;
       const only = typeof req.query.slugs === 'string' ? req.query.slugs.split(',') : null;
-      qrs = (data || []).filter(q => !only || only.includes(q.slug));
+      qrs = (data || []).filter(q => (!only || only.includes(q.slug)) && inWorkspace((req as any).user, q));
     }
     const slugs = qrs.map(q => q.slug);
     let stats: any[] = [];
@@ -1667,7 +1695,7 @@ async function startServer() {
   });
 
   app.get('/api/team', authenticate, async (req, res) => {
-    const { data, error } = await supabase.from('workspace_members').select('id, member_email, member_uid, role, created_at')
+    const { data, error } = await supabase.from('workspace_members').select('*')
       .eq('owner_uid', (req as any).user.uid).order('created_at');
     if (error) return res.status(500).json({ error: 'Failed to list members' });
     res.json((data || []).map(m => ({ ...m, joined: !!m.member_uid })));
@@ -1684,7 +1712,12 @@ async function startServer() {
       if ((count || 0) + 1 >= license.limits.seats) {
         return res.status(403).json({ error: `Your plan includes ${license.limits.seats} user${license.limits.seats === 1 ? '' : 's'}`, code: 'LIMIT_SEATS', limit: license.limits.seats });
       }
-      const { data, error } = await supabase.from('workspace_members').insert({ owner_uid: uid, member_email: email }).select('id, member_email').single();
+      // Optional: hold the member to one workspace (Business). Otherwise they see every workspace.
+      const workspace_id = req.body?.workspace_id ? String(req.body.workspace_id) : null;
+      if (workspace_id && !(await supabase.from('workspaces').select('id').eq('id', workspace_id).eq('owner_uid', uid).maybeSingle().then(r => r.data, () => null))) {
+        return res.status(400).json({ error: 'Unknown workspace' });
+      }
+      const { data, error } = await supabase.from('workspace_members').insert({ owner_uid: uid, member_email: email, ...(workspace_id ? { workspace_id } : {}) }).select('id, member_email, workspace_id').single();
       if (error?.code === '23505') return res.status(409).json({ error: 'Already invited' });
       if (error) throw error;
       res.status(201).json(data);
@@ -1713,16 +1746,19 @@ async function startServer() {
 
   app.get('/api/domains', authenticate, async (req, res) => {
     try {
-      const d = await row('custom_domains', 'uid', (req as any).user.uid);
-      if (d && d.status === 'pending' && d.cf_id && process.env.CF_API_TOKEN) {
-        const r = await cf(`/custom_hostnames/${d.cf_id}`);
-        const status = cfStatus(r.body?.result);
-        if (status !== d.status) await supabase.from('custom_domains').update({ status }).eq('id', d.id);
-        d.status = status;
+      const { data, error } = await supabase.from('custom_domains').select('id, hostname, cf_id, status').eq('uid', (req as any).user.uid).order('created_at');
+      if (error) throw error;
+      for (const d of data || []) {
+        if (d.status === 'pending' && d.cf_id && process.env.CF_API_TOKEN) {
+          const r = await cf(`/custom_hostnames/${d.cf_id}`);
+          const status = cfStatus(r.body?.result);
+          if (status !== d.status) await supabase.from('custom_domains').update({ status }).eq('id', d.id);
+          d.status = status;
+        }
       }
-      res.json(d ? { hostname: d.hostname, status: d.status, cname_target: process.env.CF_CNAME_TARGET || null } : null);
+      res.json((data || []).map(d => ({ id: d.id, hostname: d.hostname, status: d.status, cname_target: process.env.CF_CNAME_TARGET || null })));
     } catch (error: any) {
-      res.status(500).json({ error: 'Failed to load domain' });
+      res.status(500).json({ error: 'Failed to load domains' });
     }
   });
 
@@ -1733,24 +1769,142 @@ async function startServer() {
       if (license.limits.custom_domains < 1) return res.status(403).json({ error: 'A custom domain needs the Pro plan or above', code: 'FEATURE_CUSTOM_DOMAIN' });
       const hostname = String(req.body?.hostname || '').trim().toLowerCase();
       if (!/^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/.test(hostname)) return res.status(400).json({ error: 'Enter a hostname like qr.yourbusiness.lk' });
-      if (await row('custom_domains', 'uid', uid)) return res.status(409).json({ error: 'Remove your current domain first (1 per account)' });
+      const { count } = await supabase.from('custom_domains').select('id', { count: 'exact', head: true }).eq('uid', uid);
+      if ((count || 0) >= license.limits.custom_domains) {
+        return res.status(403).json({ error: `Your plan includes ${license.limits.custom_domains} custom domain${license.limits.custom_domains === 1 ? '' : 's'}`, code: 'LIMIT_DOMAINS', limit: license.limits.custom_domains });
+      }
+      if (await row('custom_domains', 'hostname', hostname)) return res.status(409).json({ error: 'This hostname is already connected' });
       if (!process.env.CF_API_TOKEN || !process.env.CF_ZONE_ID) return res.status(503).json({ error: 'Custom domains are not enabled yet' });
       const r = await cf('/custom_hostnames', { method: 'POST', body: JSON.stringify({ hostname, ssl: { method: 'http', type: 'dv' } }) });
       if (!r.ok) return res.status(400).json({ error: r.body?.errors?.[0]?.message || 'Cloudflare rejected this hostname' });
-      const { error } = await supabase.from('custom_domains').insert({ uid, hostname, cf_id: r.body.result.id, status: cfStatus(r.body.result) });
+      const { data, error } = await supabase.from('custom_domains').insert({ uid, hostname, cf_id: r.body.result.id, status: cfStatus(r.body.result) }).select('id').single();
       if (error) throw error;
-      res.status(201).json({ hostname, status: cfStatus(r.body.result), cname_target: process.env.CF_CNAME_TARGET || null });
+      res.status(201).json({ id: data.id, hostname, status: cfStatus(r.body.result), cname_target: process.env.CF_CNAME_TARGET || null });
     } catch (error: any) {
       logger.error('Custom domain error', { message: error.message });
       res.status(500).json({ error: 'Failed to add domain' });
     }
   });
 
-  app.delete('/api/domains', writeLimiter, authenticate, sessionOwner, async (req, res) => {
-    const d = await row('custom_domains', 'uid', (req as any).user.uid);
-    if (!d) return res.json({ success: true });
+  app.delete('/api/domains/:id', writeLimiter, authenticate, sessionOwner, async (req, res) => {
+    const { data: d } = await supabase.from('custom_domains').select('id, cf_id, hostname').eq('id', req.params.id).eq('uid', (req as any).user.uid).maybeSingle().then(r => r, () => ({ data: null }));
+    if (!d) return res.status(404).json({ error: 'Not found' });
     if (d.cf_id && process.env.CF_API_TOKEN) await cf(`/custom_hostnames/${d.cf_id}`, { method: 'DELETE' });
     await supabase.from('custom_domains').delete().eq('id', d.id);
+    // Codes that printed with it fall back to the account default.
+    await supabase.from('qr_codes').update({ domain: null }).eq('user_uid', (req as any).user.uid).eq('domain', d.hostname);
+    res.json({ success: true });
+  });
+
+  // ── Workspaces (Business: up to 10, the default one included) ─────────────
+  app.get('/api/workspaces', authenticate, async (req, res) => {
+    const u = (req as any).user;
+    let q = supabase.from('workspaces').select('id, name, created_at').eq('owner_uid', u.uid).order('created_at');
+    if (u.workspaceLocked) q = q.eq('id', u.workspace);
+    const { data, error } = await q;
+    if (error) return res.status(500).json({ error: 'Failed to list workspaces' });
+    res.json(data || []);
+  });
+  app.post('/api/workspaces', writeLimiter, authenticate, sessionOwner, async (req, res) => {
+    const uid = (req as any).user.uid;
+    const name = String(req.body?.name || '').trim().slice(0, 60);
+    if (!name) return res.status(400).json({ error: 'Name your workspace' });
+    const { limits } = await getLicense(uid);
+    const { count } = await supabase.from('workspaces').select('id', { count: 'exact', head: true }).eq('owner_uid', uid);
+    if ((count || 0) + 1 >= limits.workspaces) {
+      return res.status(403).json({ error: `Your plan includes ${limits.workspaces} workspace${limits.workspaces === 1 ? '' : 's'}`, code: 'LIMIT_WORKSPACES', limit: limits.workspaces });
+    }
+    const { data, error } = await supabase.from('workspaces').insert({ owner_uid: uid, name }).select('id, name, created_at').single();
+    if (error) return res.status(500).json({ error: 'Failed to create workspace' });
+    res.status(201).json(data);
+  });
+  app.patch('/api/workspaces/:id', writeLimiter, authenticate, sessionOwner, async (req, res) => {
+    const name = String(req.body?.name || '').trim().slice(0, 60);
+    if (!name) return res.status(400).json({ error: 'Name your workspace' });
+    const { data, error } = await supabase.from('workspaces').update({ name }).eq('id', req.params.id).eq('owner_uid', (req as any).user.uid).select('id').maybeSingle();
+    if (error || !data) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true });
+  });
+  // Deleting a workspace moves its codes and members back to the default one (on delete set null).
+  app.delete('/api/workspaces/:id', writeLimiter, authenticate, sessionOwner, async (req, res) => {
+    const { data, error } = await supabase.from('workspaces').delete().eq('id', req.params.id).eq('owner_uid', (req as any).user.uid).select('id').maybeSingle();
+    if (error || !data) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true });
+  });
+
+  // ── Webhooks (Business) ────────────────────────────────────────────────────
+  // ponytail: https only and no obvious private hosts; a public name that resolves to a private IP is not caught.
+  // Upgrade path: resolve the name and check the address before each delivery.
+  const webhookUrlError = (u: unknown): string | null => {
+    let url: URL;
+    try { url = new URL(String(u)); } catch { return 'Enter a full URL'; }
+    const local = /^(localhost|127\.0\.0\.1)$/.test(url.hostname);
+    if (process.env.NODE_ENV === 'test' && local && url.protocol === 'http:') return null; // QA's local receiver
+    if (url.protocol !== 'https:') return 'Webhook URLs must use https';
+    if (local || /^(0\.|10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[|.*\.(local|internal)$)/i.test(url.hostname)) return 'Webhook URLs must be public';
+    return null;
+  };
+
+  // Delivers one event to the owner's endpoints that subscribed to it, signed like Standard Webhooks.
+  // ponytail: retries 3 times inside the request (0.5 s, 1 s); move to a queue if endpoints are slow or many.
+  async function deliver(uid: string | undefined, event: string, data: any, onlyId?: string): Promise<number[]> {
+    if (!uid) return [];
+    let q = supabase.from('webhooks').select('id, url, secret, events').eq('uid', uid);
+    if (onlyId) q = q.eq('id', onlyId);
+    const { data: hooks, error } = await q;
+    const targets = (hooks || []).filter(h => onlyId || (h.events || []).includes(event));
+    if (error || !targets.length) return [];
+    if (!onlyId && !(await getLicense(uid)).limits.webhooks) return []; // stops when the plan lapses
+    return Promise.all(targets.map(async h => {
+      const id = `msg_${crypto.randomUUID()}`, body = JSON.stringify({ type: event, timestamp: nowIso(), data });
+      let status = 0;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt) await new Promise(r => setTimeout(r, attempt * 500));
+        const ts = Math.floor(Date.now() / 1000);
+        try {
+          const r = await fetch(h.url, {
+            method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(4000), body,
+            headers: { 'Content-Type': 'application/json', 'webhook-id': id, 'webhook-timestamp': String(ts), 'webhook-signature': signStandardWebhook(id, ts, body, h.secret) },
+          });
+          status = r.status;
+          if (r.ok || (r.status >= 400 && r.status < 500 && r.status !== 429)) break; // 4xx is the receiver's answer
+        } catch { status = 0; }
+      }
+      await supabase.from('webhooks').update({ last_status: status, last_delivery_at: nowIso() }).eq('id', h.id);
+      return status;
+    }));
+  }
+
+  app.get('/api/webhooks', authenticate, sessionOwner, async (req, res) => {
+    const { data, error } = await supabase.from('webhooks').select('id, url, events, created_at, last_status, last_delivery_at')
+      .eq('uid', (req as any).user.uid).order('created_at');
+    if (error) return res.status(500).json({ error: 'Failed to list webhooks' });
+    res.json(data || []);
+  });
+  app.post('/api/webhooks', writeLimiter, authenticate, sessionOwner, async (req, res) => {
+    const uid = (req as any).user.uid;
+    if (!(await getLicense(uid)).limits.webhooks) return res.status(403).json({ error: 'Webhooks are part of the Business plan', code: 'FEATURE_WEBHOOKS' });
+    const urlErr = webhookUrlError(req.body?.url);
+    if (urlErr) return res.status(400).json({ error: urlErr });
+    const events: string[] = Array.isArray(req.body?.events) ? [...new Set<string>(req.body.events.map(String))] : [];
+    if (!events.length || events.some(e => !(WEBHOOK_EVENTS as readonly string[]).includes(e))) {
+      return res.status(400).json({ error: `events must be some of ${WEBHOOK_EVENTS.join(', ')}` });
+    }
+    const { count } = await supabase.from('webhooks').select('id', { count: 'exact', head: true }).eq('uid', uid);
+    if ((count || 0) >= 10) return res.status(403).json({ error: 'Up to 10 webhooks per account', code: 'LIMIT_WEBHOOKS' });
+    const secret = newWebhookSecret();
+    const { data, error } = await supabase.from('webhooks').insert({ uid, url: String(req.body.url), secret, events }).select('id, url, events, created_at').single();
+    if (error) return res.status(500).json({ error: 'Failed to add webhook' });
+    res.status(201).json({ ...data, secret }); // the secret is shown once
+  });
+  app.post('/api/webhooks/:id/test', writeLimiter, authenticate, sessionOwner, async (req, res) => {
+    const [status] = await deliver((req as any).user.uid, 'webhook.test', { message: 'Hello from Scnr' }, req.params.id);
+    if (status === undefined) return res.status(404).json({ error: 'Not found' });
+    res.json({ status, ok: status >= 200 && status < 300 });
+  });
+  app.delete('/api/webhooks/:id', writeLimiter, authenticate, sessionOwner, async (req, res) => {
+    const { error } = await supabase.from('webhooks').delete().eq('id', req.params.id).eq('uid', (req as any).user.uid);
+    if (error) return res.status(400).json({ error: 'Invalid webhook id' });
     res.json({ success: true });
   });
 
@@ -1830,6 +1984,7 @@ async function startServer() {
     const ip_hash = typeof visitor === 'string' ? visitor.slice(0, 64) : null;
     const { error } = await supabase.from('form_submissions').insert({ slug: qr.slug, data: result.data, ip_hash });
     if (error) throw error;
+    await deliver(qr.user_uid, 'form.submitted', { slug: qr.slug, data: result.data, submitted_at: nowIso() });
     const to = qr.content_data?.notify_email;
     // Awaited: on Vercel the function may freeze once the response is sent. Re-checked so an old definition cannot mail strangers.
     if (to && await notifyAllowed(qr.user_uid, to)) {
@@ -1902,6 +2057,10 @@ async function startServer() {
       const qrOwnerUid = qr.user_uid;
 
       await captureAnalyticsFromPayload(req.body, qrOwnerUid);
+      // Called by the Worker in waitUntil, so delivering here never slows a scan.
+      if (req.body.status !== 'failed_password' && !isBot(req.body.ua)) {
+        await deliver(qrOwnerUid, 'scan.created', { slug, scanned_at: nowIso(), country: req.body.country || null, city: req.body.city || null, referer: req.body.referer || null });
+      }
       res.send('OK');
     } catch (error: any) {
       logger.error('Internal scan error details:', { 
