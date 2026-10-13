@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../supabase';
 import QRCodeStyling from 'qr-code-styling';
 import { pageEditPath } from './Pages';
 import { apiFetch } from '../lib/api';
 import { useUI } from '../shared/UIContext';
-import { getQRContent, stylingOptions, resizeLogo, SHORT_DOMAIN, shortHost, buildDestination, SOCIALS, gtinValid, FRAME_TEXTS, DOT_STYLES, normDotStyle } from '../lib/qrContent';
+import { getQRContent, stylingOptions, resizeLogo, SHORT_DOMAIN, shortHost, buildDestination, SOCIALS, gtinValid, FRAME_TEXTS, DOT_STYLES, normDotStyle, CUSTOM_SLUG_RE, isReservedSlug, normTags, withUtm } from '../lib/qrContent';
 import { waLink } from '../lib/site';
 import { downloadQR } from '../components/QRViewerModal';
 
@@ -20,6 +20,11 @@ const URL_KINDS = ['url', 'pdf', 'whatsapp', 'google_review', 'gs1', 'app', 'pho
 // Kinds whose destination is built from their inputs (the rest take a typed URL).
 const DERIVED_KINDS = ['pdf', 'google_review', 'phone', 'sms', 'location', ...Object.keys(SOCIALS)];
 const DYNAMIC_ONLY = ['gs1', 'event', 'app'];
+const UTM_FIELDS = ['source', 'medium', 'campaign', 'term', 'content'];
+
+/** A custom back-half's problem in plain words, or '' when it is fine (the server checks the same rules). */
+export const slugProblem = (s: string) =>
+  !s ? '' : !CUSTOM_SLUG_RE.test(s) ? 'Use 3–40 letters, numbers or dashes.' : isReservedSlug(s) ? `"${s}" is reserved. Pick another back-half.` : '';
 
 export default function CreateQR() {
   const { id } = useParams();
@@ -33,11 +38,16 @@ export default function CreateQR() {
   const [gtin, setGtin] = useState('');
   const [uploading, setUploading] = useState(false);
   const brandApplied = useRef(false);
+  const [params] = useSearchParams();
+  const [folders, setFolders] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState('');
   
   const [formData, setFormData] = useState({
     title: '',
     client: '',
-    destination_url: '',
+    tags: [] as string[],
+    // "Make QR code" on the Dashboard's paste box opens /create?url=...
+    destination_url: params.get('url') || '',
     qr_type: 'url',
     content_data: {} as any,
     slug: '',
@@ -76,6 +86,7 @@ export default function CreateQR() {
 
   useEffect(() => {
     fetchPlan();
+    apiFetch('/api/qr').then(list => setFolders([...new Set<string>((Array.isArray(list) ? list : []).map((q: any) => q.client).filter(Boolean))])).catch(() => {});
     if (id) {
       const fetchQR = async () => {
         try {
@@ -89,6 +100,7 @@ export default function CreateQR() {
           setFormData({
             title: data.title || '',
             client: data.client || '',
+            tags: data.tags || [],
             destination_url: data.destination_url || '',
             qr_type: data.qr_type || 'url',
             content_data: data.content_data || {},
@@ -148,6 +160,9 @@ export default function CreateQR() {
   const dbType = isUrlKind ? 'url' : qrType;
   const dest = DERIVED_KINDS.includes(qrType) ? buildDestination(qrType, formData.content_data) : formData.destination_url;
   const cd = formData.content_data || {};
+  // The Worker adds UTM tags on redirect, so they only apply to dynamic codes that open a web page.
+  const showUtm = isUrlKind && isDynamic && !['phone', 'sms'].includes(qrType);
+  const addTag = (t: string) => { setFormData(f => ({ ...f, tags: normTags([...f.tags, t]) || f.tags })); setTagInput(''); };
   const setCd = (patch: any) => setFormData(f => ({ ...f, content_data: { ...f.content_data, ...patch } }));
   const setStyle = (patch: any) => setFormData(f => ({ ...f, style: { ...f.style, ...patch } }));
   const pickType = (t: string) => { setQrType(t); setFormData(f => ({ ...f, qr_type: URL_KINDS.includes(t) ? 'url' : t })); };
@@ -207,16 +222,21 @@ export default function CreateQR() {
       return;
     }
 
+    const slug = !id && isDynamic ? formData.slug.trim() : '';
+    if (slugProblem(slug)) { showToast('error', slugProblem(slug)); return; }
+
     if (!(await supabase.auth.getSession()).data.session) return;
     setLoading(true);
 
     // URL kinds carry their kind so the editor reopens on the right tab; Link and WhatsApp keep the old shape.
     const kind = isUrlKind && qrType !== 'url' && qrType !== 'whatsapp' ? qrType : undefined;
+    const utm = Object.fromEntries(UTM_FIELDS.map(k => [k, String(cd.utm?.[k] || '').trim()]).filter(([, v]) => v));
     const body = {
       ...formData,
+      ...(id ? {} : { slug }),
       qr_type: dbType,
       destination_url: dest,
-      content_data: { ...formData.content_data, kind },
+      content_data: { ...formData.content_data, kind, utm: showUtm && Object.keys(utm).length ? utm : undefined },
       is_dynamic: isDynamic,
       // On edit, null clears a GTIN when the code stops being a GS1 code.
       ...(qrType === 'gs1' ? { gtin } : id ? { gtin: null } : {}),
@@ -226,7 +246,7 @@ export default function CreateQR() {
       navigate('/');
     } catch (error: any) {
       console.error('Error saving QR code:', error);
-      if (error.status === 409 || (error.status === 400 && qrType === 'gs1')) {
+      if (error.status === 409 || error.status === 400 || (error.status === 403 && slug)) {
         showToast('error', error.message);
       } else if (error.status === 403) {
         showToast('error', error.message || 'Plan limit reached. Please upgrade.');
@@ -340,13 +360,30 @@ export default function CreateQR() {
                   required
                 />
               </div>
-              {planData?.limits?.bulk_create && (
+              <div className="grid-2">
                 <div className="form-section">
-                  <label className="form-label" htmlFor="qr-client">Client / folder <span style={{ color: 'var(--text3)', fontWeight: 'normal' }}>(optional)</span></label>
-                  <input id="qr-client" type="text" className="form-input" placeholder="e.g. Café Lagoon" value={formData.client}
+                  <label className="form-label" htmlFor="qr-client">Folder <span style={{ color: 'var(--text3)', fontWeight: 'normal' }}>(optional; type a new name to make one)</span></label>
+                  <input id="qr-client" type="text" list="qr-folders" className="form-input" placeholder="e.g. Café Lagoon" maxLength={60} value={formData.client}
                     onChange={(e) => setFormData({ ...formData, client: e.target.value })} />
+                  <datalist id="qr-folders">{folders.map(f => <option key={f} value={f} />)}</datalist>
                 </div>
-              )}
+                <div className="form-section">
+                  <label className="form-label" htmlFor="qr-tags">Tags <span style={{ color: 'var(--text3)', fontWeight: 'normal' }}>(press Enter to add)</span></label>
+                  <div className="tag-input form-input">
+                    {formData.tags.map(t => (
+                      <span key={t} className="chip tag-chip">{t}
+                        <button type="button" aria-label={`Remove tag ${t}`} onClick={() => setFormData(f => ({ ...f, tags: f.tags.filter(x => x !== t) }))}>×</button>
+                      </span>
+                    ))}
+                    <input id="qr-tags" value={tagInput} placeholder={formData.tags.length ? '' : 'e.g. menu'} onChange={(e) => setTagInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if ((e.key === 'Enter' || e.key === ',') && tagInput.trim()) { e.preventDefault(); addTag(tagInput); }
+                        if (e.key === 'Backspace' && !tagInput && formData.tags.length) setFormData(f => ({ ...f, tags: f.tags.slice(0, -1) }));
+                      }}
+                      onBlur={() => tagInput.trim() && addTag(tagInput)} />
+                  </div>
+                </div>
+              </div>
 
               {/* QR type selector */}
               <div className="card mb16">
@@ -776,6 +813,37 @@ export default function CreateQR() {
                 ></button>
               </div>
 
+              {isDynamic && !id && (
+                <div className="form-section" style={{ padding: '16px 0 0' }}>
+                  <label className="form-label" htmlFor="qr-slug" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    Custom back-half <span style={{ color: 'var(--text3)', fontWeight: 'normal' }}>(optional)</span>
+                    {locked('custom_slug') && <span className="chip" style={{ background: 'var(--amber-ll)', color: 'var(--amber)', fontSize: '10px' }}>PRO</span>}
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '13px', color: 'var(--text3)' }}>{shortHost()}/</span>
+                    <input id="qr-slug" className={`form-input ${slugProblem(formData.slug) ? 'error' : ''}`} placeholder={locked('custom_slug') ? 'Upgrade to Pro to pick one' : 'menu-2026'}
+                      maxLength={40} disabled={locked('custom_slug')} value={formData.slug} onChange={(e) => setFormData({ ...formData, slug: e.target.value.trim() })} />
+                  </div>
+                  {slugProblem(formData.slug) && <div className="error-msg" style={{ display: 'block' }}>{slugProblem(formData.slug)}</div>}
+                </div>
+              )}
+
+              {showUtm && (
+                <details style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
+                  <summary style={{ fontWeight: 500, cursor: 'pointer' }}>UTM tags <span style={{ color: 'var(--text3)', fontWeight: 'normal', fontSize: '13px' }}>(added to the link on every scan)</span></summary>
+                  <div className="grid-2" style={{ marginTop: '12px' }}>
+                    {UTM_FIELDS.map(k => (
+                      <div key={k} className="form-section" style={{ marginBottom: '8px' }}>
+                        <label className="form-label" htmlFor={`utm-${k}`}>{k[0].toUpperCase() + k.slice(1)}</label>
+                        <input id={`utm-${k}`} className="form-input" maxLength={100} placeholder={({ source: 'qr', medium: 'print', campaign: 'menu-2026' } as any)[k] || ''}
+                          value={cd.utm?.[k] || ''} onChange={(e) => setCd({ utm: { ...cd.utm, [k]: e.target.value } })} />
+                      </div>
+                    ))}
+                  </div>
+                  {dest && <div style={{ fontSize: '12px', color: 'var(--text3)', wordBreak: 'break-all' }}>Opens: {withUtm(dest, cd.utm)}</div>}
+                </details>
+              )}
+
               <div className="toggle-wrap" style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -924,6 +992,7 @@ export default function CreateQR() {
                   setFormData({
                     title: '',
                     client: '',
+                    tags: [],
                     destination_url: '',
                     slug: '',
                     qr_type: 'url',

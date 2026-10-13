@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../supabase';
 import { apiFetch } from '../lib/api';
 import { shortHost } from '../lib/qrContent';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, PieChart, Pie, Cell
@@ -23,6 +23,11 @@ export default function AccountAnalytics() {
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const navigate = useNavigate();
+  // ?slugs=a,b scopes every view to those codes (a folder's "campaign" view from the Dashboard).
+  const [params] = useSearchParams();
+  const slugs = params.get('slugs') || '';
+  const only = slugs ? `slugs=${encodeURIComponent(slugs)}` : '';
+  const folder = params.get('folder');
   
   // Safety timeout to prevent infinite loading if userId never arrives
   useEffect(() => {
@@ -43,9 +48,9 @@ export default function AccountAnalytics() {
     try {
       let tsUrl = `/api/analytics/account/${userId}/timeseries`;
       if (rangeMode === 'days') {
-        tsUrl += `?days=${days}`;
+        tsUrl += `?days=${days}${only && '&' + only}`;
       } else if (startDate && endDate) {
-        tsUrl += `?start=${startDate}&end=${endDate}`;
+        tsUrl += `?start=${startDate}&end=${endDate}${only && '&' + only}`;
       } else {
         return;
       }
@@ -58,7 +63,7 @@ export default function AccountAnalytics() {
 
   useEffect(() => {
     fetchTimeseries();
-  }, [userId, days, rangeMode, startDate, endDate]);
+  }, [userId, days, rangeMode, startDate, endDate, only]);
 
   useEffect(() => {
     if (!userId) return;
@@ -66,9 +71,9 @@ export default function AccountAnalytics() {
     const fetchStats = async () => {
       try {
         const [stats, performance, countries] = await Promise.all([
-          apiFetch(`/api/analytics/account/${userId}`),
-          apiFetch(`/api/analytics/account/${userId}/performance`),
-          apiFetch(`/api/analytics/account/${userId}/countries`),
+          apiFetch(`/api/analytics/account/${userId}${only && '?' + only}`),
+          apiFetch(`/api/analytics/account/${userId}/performance${only && '?' + only}`),
+          apiFetch(`/api/analytics/account/${userId}/countries${only && '?' + only}`),
         ]);
 
         setAccountStats(stats);
@@ -82,7 +87,7 @@ export default function AccountAnalytics() {
     };
 
     fetchStats();
-  }, [userId]);
+  }, [userId, only]);
 
   if (loading) {
     return <div className="flex justify-center items-center h-64">Loading analytics...</div>;
@@ -91,6 +96,12 @@ export default function AccountAnalytics() {
   return (
     <div className="content" style={{ padding: '28px', overflow: 'auto', height: '100%' }}>
       <div className="page active">
+        {slugs && (
+          <div className="section-row mb16">
+            <span className="section-title">{folder ? `Folder: ${folder}` : 'Selected codes'}</span>
+            <Link to="/analytics" className="btn btn-ghost btn-sm">All codes</Link>
+          </div>
+        )}
         {/* Big stats */}
         <div className="stats-row mb24">
           <div className="stat-card">
