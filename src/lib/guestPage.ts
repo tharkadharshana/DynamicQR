@@ -7,6 +7,7 @@ export type Lang = 'en' | 'si' | 'ta';
 export type Rendered =
   | { kind: 'html'; body: string }
   | { kind: 'vcard'; body: string; filename: string }
+  | { kind: 'ics'; body: string; filename: string }
   | { kind: 'redirect'; location: string };
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -18,6 +19,16 @@ const UI: Record<Lang, Record<string, string>> = {
   si: { offer: 'අද දීමනාව', wifi: 'Wi-Fi', network: 'ජාලය', password: 'මුරපදය', copy: 'පිටපත් කරන්න', copied: 'පිටපත් විය', powered: 'Scnr සමඟ සාදන ලදී' },
   ta: { offer: 'இன்றைய சலுகை', wifi: 'Wi-Fi', network: 'நெட்வொர்க்', password: 'கடவுச்சொல்', copy: 'நகலெடு', copied: 'நகலெடுக்கப்பட்டது', powered: 'Scnr மூலம் உருவாக்கப்பட்டது' },
 };
+
+export const FILE_TYPES = { vcard: 'text/vcard; charset=utf-8', ics: 'text/calendar; charset=utf-8' } as const;
+
+/** App-store code: iPhone/iPad → ios URL, Android → android URL, else '' (the caller falls back to destination_url). */
+export function appTarget(app: any, ua: string): string {
+  if (!app) return '';
+  if (/iPhone|iPad|iPod/i.test(ua)) return safeUrl(app.ios);
+  if (/Android/i.test(ua)) return safeUrl(app.android);
+  return '';
+}
 
 /** ?lang= wins, then Accept-Language, then English. */
 export function pickLang(query: string | null, acceptLanguage: string | null): Lang {
@@ -66,6 +77,23 @@ const wifiBox = (ssid: string, password: string, t: Record<string, string>) => `
     ${password ? `<div class="row"><span>${esc(t.password)}: <b>${esc(password)}</b></span><button data-copy="${esc(password)}" data-done="${esc(t.copied)}">${esc(t.copy)}</button></div>` : ''}
   </div>`;
 
+// iCalendar text escaping (RFC 5545 §3.3.11) and floating local times from datetime-local strings.
+const icsEsc = (s: unknown) => String(s ?? '').replace(/[\\;,]/g, m => `\\${m}`).replace(/\r?\n/g, '\\n');
+const icsTime = (s: unknown) => String(s || '').replace(/[-:]/g, '').replace(/\.\d+$/, '').padEnd(15, '0').slice(0, 15);
+
+// RFC 5545 line folding. ponytail: folds at 74 characters, not octets; fine for ASCII, a long Sinhala line may run over.
+const fold = (l: string) => (l.length <= 75 ? l : l.match(/.{1,74}/g)!.join('\r\n '));
+
+/** An event code downloads one VEVENT. Times are floating (the guest's local time), as typed in the editor. */
+export function icsText(d: any = {}, uid = 'scnr'): string {
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Scnr//Event//EN', 'BEGIN:VEVENT',
+    `UID:${icsEsc(uid)}@scnr`, `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}Z`,
+    `DTSTART:${icsTime(d.start)}`, ...(d.end ? [`DTEND:${icsTime(d.end)}`] : []),
+    `SUMMARY:${icsEsc(d.title)}`, ...(d.location ? [`LOCATION:${icsEsc(d.location)}`] : []),
+    ...(d.description ? [`DESCRIPTION:${icsEsc(d.description)}`] : []), ...(safeUrl(d.url) ? [`URL:${safeUrl(d.url)}`] : []),
+    'END:VEVENT', 'END:VCALENDAR'].map(fold).join('\r\n');
+}
+
 /** config: the cached gate config (qr_type, content_data, title, branding). url: the scanned URL (for language links). */
 export function renderGuestPage(config: any, lang: Lang, url: string): Rendered | null {
   const d = config.content_data || {};
@@ -74,6 +102,8 @@ export function renderGuestPage(config: any, lang: Lang, url: string): Rendered 
   switch (config.qr_type) {
     case 'vcard':
       return { kind: 'vcard', body: vcardText(d), filename: `${(d.first_name || 'contact').replace(/[^\w-]/g, '')}.vcf` };
+    case 'event':
+      return { kind: 'ics', body: icsText(d, config.slug), filename: `${String(d.title || 'event').replace(/[^\w-]/g, '').slice(0, 40) || 'event'}.ics` };
     case 'email':
       return { kind: 'redirect', location: `mailto:${d.email || ''}?subject=${encodeURIComponent(d.subject || '')}&body=${encodeURIComponent(d.body || '')}` };
     case 'text':
@@ -124,5 +154,13 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('guestPage.ts'
   assert(si.body.includes('කැෆේ') && si.body.includes('මෙනුව'), 'sinhala overrides');
   assert(pickLang(null, 'ta-LK,ta;q=0.9') === 'ta' && pickLang('si', 'en') === 'si', 'pickLang');
   assert((renderGuestPage({ qr_type: 'vcard', content_data: { first_name: 'A' } }, 'en', 'https://s.lk/x') as any).kind === 'vcard', 'vcard');
+  const ics = renderGuestPage({ qr_type: 'event', content_data: { title: 'Launch; party, 2', start: '2026-11-01T18:30', end: '2026-11-01T21:00', url: 'javascript:x' } }, 'en', 'https://s.lk/x') as any;
+  assert(ics.kind === 'ics' && ics.body.includes('DTSTART:20261101T183000') && ics.body.includes('SUMMARY:Launch\\; party\\, 2'), 'ics: ' + ics.body);
+  assert(!ics.body.includes('javascript') && ics.filename === 'Launchparty2.ics', 'ics: unsafe url dropped, filename');
+  const app = { ios: 'https://apps.apple.com/app/id1', android: 'https://play.google.com/store/apps/details?id=x' };
+  assert(appTarget(app, 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)') === app.ios && appTarget(app, 'Linux; Android 14') === app.android, 'app routing');
+  assert(appTarget(app, 'Windows NT 10.0') === '' && appTarget({ ios: 'javascript:x' }, 'iPhone') === '' && appTarget(null, 'iPhone') === '', 'app fallback');
+  const long = icsText({ title: 'x', start: '2026-01-01T10:00', description: 'y'.repeat(200) });
+  assert(long.split('\r\n').every(l => l.length <= 75) && long.includes('\r\n y'), 'ics folds long lines');
   console.log('guestPage self-check ok');
 }

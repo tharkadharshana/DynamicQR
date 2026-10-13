@@ -23,9 +23,10 @@ Legend: ✅ works · ⚠️ works with a known limit · 🗓 planned (phase) · 
 | Feature | Status | Notes |
 |---|---|---|
 | Content types: URL, vCard, Wi-Fi, Text, Email, WhatsApp, Guest page | ✅ | Every type can be dynamic. The Worker renders non-URL types with `renderGuestPage()` ([guestPage.ts](../src/lib/guestPage.ts)). WhatsApp is a URL code pointing at `wa.me` with a ready message. |
+| More types (Phase 6) | ✅ | Google review, Instagram, Facebook, TikTok, YouTube, LinkedIn, X, phone, SMS, location, PDF and app-store links are URL codes: `qr_type 'url'`, `content_data.kind = <type>`, and `destination_url = buildDestination(kind, data)` ([qrContent.ts](../src/lib/qrContent.ts)). An **event** code (`qr_type 'event'`) downloads an `.ics`. A **GS1 Digital Link** code stores a GTIN and encodes `https://<short domain>/01/<GTIN-14>[/10/<batch>]`. A **PDF** is uploaded straight to Supabase Storage. |
 | Restaurant Kit ([Kit.tsx](../src/pages/Kit.tsx)) | ✅ | A 3-step wizard that makes one dynamic guest page (menu, Google review, WhatsApp, phone, extra link, Wi-Fi, today's offer, brand colour; EN/SI/TA) plus an optional static Wi-Fi code. Prints an A6 table tent ([KitPrint.tsx](../src/pages/KitPrint.tsx)) through the browser's print-to-PDF. |
 | Static vs dynamic toggle | ✅ | Dynamic counts against the plan's `dynamic_qr_codes` (Free: 1) |
-| Colours, dot styles, corner styles | ✅ | `stylingOptions()` in [qrContent.ts](../src/lib/qrContent.ts) is used by the editor, downloads and the viewer |
+| Colours, dot styles, corner styles | ✅ | `stylingOptions()` in [qrContent.ts](../src/lib/qrContent.ts) is used by the editor, downloads and the viewer. Phase 6 adds six dot styles, corner dot style, a linear gradient, a circle shape, a frame with a call to action ("Scan me", "Menu", …, composed by `framedSvg()` at download time) and a saved brand style ("Save as my default", `profiles.brand_style`). |
 | Centre logo | ✅ | Resized on the device to ≤256 px (`resizeLogo`), so saves stay under the API body limit. Error correction switches to H. |
 | Downloads | ✅ | PNG and SVG at the chosen output size (400/800/1200 px). There is no PDF; print-ready table tents arrive in 🗓 Phase 2. |
 | Viewer modal | ✅ | Same renderer as the editor; 1200 px PNG download |

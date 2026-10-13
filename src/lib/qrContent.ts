@@ -3,6 +3,8 @@
 // depend on which host the dashboard happened to be opened on).
 
 // Vite only inlines `import.meta.env.VITE_*` written out in full; the typeof guard keeps Node (server, QA) safe.
+import { waLink } from './site.js';
+
 const ENV_DOMAIN = typeof import.meta.env !== 'undefined' ? import.meta.env.VITE_SHORT_DOMAIN : undefined;
 export const SHORT_DOMAIN: string = (ENV_DOMAIN || 'https://scnr.tharkak.com').replace(/\/$/, '');
 
@@ -19,19 +21,33 @@ export function vcardText(d: any = {}): string {
   return `BEGIN:VCARD\nVERSION:3.0\nN:${d.last_name || ''};${d.first_name || ''}\nFN:${d.first_name || ''} ${d.last_name || ''}\nTEL:${d.phone || ''}\nEMAIL:${d.email || ''}\nORG:${d.company || ''}\nURL:${d.website || ''}\nEND:VCARD`;
 }
 
+// Dot styles offered by the editor. Older codes stored 'diamond' and 'star'; they keep rendering.
+export const DOT_STYLES = ['square', 'dots', 'rounded', 'classy', 'classy-rounded', 'extra-rounded'] as const;
+
+/** A stored dot_style as one of DOT_STYLES (older codes stored 'diamond' and 'star'). */
+export const normDotStyle = (d: unknown): string =>
+  ({ diamond: 'classy', star: 'classy-rounded' } as Record<string, string>)[String(d)] || ((DOT_STYLES as readonly string[]).includes(String(d)) ? String(d) : 'square');
+
 /** qr-code-styling options from a stored `style` (used by the editor preview, downloads and the viewer modal). */
 export function stylingOptions(style: any = {}, data: string, size: number) {
-  const dotType = ({ dots: 'dots', rounded: 'rounded', diamond: 'classy', star: 'classy-rounded' } as any)[style.dot_style] || 'square';
+  const dotType = normDotStyle(style.dot_style);
   const cornerType = ({ dot: 'dot', rounded: 'extra-rounded' } as any)[style.corner_style] || 'square';
+  const cornerDot = style.corner_dot_style === 'dot' || style.corner_dot_style === 'square'
+    ? style.corner_dot_style : cornerType === 'extra-rounded' ? 'dot' : cornerType;
   const color = style.dot_color || '#000000';
+  // Optional linear gradient from dot_color to gradient_color.
+  const gradient = /^#[0-9a-f]{6}$/i.test(style.gradient_color || '')
+    ? { type: 'linear', rotation: Math.PI / 4, colorStops: [{ offset: 0, color }, { offset: 1, color: style.gradient_color }] }
+    : undefined;
   return {
     width: size,
     height: size,
     data,
+    shape: style.shape === 'circle' ? 'circle' : 'square',
     image: style.logo_url || undefined,
-    dotsOptions: { color, type: dotType },
+    dotsOptions: { color, type: dotType, gradient },
     cornersSquareOptions: { type: cornerType, color },
-    cornersDotOptions: { type: cornerType === 'extra-rounded' ? 'dot' : cornerType, color },
+    cornersDotOptions: { type: cornerDot, color },
     backgroundOptions: { color: style.bg_color || '#FFFFFF' },
     imageOptions: { crossOrigin: 'anonymous', margin: 5, imageSize: 0.4 },
     qrOptions: { errorCorrectionLevel: style.error_correction || 'M' },
@@ -57,6 +73,7 @@ export function resizeLogo(file: File, maxPx = 256): Promise<string> {
 }
 
 export function getQRContent(qr: any, shortDomain: string = activeDomain): string {
+  if (qr.is_dynamic !== false && qr.gtin) return `${shortDomain}${gs1Path(qr.gtin, qr.content_data?.batch)}`;
   if (qr.is_dynamic !== false) return `${shortDomain}/${qr.slug}`;
   const d = qr.content_data || {};
   switch (qr.qr_type) {
@@ -66,4 +83,96 @@ export function getQRContent(qr: any, shortDomain: string = activeDomain): strin
     case 'email': return `mailto:${d.email || ''}?subject=${encodeURIComponent(d.subject || '')}&body=${encodeURIComponent(d.body || '')}`;
     default: return qr.destination_url || '';
   }
+}
+
+// ── URL code types ────────────────────────────────────────────────────────────
+// These store qr_type 'url' with content_data.kind = <type> and destination_url = buildDestination(...),
+// like WhatsApp, so the Worker and analytics need nothing new.
+export const SOCIALS: Record<string, (h: string) => string> = {
+  instagram: h => `https://www.instagram.com/${h}`,
+  facebook: h => `https://www.facebook.com/${h}`,
+  tiktok: h => `https://www.tiktok.com/@${h}`,
+  youtube: h => `https://www.youtube.com/@${h}`,
+  linkedin: h => `https://www.linkedin.com/in/${h}`,
+  x: h => `https://x.com/${h}`,
+};
+
+/** "@name", "name" or a pasted profile URL → "name". Only handle-safe characters survive. */
+export const cleanHandle = (h: unknown) =>
+  String(h || '').trim().replace(/^https?:\/\/[^/]+\//i, '').replace(/^@/, '').split(/[/?#]/)[0].replace(/[^\w.-]/g, '');
+
+/** The destination a URL-type code redirects to, or '' when the required input is missing. */
+export function buildDestination(kind: string, d: any = {}): string {
+  const enc = encodeURIComponent;
+  const phone = String(d.phone || '').replace(/[^\d+]/g, '');
+  if (SOCIALS[kind]) { const h = cleanHandle(d.handle); return h ? SOCIALS[kind](h) : ''; }
+  switch (kind) {
+    case 'google_review': return d.place_id ? `https://search.google.com/local/writereview?placeid=${enc(String(d.place_id).trim())}` : '';
+    case 'phone': return phone ? `tel:${phone}` : '';
+    case 'sms': return phone ? `sms:${phone}${d.body ? `?body=${enc(d.body)}` : ''}` : '';
+    case 'location': {
+      const q = d.lat !== undefined && d.lat !== '' && d.lng !== undefined && d.lng !== '' ? `${Number(d.lat)},${Number(d.lng)}` : String(d.address || '').trim();
+      return q && q !== 'NaN,NaN' ? `https://maps.google.com/?q=${enc(q)}` : '';
+    }
+    case 'whatsapp': return phone ? waLink(phone, d.text || '') : '';
+    case 'pdf': return /^https:\/\//.test(d.file_url || '') ? d.file_url : '';
+    default: return d.url || '';
+  }
+}
+
+// ── GS1 Digital Link ──────────────────────────────────────────────────────────
+/** GTIN-8/12/13/14 with a valid mod-10 check digit. */
+export function gtinValid(g: unknown): boolean {
+  const s = String(g || '');
+  if (!/^(\d{8}|\d{12}|\d{13}|\d{14})$/.test(s)) return false;
+  const digits = s.split('').map(Number), check = digits.pop()!;
+  const sum = digits.reverse().reduce((t, n, i) => t + n * (i % 2 === 0 ? 3 : 1), 0);
+  return (10 - (sum % 10)) % 10 === check;
+}
+/** GS1 Digital Link path: /01/<GTIN-14>[/10/<batch>]. */
+export const gs1Path = (gtin: string, batch?: string) =>
+  `/01/${String(gtin).padStart(14, '0')}${batch ? `/10/${encodeURIComponent(batch)}` : ''}`;
+
+// ── Frames ────────────────────────────────────────────────────────────────────
+export const FRAME_TEXTS = ['Scan me', 'Menu', 'Review us', 'Pay here', 'Wi-Fi'];
+
+/**
+ * Wrap a QR SVG (as qr-code-styling's getRawData('svg') returns it) in a rounded frame with a call-to-action
+ * band. Composed at download time, so the stored code and its preview stay plain.
+ */
+export function framedSvg(qrSvg: string, size: number, frame: { text?: string; color?: string } = {}): string {
+  const pad = Math.round(size * 0.06), band = Math.round(size * 0.18), w = size + pad * 2, h = size + pad * 2 + band;
+  const color = /^#[0-9a-f]{6}$/i.test(frame.color || '') ? frame.color : '#1A1916';
+  const text = String(frame.text || 'Scan me').slice(0, 24).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+  const inner = qrSvg.replace(/<\?xml[^>]*>/, '').replace(/<svg\b/, `<svg x="${pad}" y="${pad}"`);
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`
+    + `<rect width="${w}" height="${h}" rx="${pad}" fill="${color}"/>`
+    + `<rect x="${pad / 2}" y="${pad / 2}" width="${size + pad}" height="${size + pad}" rx="${pad / 2}" fill="#fff"/>`
+    + inner
+    + `<text x="${w / 2}" y="${size + pad * 1.5 + band / 2}" fill="#fff" font-family="system-ui,-apple-system,Segoe UI,Roboto,sans-serif" font-size="${Math.round(band * 0.42)}" font-weight="700" text-anchor="middle" dominant-baseline="middle">${text}</text>`
+    + `</svg>`;
+}
+
+/** Self-check: npx tsx src/lib/qrContent.ts */
+if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('qrContent.ts')) {
+  const assert = (c: unknown, m: string) => { if (!c) { console.error('FAIL', m); process.exit(1); } };
+  assert(buildDestination('instagram', { handle: '@scnr.lk' }) === 'https://www.instagram.com/scnr.lk', 'instagram');
+  assert(buildDestination('tiktok', { handle: 'https://www.tiktok.com/@cafe?x=1' }) === 'https://www.tiktok.com/@cafe', 'tiktok from url');
+  assert(buildDestination('x', { handle: '<script>' }) === 'https://x.com/script', 'handle is sanitised');
+  assert(buildDestination('google_review', { place_id: 'ChIJ123' }) === 'https://search.google.com/local/writereview?placeid=ChIJ123', 'review');
+  assert(buildDestination('phone', { phone: '+94 77 123 4567' }) === 'tel:+94771234567', 'phone');
+  assert(buildDestination('sms', { phone: '0771234567', body: 'Hi there' }) === 'sms:0771234567?body=Hi%20there', 'sms');
+  assert(buildDestination('location', { lat: '6.9271', lng: '79.8612' }) === 'https://maps.google.com/?q=6.9271%2C79.8612', 'location latlng');
+  assert(buildDestination('location', { address: 'Galle Face, Colombo' }) === 'https://maps.google.com/?q=Galle%20Face%2C%20Colombo', 'location address');
+  assert(buildDestination('whatsapp', { phone: '+94 77 123 4567', text: 'Hi' }) === 'https://wa.me/94771234567?text=Hi', 'whatsapp');
+  assert(buildDestination('pdf', { file_url: 'javascript:alert(1)' }) === '' && buildDestination('phone', {}) === '', 'empty when invalid');
+  assert(gtinValid('4006381333931') && gtinValid('96385074') && gtinValid('00012345600012'), 'valid GTINs');
+  assert(!gtinValid('4006381333932') && !gtinValid('abc') && !gtinValid('123'), 'invalid GTINs');
+  assert(gs1Path('4006381333931', 'L 1') === '/01/04006381333931/10/L%201', 'gs1 path');
+  assert(getQRContent({ slug: 'abcdefg', gtin: '4006381333931' }, 'https://s.lk') === 'https://s.lk/01/04006381333931', 'gs1 content');
+  const f = framedSvg('<?xml version="1.0"?><svg width="100" height="100"></svg>', 100, { text: '<Menu>' });
+  assert(f.includes('<svg x="6" y="6" width="100"') && f.includes('&lt;Menu&gt;') && !f.includes('<?xml'), 'frame wraps and escapes');
+  assert(stylingOptions({ shape: 'circle', gradient_color: '#ff0000', dot_style: 'diamond' }, 'x', 10).dotsOptions.type === 'classy', 'legacy dot style');
+  assert(stylingOptions({ shape: 'circle', gradient_color: '#ff0000' }, 'x', 10).shape === 'circle', 'circle');
+  console.log('qrContent self-check ok');
 }

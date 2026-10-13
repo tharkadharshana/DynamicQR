@@ -103,7 +103,7 @@ Columns the code **reads but which do not exist**: `referrers`, `regions`, `isps
 | `api_keys` | `uid, name, prefix, key_hash (unique), created_at, last_used_at, revoked_at` | Only the SHA-256 is stored |
 | `custom_domains` | `uid, hostname (unique), cf_id, status` | One per account; Cloudflare for SaaS custom hostname id |
 
-Also: `qr_codes.client` (folder name, indexed with `user_uid`), and `profiles.agency_name` / `profiles.agency_logo` (≤64 KB data URL) for white-label printed reports.
+Also: `qr_codes.gtin` (GS1 GTIN-14, unique when set, migration 006), `profiles.brand_style` (jsonb, the saved default design, migration 006), the public Storage bucket `files` (100 MB cap, PDF and images, written only through API-signed upload URLs, migration 006), `qr_codes.client` (folder name, indexed with `user_uid`), and `profiles.agency_name` / `profiles.agency_logo` (≤64 KB data URL) for white-label printed reports.
 
 ### `scan_events`, one per scan (bots excluded)
 

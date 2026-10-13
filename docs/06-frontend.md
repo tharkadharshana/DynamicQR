@@ -82,7 +82,8 @@ A "Today's offer" card with one input per guest page ("Make live" PUTs `content_
 
 Form cards (name and type, style, options, Visitor Guard) plus a live preview.
 
-- Types: URL, vCard, Wi-Fi, Text, Email, **WhatsApp** (a URL code built with `waLink()`), and a link to the Restaurant Kit. All can be dynamic; Wi-Fi defaults to static so phones join directly.
+- Types, laid out like Hovercode's tabs: Link, PDF, WhatsApp, Google review, GS1, vCard, Page (the Restaurant Kit), and a **More ▾** menu with Instagram, Facebook, TikTok, YouTube, LinkedIn, X, phone, SMS, location, event, app store, Wi-Fi, text and email. URL-like types store `content_data.kind` and build `destination_url` with `buildDestination()`. Wi-Fi defaults to static so phones join directly.
+- Design: dot style, corner square and corner dot styles, gradient, circle shape, logo, and a frame with a call to action that `framedSvg()` composes at download time. "Save as my default" stores `profiles.brand_style`, which prefills new codes.
 - **Feature toggles are gated on plan limits** through `locked(feature)`, not on the plan name, so trial users get their Pro features.
 - Downloads render at the chosen output size, then the preview returns to 180 px. Logos are resized on the device before saving.
 - On a 403 (`LIMIT_QR_CODES`, `LIMIT_DYNAMIC_QR`, `FEATURE_*`) it shows a toast and goes to `/billing`.
