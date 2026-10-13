@@ -18,7 +18,7 @@ import crypto from 'crypto';
 import { customAlphabet } from 'nanoid';
 import logger from "./logger.js";
 import { renderGuestPage, pickLang, appTarget, FILE_TYPES, blockTarget } from './src/lib/guestPage.js';
-import { gtinValid } from './src/lib/qrContent.js';
+import { gtinValid, isReservedSlug, CUSTOM_SLUG_RE, normTags, withUtm } from './src/lib/qrContent.js';
 import { buildDigest } from './src/lib/digest.js';
 import { PLANS, TRIAL_LIMITS, GRACE_DAYS, DEFAULT_ADDONS, PRICES, PAID_PLANS, PlanId, PaidPlan, PlanLimits, UserAddons, Currency, BillingInterval } from './src/lib/plans.js';
 
@@ -992,6 +992,13 @@ async function startServer() {
       }
       const gtin = req.body.gtin === undefined ? null : normGtin(req.body.gtin);
       if (gtin === undefined) return res.status(400).json({ error: 'gtin must be a GTIN-8, 12, 13 or 14 with a valid check digit', code: 'INVALID_GTIN' });
+      // Custom back-half (Pro and up): charset, not a route, not taken. The primary key settles races (23505 → 409).
+      const customSlug = req.body.slug;
+      if (customSlug !== undefined && customSlug !== '') {
+        if (typeof customSlug !== 'string' || !CUSTOM_SLUG_RE.test(customSlug)) return res.status(400).json({ error: 'A custom back-half is 3–40 letters, digits or dashes', code: 'INVALID_SLUG' });
+        if (isReservedSlug(customSlug)) return res.status(400).json({ error: `"${customSlug}" is reserved. Pick another back-half.`, code: 'RESERVED_SLUG' });
+      }
+      const tags = normTags(req.body.tags);
       // Guest pages, events and GS1 codes only exist as dynamic codes; every other type can be either.
       const is_dynamic = type === 'page' || type === 'event' || !!gtin || requestedDynamic !== false;
       const uid = user.uid;
@@ -1054,10 +1061,16 @@ async function startServer() {
         return res.status(403).json({ error: 'Scan limits require Pro plan', code: 'FEATURE_SCAN_LIMIT' });
       }
 
+      if (customSlug && !license.limits.custom_slug) {
+        return res.status(403).json({ error: 'Custom back-halves need the Pro plan or above', code: 'FEATURE_CUSTOM_SLUG' });
+      }
+      if (customSlug && !is_dynamic) return res.status(400).json({ error: 'Only dynamic codes and links have a back-half' });
+      if (customSlug && await row('qr_codes', 'slug', customSlug)) return res.status(409).json({ error: 'That back-half is taken', code: 'SLUG_TAKEN' });
+
       // 2. Slug Generation
       let slug;
       try {
-        slug = await createUniqueSlug();
+        slug = customSlug || await createUniqueSlug();
         logger.info(`Successfully generated unique slug: ${slug}`);
       } catch (err: any) {
         logger.error('Slug generation failed', { error: err.message });
@@ -1080,6 +1093,7 @@ async function startServer() {
         // Only written when not the default, so plain creates keep working before migration 005.
         ...(kind === 'link' ? { kind } : {}),
         ...(gtin ? { gtin } : {}),
+        ...(tags?.length ? { tags } : {}),
         // Only written when set, so creates keep working before migration 004 adds the column.
         ...(typeof client === 'string' && client.trim() ? { client: client.trim().slice(0, 60) } : {}),
         content_data: content_data || null,
@@ -1107,6 +1121,7 @@ async function startServer() {
       };
 
       const { error: qrErr } = await supabase.from('qr_codes').insert(qrDoc);
+      if (qrErr?.code === '23505' && customSlug && !String(qrErr.message).includes('gtin')) return res.status(409).json({ error: 'That back-half is taken', code: 'SLUG_TAKEN' });
       if (qrErr?.code === '23505' && gtin) return res.status(409).json({ error: 'This GTIN is already used by another code', code: 'GTIN_TAKEN' });
       if (qrErr) throw new Error(`Database save failed: ${qrErr.message}`);
       const { error: statsErr } = await supabase.from('qr_stats').insert({ slug, ...statsDoc });
@@ -1128,7 +1143,11 @@ async function startServer() {
   app.get('/api/qr', authenticate, async (req, res) => {
     try {
       const uid = (req as any).user.uid;
-      const mine = await rows('qr_codes', 'user_uid', uid);
+      // Optional filters: ?kind=qr|link, ?qr_type=page, ?tag=menu, ?folder=<client>.
+      const q = req.query as Record<string, string>;
+      const mine = (await rows('qr_codes', 'user_uid', uid)).filter(r =>
+        (!q.kind || (r.kind || 'qr') === q.kind) && (!q.qr_type || (r.qr_type || 'url') === q.qr_type)
+        && (!q.tag || (r.tags || []).includes(String(q.tag).toLowerCase())) && (!q.folder || r.client === q.folder));
       const statsMap: Record<string, any> = {};
       for (const st of await statsFor(mine.map(q => q.slug))) statsMap[st.slug] = st;
       const qrs = mine.map(q => ({ id: q.slug, ...publicQr(q), stats: statsMap[q.slug] || null }));
@@ -1137,6 +1156,53 @@ async function startServer() {
     } catch (error: any) {
       logger.error('QR list error:', error);
       res.status(500).json({ error: 'Failed to list QR codes' });
+    }
+  });
+
+  // Select mode: one action on many codes. Ownership is checked per slug; every changed code is purged at the edge.
+  app.post('/api/qr/bulk', writeLimiter, authenticate, async (req, res) => {
+    try {
+      const uid = (req as any).user.uid;
+      const { slugs, action, value } = req.body || {};
+      if (!Array.isArray(slugs) || !slugs.length || slugs.length > 500 || !slugs.every(x => typeof x === 'string')) {
+        return res.status(400).json({ error: 'slugs must be 1–500 slugs' });
+      }
+      if (!['folder', 'tag', 'untag', 'activate', 'deactivate', 'delete'].includes(action)) {
+        return res.status(400).json({ error: 'action must be folder, tag, untag, activate, deactivate or delete' });
+      }
+      const { data: owned, error } = await supabase.from('qr_codes').select('*').eq('user_uid', uid).in('slug', slugs);
+      if (error) throw error;
+      const tag = normTags([value])?.[0];
+      if ((action === 'tag' || action === 'untag') && !tag) return res.status(400).json({ error: 'value must be a tag' });
+      const limits = action === 'activate' ? (await getLicense(uid)).limits : null;
+      const done: string[] = [], failed: { slug: string; error: string }[] = slugs.filter(sl => !owned!.some(o => o.slug === sl)).map(sl => ({ slug: sl, error: 'not found' }));
+      for (const qr of owned || []) {
+        let patch: any = null;
+        if (action === 'folder') patch = { client: typeof value === 'string' && value.trim() ? value.trim().slice(0, 60) : null };
+        if (action === 'tag') patch = { tags: normTags([...(qr.tags || []), tag]) };
+        if (action === 'untag') patch = { tags: (qr.tags || []).filter((t: string) => t !== tag) };
+        if (action === 'deactivate') patch = { is_active: false };
+        if (action === 'activate' && qr.is_active === false) {
+          // One at a time, so each activation counts the ones before it against the caps.
+          const capped = await capError(uid, limits!, qr);
+          if (capped) { failed.push({ slug: qr.slug, error: capped.code }); continue; }
+          patch = { is_active: true };
+        }
+        if (action === 'delete') {
+          const { error: e } = await supabase.from('qr_codes').delete().eq('slug', qr.slug);
+          if (e) { failed.push({ slug: qr.slug, error: 'failed' }); continue; }
+          if (qr.gtin) purgeEdge(`gs1:${qr.gtin}`);
+        } else if (patch) {
+          const { error: e } = await supabase.from('qr_codes').update({ ...patch, updated_at: nowIso() }).eq('slug', qr.slug);
+          if (e) { failed.push({ slug: qr.slug, error: 'failed' }); continue; }
+        }
+        done.push(qr.slug);
+      }
+      await Promise.all(done.map(purgeEdge));
+      res.json({ done, failed });
+    } catch (error: any) {
+      logger.error('Bulk action error:', { message: error.message });
+      res.status(500).json({ error: 'Bulk action failed' });
     }
   });
 
@@ -1169,6 +1235,10 @@ async function startServer() {
       const { destination_url, title, style, is_active, options, content_data, client } = req.body;
       const updateData: any = {};
       if (client !== undefined) updateData.client = typeof client === 'string' && client.trim() ? client.trim().slice(0, 60) : null;
+      if (req.body.tags !== undefined) {
+        updateData.tags = normTags(req.body.tags);
+        if (!updateData.tags) return res.status(400).json({ error: 'tags must be an array of strings' });
+      }
       if (content_data !== undefined) {
         if (JSON.stringify(content_data).length > CONTENT_MAX) {
           return res.status(400).json({ error: 'content_data is too large (max 20 KB)' });
@@ -1737,6 +1807,7 @@ async function startServer() {
         qr_type: qr.qr_type || 'url',
         content_data: qr.qr_type && qr.qr_type !== 'url' ? qr.content_data || {} : undefined,
         slug: qr.slug,
+        utm: (qr.qr_type || 'url') === 'url' ? qr.content_data?.utm : undefined, // appended on redirect; existing params win
         app: (qr.qr_type || 'url') === 'url' && qr.content_data?.kind === 'app' ? qr.content_data.app : undefined, // device picks the store
         branding: !license.limits.remove_branding, // "Made with Scnr" on Free guest pages
         owner_plan: license.effectivePlan,
@@ -1808,7 +1879,7 @@ async function startServer() {
       if (rendered?.kind === 'redirect') return res.redirect(302, rendered.location);
       if (rendered?.kind === 'html') return res.type('html').send(rendered.body);
 
-      const destination = appTarget(qrData.content_data?.app, req.headers['user-agent'] || '') || qrData.destination_url;
+      const destination = withUtm(appTarget(qrData.content_data?.app, req.headers['user-agent'] || '') || qrData.destination_url, qrData.content_data?.utm);
       if (!destination) {
         return res.status(404).send('Destination not found');
       }

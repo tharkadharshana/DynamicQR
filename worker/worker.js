@@ -1,5 +1,6 @@
 // Guest pages + vCard/Text/Email/Wi-Fi rendering, shared with the dev server (Wrangler bundles the TS import).
 import { renderGuestPage, pickLang, appTarget, FILE_TYPES, blockTarget, pageVcard } from '../src/lib/guestPage';
+import { RESERVED_SLUGS, withUtm } from '../src/lib/qrContent';
 
 // Small branded HTML page for every non-redirect outcome. Never show a bare error on a printed code.
 const page = (title, bodyHtml, status, accent = '#E85D3A') => new Response(`<!DOCTYPE html>
@@ -57,11 +58,8 @@ export default {
       slug = resolved;
     }
 
-    // Known frontend routes - always pass through to the origin
-    const FRONTEND_ROUTES = new Set([
-      '', 'create', 'edit', 'analytics', 'settings', 'billing',
-      'login', 'legal', 'pricing', 'api-docs', 'pages', 'kit', 'bulk'
-    ]);
+    // Known frontend routes always pass through to the origin (one list, shared with the server's back-half check).
+    const FRONTEND_ROUTES = RESERVED_SLUGS;
 
     // 1. Internal / Hidden Routes
     if (slug === 'internal' && url.pathname.startsWith('/internal/purge/')) {
@@ -73,8 +71,8 @@ export default {
       return new Response('Purged', { status: 200 });
     }
 
-    // Our nanoid alphabet, 5-12 chars.
-    const isSlug = !!gs1 || !FRONTEND_ROUTES.has(slug) && /^[23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ]{5,12}$/.test(slug);
+    // Generated slugs (nanoid alphabet, 7 chars) and custom back-halves (3–40 letters, digits, dashes).
+    const isSlug = !!gs1 || !FRONTEND_ROUTES.has(slug.toLowerCase()) && /^[A-Za-z0-9-]{3,40}$/.test(slug);
     // A customer's custom short domain (Team) only serves codes; anything else goes to the main site.
     if (!isSlug && env.MAIN_HOST && url.host !== env.MAIN_HOST) {
       return Response.redirect(`https://${env.MAIN_HOST}${url.pathname}${url.search}`, 302);
@@ -82,7 +80,7 @@ export default {
 
     // 2. Pass through: empty path, known frontend routes, static files, api calls
     if (
-      FRONTEND_ROUTES.has(slug) ||
+      FRONTEND_ROUTES.has(slug.toLowerCase()) ||
       slug.includes('.') ||
       slug.startsWith('api') ||
       slug.startsWith('internal') ||
@@ -92,7 +90,7 @@ export default {
       return fetch(request);
     }
 
-    // Validate it looks like a QR slug (our nanoid alphabet, 5-12 chars)
+    // Validate it looks like a QR slug
     if (!isSlug) {
       return fetch(request);
     }
@@ -291,6 +289,6 @@ export default {
     if (rendered?.kind === 'redirect') {
       return new Response(null, { status: 302, headers: { Location: rendered.location } });
     }
-    return Response.redirect(appTarget(config.app, ua) || config.destination_url, 302);
+    return Response.redirect(withUtm(appTarget(config.app, ua) || config.destination_url, config.utm), 302);
   }
 };

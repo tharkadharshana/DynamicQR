@@ -48,6 +48,7 @@ create table if not exists public.qr_codes (
   qr_type             text not null default 'url',
   kind                text not null default 'qr' check (kind in ('qr', 'link')),  -- 'link' = short link (migration 005)
   gtin                text,  -- GS1 GTIN-14, unique when set (migration 006)
+  tags                text[] not null default '{}',  -- lower-case labels (migration 008)
   is_dynamic          boolean not null default true,
   is_active           boolean not null default true,
   content_data        jsonb default '{}'::jsonb,
@@ -63,6 +64,7 @@ create table if not exists public.qr_codes (
 );
 
 create index if not exists qr_codes_user_uid_idx on public.qr_codes(user_uid);
+create index if not exists qr_codes_tags_idx on public.qr_codes using gin (tags);
 create unique index if not exists qr_codes_gtin_key on public.qr_codes(gtin) where gtin is not null;
 
 alter table public.qr_codes enable row level security;
