@@ -174,21 +174,24 @@ export const DEFAULT_ADDONS: UserAddons = {
 
 const n = (x: number) => x.toLocaleString('en-US');
 
-/** The feature list every pricing surface shows, generated from PLANS so there is no second copy. */
+/**
+ * The feature list every pricing surface shows, generated from PLANS so there is no second copy.
+ * ponytail: lists shipped features only. Add short links (Phase 8), forms (Phase 9), and workspaces
+ * and webhooks (Phase 11) here when each ships; pricing must never claim what the app can't do yet.
+ */
 export function planFeatures(plan: PlanId): string[] {
   const l = PLANS[plan];
   return [
     plan === 'free' ? `${l.qr_codes} QR codes in total (${l.dynamic_qr_codes} dynamic)` : `${n(l.dynamic_qr_codes)} dynamic QR codes in total`,
-    `${n(l.short_links)} short links, ${n(l.pages)} page${l.pages === 1 ? '' : 's'}${l.forms ? `, ${n(l.forms)} forms` : ''}`,
+    `${n(l.pages)} hosted page${l.pages === 1 ? '' : 's'}`,
     `${n(l.monthly_scans)} scans per month`,
     `${l.analytics_days >= 365 ? `${l.analytics_days / 365} year${l.analytics_days === 365 ? '' : 's'}` : `${l.analytics_days} days`} of analytics`,
     'Colours, shapes and logo',
     ...(l.password_protect ? ['PIN, expiry, scan limits and Visitor Guard'] : []),
     ...(l.remove_branding ? ['No Scnr branding'] : []),
     ...(l.custom_domains ? [`${l.custom_domains} custom domain${l.custom_domains === 1 ? '' : 's'}`] : []),
-    ...(l.seats > 1 ? [`${l.seats} team members${l.workspaces > 1 ? `, ${l.workspaces} workspaces` : ''}`] : []),
+    ...(l.seats > 1 ? [`${l.seats} team members`] : []),
     ...(l.api_access ? ['API, bulk create and CSV export'] : []),
-    ...(l.webhooks ? ['Webhooks'] : []),
   ];
 }
 
@@ -207,6 +210,6 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('plans.ts')) {
   assert(PLANS.free.analytics_days === 90 && PLANS.free.forms === 0 && PLANS.business.workspaces === 10, 'table values');
   assert(planFeatures('free')[0] === '3 QR codes in total (1 dynamic)', planFeatures('free')[0]);
   assert(planFeatures('free')[3] === '90 days of analytics' && planFeatures('team')[3] === '2 years of analytics', 'history wording');
-  assert(planFeatures('business').includes('Webhooks') && !planFeatures('team').includes('Webhooks'), 'webhooks');
+  assert(planFeatures('business').includes('25 team members') && !planFeatures('pro').some(f => f.includes('team members')), 'seats');
   console.log('plans self-check ok');
 }

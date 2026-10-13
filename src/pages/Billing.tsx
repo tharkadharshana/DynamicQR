@@ -10,7 +10,7 @@ import { SITE, waLink } from '../lib/site';
 const ORDER: PlanId[] = ['free', ...PAID_PLANS];
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const ROWS: [string, keyof PlanLimits][] = [
-  ['QR codes in total', 'qr_codes'], ['Dynamic codes', 'dynamic_qr_codes'], ['Short links', 'short_links'], ['Pages', 'pages'], ['Forms', 'forms'],
+  ['QR codes in total', 'qr_codes'], ['Dynamic codes', 'dynamic_qr_codes'], ['Pages', 'pages'],
   ['Scans per month', 'monthly_scans'], ['History (days)', 'analytics_days'], ['Custom domains', 'custom_domains'], ['Seats', 'seats'],
 ];
 

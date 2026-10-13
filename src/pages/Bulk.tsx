@@ -55,8 +55,8 @@ export default function Bulk() {
       <div className="content" style={{ padding: '28px' }}>
         <div className="card" style={{ maxWidth: '560px' }}>
           <div className="card-title">Bulk create</div>
-          <p style={{ fontSize: '13px', color: 'var(--text3)' }}>Create many codes from a CSV file and print them as one sheet. Available on the Team plan.</p>
-          <button className="btn btn-primary btn-sm" style={{ marginTop: '12px' }} onClick={() => navigate('/billing')}>See Team plan →</button>
+          <p style={{ fontSize: '13px', color: 'var(--text3)' }}>Create many codes from a CSV file and print them as one sheet. Available on the Team and Business plans.</p>
+          <button className="btn btn-primary btn-sm" style={{ marginTop: '12px' }} onClick={() => navigate('/billing')}>See plans →</button>
         </div>
       </div>
     );
