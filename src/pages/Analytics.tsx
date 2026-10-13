@@ -8,6 +8,7 @@ import { supabase } from '../supabase';
 import { apiFetch, formatNumber } from '../lib/api';
 import { shortHost } from '../lib/qrContent';
 import QRViewerModal from '../components/QRViewerModal';
+import { TrackingCards } from '../components/GeoMap';
 
 const COLORS = ['#1A1916', '#E85D3A', '#4D9EFF', '#3DCC7E', '#9B7FFF', '#F5A623', '#D0021B'];
 
@@ -566,6 +567,10 @@ export default function Analytics() {
             </div>
           </div>
         )}
+
+        {userId && (selectedSlugs.length === 1
+          ? <TrackingCards base={`/api/analytics/${selectedSlugs[0]}`} />
+          : <TrackingCards base={`/api/analytics/account/${userId}`} query={selectedSlugs.length > 1 ? `?slugs=${selectedSlugs.join(',')}` : ''} />)}
 
         {/* Recent Scans Table */}
         <div className="card">

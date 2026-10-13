@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../supabase';
 import { apiFetch } from '../lib/api';
 import { shortHost } from '../lib/qrContent';
+import { TrackingCards } from '../components/GeoMap';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -248,6 +249,8 @@ export default function AccountAnalytics() {
             </div>
           </div>
         </div>
+
+        {userId && <TrackingCards base={`/api/analytics/account/${userId}`} query={only && '?' + only} />}
 
         {/* Per-QR breakdown */}
         <div className="card">
