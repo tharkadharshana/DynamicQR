@@ -8,6 +8,7 @@ import { useUI } from '../shared/UIContext';
 import { getQRContent, stylingOptions, resizeLogo, SHORT_DOMAIN, shortHost, buildDestination, SOCIALS, gtinValid, FRAME_TEXTS, DOT_STYLES, normDotStyle, slugProblem, CUSTOM_SLUG_RE, isReservedSlug, normTags, withUtm } from '../lib/qrContent';
 import { waLink } from '../lib/site';
 import { downloadQR } from '../components/QRViewerModal';
+import { DEVICES, OSES, rulesError, appRules, type Rule } from '../lib/routing';
 
 const PREVIEW_SIZE = 180;
 const DEFAULT_STYLE: any = { dot_color: '#1A1916', bg_color: '#FFFFFF', dot_style: 'square', corner_style: 'square', error_correction: 'M', output_size: 400, logo_url: '' };
@@ -22,7 +23,32 @@ const DERIVED_KINDS = ['pdf', 'google_review', 'phone', 'sms', 'location', ...Ob
 const DYNAMIC_ONLY = ['gs1', 'event', 'app'];
 const UTM_FIELDS = ['source', 'medium', 'campaign', 'term', 'content'];
 
-/** A custom back-half's problem in plain words, or '' when it is fine (the server checks the same rules). */
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const PRO_CHIP = <span className="chip" style={{ background: 'var(--amber-ll)', color: 'var(--amber)', fontSize: '10px' }}>PRO</span>;
+const toggleIn = (list: any[] = [], v: any) => list.includes(v) ? list.filter(x => x !== v) : [...list, v];
+// Countries and languages are typed as "LK, IN"; empty entries are kept while typing and dropped on save.
+const splitList = (v: string) => v.split(',').map(x => x.trim());
+const cleanRules = (rules: Rule[] = []): Rule[] => rules.map(({ if: c = {}, url }) => ({
+  url: (url || '').trim(),
+  if: Object.fromEntries(Object.entries({
+    ...c,
+    country: c.country?.filter(Boolean).map(x => x.toUpperCase()),
+    lang: c.lang?.filter(Boolean).map(x => x.toLowerCase()),
+  }).filter(([, v]) => Array.isArray(v) ? v.length : v)),
+}));
+
+function Checks({ options, value = [], labels, onChange }: { options: any[]; value?: any[]; labels?: string[]; onChange: (v: any[]) => void }) {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', fontSize: '13px' }}>
+      {options.map((o, i) => (
+        <label key={o} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <input type="checkbox" checked={value.includes(o)} onChange={() => onChange(toggleIn(value, o))} />{labels?.[i] || o}
+        </label>
+      ))}
+    </div>
+  );
+}
+
 
 export default function CreateQR() {
   const { id } = useParams();
@@ -161,6 +187,13 @@ export default function CreateQR() {
   const cd = formData.content_data || {};
   // The Worker adds UTM tags on redirect, so they only apply to dynamic codes that open a web page.
   const showUtm = isUrlKind && isDynamic && !['phone', 'sms'].includes(qrType);
+  // Smart routing and GPS work on dynamic URL codes; the App store type is a fixed preset of rules.
+  const showGps = isUrlKind && isDynamic;
+  const showRouting = showGps && qrType !== 'app';
+  const rules: Rule[] = Array.isArray(cd.rules) ? cd.rules : [];
+  const setRules = (r: Rule[]) => setCd({ rules: r });
+  const setRule = (i: number, patch: any) => setRules(rules.map((r, j) => j === i ? { ...r, ...patch, if: { ...r.if, ...patch.if } } : r));
+  const moveRule = (i: number, d: number) => { const r = [...rules]; [r[i], r[i + d]] = [r[i + d], r[i]]; setRules(r); };
   const addTag = (t: string) => { setFormData(f => ({ ...f, tags: normTags([...f.tags, t]) || f.tags })); setTagInput(''); };
   const setCd = (patch: any) => setFormData(f => ({ ...f, content_data: { ...f.content_data, ...patch } }));
   const setStyle = (patch: any) => setFormData(f => ({ ...f, style: { ...f.style, ...patch } }));
@@ -221,6 +254,10 @@ export default function CreateQR() {
       return;
     }
 
+    const cleaned = showRouting ? cleanRules(rules) : qrType === 'app' && !locked('smart_routing') ? appRules(cd.app) : [];
+    const ruleErr = rulesError(cleaned);
+    if (ruleErr) { showToast('error', `Smart routing: ${ruleErr}`); return; }
+
     const slug = !id && isDynamic ? formData.slug.trim() : '';
     if (slugProblem(slug)) { showToast('error', slugProblem(slug)); return; }
 
@@ -235,7 +272,8 @@ export default function CreateQR() {
       ...(id ? {} : { slug }),
       qr_type: dbType,
       destination_url: dest,
-      content_data: { ...formData.content_data, kind, utm: showUtm && Object.keys(utm).length ? utm : undefined },
+      content_data: { ...formData.content_data, kind, utm: showUtm && Object.keys(utm).length ? utm : undefined,
+        rules: cleaned.length ? cleaned : undefined, gps: showGps && cd.gps === true ? true : undefined },
       is_dynamic: isDynamic,
       // On edit, null clears a GTIN when the code stops being a GS1 code.
       ...(qrType === 'gs1' ? { gtin } : id ? { gtin: null } : {}),
@@ -843,6 +881,20 @@ export default function CreateQR() {
                 </details>
               )}
 
+              {showGps && (
+                <div className="toggle-wrap" style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ fontWeight: 500 }}>GPS tracking (opt-in)</div>
+                      {locked('gps_tracking') && PRO_CHIP}
+                    </div>
+                    <div style={{ fontSize: '13px', color: 'var(--text3)' }}>Scanners are asked once for their approximate location and can say no. Their scans show on your map.</div>
+                  </div>
+                  <button aria-label="GPS tracking" className={`toggle ${cd.gps ? 'on' : ''}`}
+                    onClick={() => locked('gps_tracking') && !cd.gps ? navigate('/billing') : setCd({ gps: !cd.gps || undefined })}></button>
+                </div>
+              )}
+
               <div className="toggle-wrap" style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -909,6 +961,49 @@ export default function CreateQR() {
                 </div>
               )}
             </div>
+
+            {showRouting && (
+              <div className="card mb16">
+                <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>Smart routing {locked('smart_routing') && PRO_CHIP}</div>
+                <div style={{ fontSize: '13px', color: 'var(--text3)', margin: '8px 0 12px' }}>
+                  Send scanners to a different link by device, country, language or time (Sri Lanka time). The first matching rule wins; everyone else goes to the destination above. Leave a condition empty to match anyone.
+                </div>
+                {rules.map((r, i) => (
+                  <div key={i} style={{ border: '1px solid var(--border)', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                    <div className="section-row" style={{ marginBottom: '8px' }}>
+                      <span style={{ fontWeight: 500 }}>Rule {i + 1}</span>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button type="button" className="btn btn-ghost btn-sm" aria-label="Move rule up" disabled={i === 0} onClick={() => moveRule(i, -1)}>↑</button>
+                        <button type="button" className="btn btn-ghost btn-sm" aria-label="Move rule down" disabled={i === rules.length - 1} onClick={() => moveRule(i, 1)}>↓</button>
+                        <button type="button" className="btn btn-ghost btn-sm" aria-label="Remove rule" onClick={() => setRules(rules.filter((_, j) => j !== i))}>×</button>
+                      </div>
+                    </div>
+                    <div className="form-section"><label className="form-label">Device</label>
+                      <Checks options={DEVICES} value={r.if?.device} onChange={v => setRule(i, { if: { device: v } })} /></div>
+                    <div className="form-section"><label className="form-label">Operating system</label>
+                      <Checks options={OSES} value={r.if?.os} onChange={v => setRule(i, { if: { os: v } })} /></div>
+                    <div className="grid-2">
+                      <div className="form-section"><label className="form-label" htmlFor={`rule-country-${i}`}>Countries <span style={{ color: 'var(--text3)', fontWeight: 'normal' }}>(e.g. LK, IN)</span></label>
+                        <input id={`rule-country-${i}`} className="form-input" value={(r.if?.country || []).join(', ')} onChange={(e) => setRule(i, { if: { country: splitList(e.target.value) } })} /></div>
+                      <div className="form-section"><label className="form-label" htmlFor={`rule-lang-${i}`}>Languages <span style={{ color: 'var(--text3)', fontWeight: 'normal' }}>(e.g. si, ta, en)</span></label>
+                        <input id={`rule-lang-${i}`} className="form-input" value={(r.if?.lang || []).join(', ')} onChange={(e) => setRule(i, { if: { lang: splitList(e.target.value) } })} /></div>
+                    </div>
+                    <div className="form-section"><label className="form-label">Days</label>
+                      <Checks options={[0, 1, 2, 3, 4, 5, 6]} labels={DAYS} value={r.if?.days} onChange={v => setRule(i, { if: { days: v.sort() } })} /></div>
+                    <div className="grid-2">
+                      <div className="form-section"><label className="form-label" htmlFor={`rule-from-${i}`}>From</label>
+                        <input id={`rule-from-${i}`} type="time" className="form-input" value={r.if?.from || ''} onChange={(e) => setRule(i, { if: { from: e.target.value || undefined } })} /></div>
+                      <div className="form-section"><label className="form-label" htmlFor={`rule-to-${i}`}>To</label>
+                        <input id={`rule-to-${i}`} type="time" className="form-input" value={r.if?.to || ''} onChange={(e) => setRule(i, { if: { to: e.target.value || undefined } })} /></div>
+                    </div>
+                    <div className="form-section" style={{ marginBottom: 0 }}><label className="form-label" htmlFor={`rule-url-${i}`}>Send to *</label>
+                      <input id={`rule-url-${i}`} type="url" className="form-input" placeholder="https://..." value={r.url || ''} onChange={(e) => setRule(i, { url: e.target.value })} /></div>
+                  </div>
+                ))}
+                <button type="button" className="btn btn-ghost btn-sm" disabled={rules.length >= 20}
+                  onClick={() => locked('smart_routing') ? navigate('/billing') : setRules([...rules, { if: {}, url: '' }])}>+ Add rule</button>
+              </div>
+            )}
 
             {/* Visitor Guard */}
             <div className="card mb16">

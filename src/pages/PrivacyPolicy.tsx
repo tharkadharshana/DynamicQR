@@ -4,7 +4,7 @@ import { SITE } from '../lib/site';
 
 export default function PrivacyPolicy() {
   return (
-    <LegalLayout title="Privacy Policy" updated="11 October 2026">
+    <LegalLayout title="Privacy Policy" updated="13 October 2026">
       <p>This policy explains what {SITE.name} collects from account holders and from people who scan their QR codes, why, and what you can do about it.</p>
 
       <Section title="1. Account holders">
@@ -15,6 +15,8 @@ export default function PrivacyPolicy() {
       <Section title="2. People who scan a code">
         <p>A scan passes through our edge servers (Cloudflare). For each scan we record: the time, the country (from Cloudflare), the device type, operating system and browser (from the browser's user agent), the referring page if any, and whether this was the first scan of that code from that device today.</p>
         <p>To tell repeat scans apart we compute a one-way fingerprint from the IP address, user agent, the date and a secret. It changes every day and is kept only in our short-lived edge cache. <strong>We do not store raw IP addresses in our database.</strong> Our hosting provider's request logs may contain IP addresses for a short period for security and debugging.</p>
+        <p>We also store an approximate city (from the network, via Cloudflare) and the browser's preferred language with each scan.</p>
+        <p>Some codes ask for the scanner's approximate location. The code owner chooses to turn this on, and the browser then asks the scanner, who can refuse and still continue. If they agree, we round the coordinates to about 100 metres and store them with the scan. Only the code's owner can see them.</p>
         <p>We do not use cookies or tracking pixels on scan pages, and we do not sell or share scan data for advertising.</p>
       </Section>
 
