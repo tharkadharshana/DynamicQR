@@ -17,6 +17,7 @@ export interface PlanLimits {
   workspaces: number;
   bulk_create: boolean;   // CSV import + print sheet
   short_links: number;    // kind='link' rows; do not count against qr_codes
+  custom_slug: boolean;   // custom back-half on create (Phase 8)
   pages: number;          // qr_type='page' rows (also count as dynamic codes)
   forms: number;          // qr_type='form' rows (also count as dynamic codes)
   webhooks: boolean;
@@ -63,6 +64,7 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     workspaces: 1,
     bulk_create: false,
     short_links: 3,
+    custom_slug: false,
     pages: 1,
     forms: 0,
     webhooks: false,
@@ -87,6 +89,7 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     workspaces: 1,
     bulk_create: false,
     short_links: 100,
+    custom_slug: true,
     pages: 5,
     forms: 3,
     webhooks: false,
@@ -111,6 +114,7 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     workspaces: 1,
     bulk_create: true,
     short_links: 600,
+    custom_slug: true,
     pages: 50,
     forms: 20,
     webhooks: false,
@@ -135,6 +139,7 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     workspaces: 10,
     bulk_create: true,
     short_links: 2000,
+    custom_slug: true,
     pages: 400,
     forms: 100,
     webhooks: true,
@@ -178,18 +183,19 @@ const n = (x: number) => x.toLocaleString('en-US');
 
 /**
  * The feature list every pricing surface shows, generated from PLANS so there is no second copy.
- * ponytail: lists shipped features only. Add short links (Phase 8), forms (Phase 9), and workspaces,
+ * ponytail: lists shipped features only. Add forms (Phase 9), and workspaces,
  * webhooks and the domain count (Phase 11) here when each ships; pricing must never claim what the app can't do yet.
  */
 export function planFeatures(plan: PlanId): string[] {
   const l = PLANS[plan];
   return [
     plan === 'free' ? `${l.qr_codes} QR codes in total (${l.dynamic_qr_codes} dynamic)` : `${n(l.dynamic_qr_codes)} dynamic QR codes in total`,
-    `${n(l.pages)} hosted page${l.pages === 1 ? '' : 's'}`,
+    `${n(l.short_links)} short links, ${n(l.pages)} hosted page${l.pages === 1 ? '' : 's'}`,
     `${n(l.monthly_scans)} scans per month`,
     `${l.analytics_days >= 365 ? `${l.analytics_days / 365} year${l.analytics_days === 365 ? '' : 's'}` : `${l.analytics_days} days`} of analytics`,
     'Colours, shapes and logo',
     ...(l.password_protect ? ['PIN, expiry, scan limits and Visitor Guard'] : []),
+    ...(l.custom_slug ? ['Custom back-halves for links'] : []),
     ...(l.remove_branding ? ['No Scnr branding'] : []),
     // ponytail: one domain per account until Phase 11 lifts the route's "1 per account" check; then show the count.
     ...(l.custom_domains ? ['Your own short domain'] : []),
