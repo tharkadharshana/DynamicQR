@@ -100,7 +100,7 @@ export default function App() {
             {user ? (
               <Route path="/" element={<DynamicQRLayout planData={planData} />}>
                 <Route index element={<Dashboard />} />
-                <Route path="create" element={<CreateQR />} />
+                <Route path="create" element={<CreateQR key="create" />} />
                 <Route path="kit" element={<Kit />} />
                 <Route path="pages" element={<Pages />} />
                 <Route path="pages/new" element={<PageEditor />} />
@@ -108,7 +108,7 @@ export default function App() {
                 <Route path="bulk" element={<Bulk />} />
                 <Route path="api-docs" element={<ApiDocs />} />
                 <Route path="kit/print/:slug" element={<KitPrint />} />
-                <Route path="edit/:id" element={<CreateQR />} />
+                <Route path="edit/:id" element={<CreateQR key="edit" />} />
                 <Route path="analytics" element={<AccountAnalytics />} />
                 <Route path="analytics/:slug" element={<Analytics />} />
                 <Route path="billing" element={<Billing />} />

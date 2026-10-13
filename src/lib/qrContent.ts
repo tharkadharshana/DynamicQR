@@ -153,6 +153,41 @@ export function framedSvg(qrSvg: string, size: number, frame: { text?: string; c
     + `</svg>`;
 }
 
+// ── Short links (Phase 8) ─────────────────────────────────────────────────────
+// One list for the Worker (pass-through) and the server (custom back-halves), so a slug never shadows a route.
+export const RESERVED_SLUGS = new Set([
+  '', 'create', 'edit', 'kit', 'bulk', 'analytics', 'settings', 'billing', 'pricing', 'api-docs', 'login', 'logout',
+  'signup', 'legal', 'pages', 'forms', 'links', 'tools', 'whats-new', 'help', 'support', 'admin', 'account',
+  'dashboard', 'app', 'www', 'static', 'public', 'docs', 'blog', 'features', 'status',
+]);
+export const CUSTOM_SLUG_RE = /^[A-Za-z0-9-]{3,40}$/;
+/** A custom back-half that would collide with a route or a pass-through prefix (api*, internal*, assets*). */
+export const isReservedSlug = (s: string) => RESERVED_SLUGS.has(s.toLowerCase()) || /^(api|internal|assets)/i.test(s);
+/** The editor's message for a typed back-half, or '' when it is fine (or empty). */
+export const slugProblem = (s: string) =>
+  !s ? '' : !CUSTOM_SLUG_RE.test(s) ? 'Use 3–40 letters, numbers or dashes.' : isReservedSlug(s) ? `"${s}" is reserved. Pick another back-half.` : '';
+
+export const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'] as const;
+/** Append UTM tags from content_data.utm ({source, medium, …}); a parameter already in the URL wins. */
+export function withUtm(url: string, utm: any): string {
+  if (!utm || typeof utm !== 'object') return url;
+  let u: URL;
+  try { u = new URL(url); } catch { return url; }
+  if (!/^https?:$/.test(u.protocol)) return url;
+  let added = false;
+  for (const k of UTM_KEYS) {
+    const v = utm[k.slice(4)];
+    if (v && !u.searchParams.has(k)) { u.searchParams.set(k, String(v).slice(0, 100)); added = true; }
+  }
+  return added ? u.toString() : url; // untouched when nothing is added, so signed or unusual URLs stay byte-for-byte
+}
+
+/** Tags: lower-case, trimmed, unique, at most 10 of up to 30 characters; null when the input is not an array. */
+export function normTags(t: unknown): string[] | null {
+  if (!Array.isArray(t)) return null;
+  return [...new Set(t.map(x => String(x).trim().toLowerCase().replace(/[^\p{L}\p{N} _-]/gu, '').slice(0, 30)).filter(Boolean))].slice(0, 10);
+}
+
 /** Self-check: npx tsx src/lib/qrContent.ts */
 if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('qrContent.ts')) {
   const assert = (c: unknown, m: string) => { if (!c) { console.error('FAIL', m); process.exit(1); } };
@@ -174,5 +209,16 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('qrContent.ts'
   assert(f.includes('<svg x="6" y="6" width="100"') && f.includes('&lt;Menu&gt;') && !f.includes('<?xml'), 'frame wraps and escapes');
   assert(stylingOptions({ shape: 'circle', gradient_color: '#ff0000', dot_style: 'diamond' }, 'x', 10).dotsOptions.type === 'classy', 'legacy dot style');
   assert(stylingOptions({ shape: 'circle', gradient_color: '#ff0000' }, 'x', 10).shape === 'circle', 'circle');
+  assert(withUtm('https://a.lk/p?utm_source=keep&x=1', { source: 'qr', medium: 'print' }) === 'https://a.lk/p?utm_source=keep&x=1&utm_medium=print', 'utm keeps existing params');
+  assert(withUtm('https://example.com', { source: '' }) === 'https://example.com', 'utm: nothing added → unchanged');
+  assert(withUtm('tel:+94', { source: 'qr' }) === 'tel:+94' && withUtm('https://a.lk', null) === 'https://a.lk', 'utm only on http(s)');
+  assert(JSON.stringify(normTags([' Menu ', 'menu', 'A<b>', '', 1])) === '["menu","ab","1"]' && normTags('x') === null, 'tags');
+  assert(isReservedSlug('Pricing') && isReservedSlug('api-x') && !isReservedSlug('menu-2026') && CUSTOM_SLUG_RE.test('menu-2026') && !CUSTOM_SLUG_RE.test('a/b'), 'reserved slugs');
+  // ponytail: every top-level route in App.tsx must be reserved; read the file when run from the repo root.
+  const fs = (process as any).getBuiltinModule?.('node:fs');
+  if (fs?.existsSync('src/App.tsx')) {
+    const routes = [...fs.readFileSync('src/App.tsx', 'utf8').matchAll(/path="\/?([^"/:*]*)/g)].map((m: string[]) => m[1]);
+    for (const r of routes) assert(RESERVED_SLUGS.has(r), `App.tsx route "${r}" is not in RESERVED_SLUGS`);
+  }
   console.log('qrContent self-check ok');
 }
