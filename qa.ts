@@ -41,14 +41,16 @@
  *      (validation, edge redirect, QR content), white-label branding, CSV parser
  *  28. Plans v2: Business checkout (LKR, annual, USD), Business limits, Free caps on short links
  *      and pages (create and reactivate), links outside the QR cap, Free 90-day history, logo on Free
- *  29. Cleanup
+ *  29. Code types: URL builders, PDF signed upload + redirect + size cap, GS1 (store, 409, 400,
+ *      Worker /01/ path), event .ics, app-store routing by device, brand_style
+ *  30. Cleanup
  */
 import 'dotenv/config';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import worker from './worker/worker.js';
 import { waLink } from './src/lib/site.ts';
-import { getQRContent, setShortDomain } from './src/lib/qrContent.ts';
+import { getQRContent, setShortDomain, buildDestination, gtinValid } from './src/lib/qrContent.ts';
 import { csvToObjects } from './src/lib/csv.ts';
 
 // ─── config ──────────────────────────────────────────────────────────────────
@@ -681,7 +683,7 @@ async function run() {
       });
       const res: Response = await (worker as any).fetch(req, env, ctx);
       await Promise.allSettled(pending);
-      return { status: res.status, location: res.headers.get('location'), body: await res.text(), kv };
+      return { status: res.status, location: res.headers.get('location'), type: res.headers.get('content-type'), body: await res.text(), kv };
     };
     const mkQR = async (body: any) => {
       const r = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'url', is_dynamic: true, ...body }) });
@@ -1390,8 +1392,75 @@ async function run() {
     check('Short link redirects at the edge', w.status === 302 && w.location === 'https://example.com/l0', `status=${w.status} loc=${w.location}`);
   }
 
-  // ── 29. Cleanup ──────────────────────────────────────────────────────────────
-  section('29. Cleanup');
+  // ── 29. Code types and design: PDF, GS1, events, app links, brand style ──────
+  section('29. Code types — URL builders, PDF upload, GS1, event .ics, app routing, brand style');
+  {
+    await admin.from('profiles').update({ plan: 'pro', plan_expires_at: new Date(Date.now() + 30 * 86400000).toISOString(), is_trial: false }).eq('id', uid);
+    const mk = (body: any) => api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'url', is_dynamic: true, ...body }) });
+
+    check('URL builders: review, social, phone, location', buildDestination('google_review', { place_id: 'abc' }).endsWith('placeid=abc')
+      && buildDestination('instagram', { handle: '@x' }) === 'https://www.instagram.com/x' && buildDestination('phone', { phone: '+94 77' }) === 'tel:+9477'
+      && buildDestination('location', { address: 'Kandy' }) === 'https://maps.google.com/?q=Kandy');
+
+    // PDF: signed upload straight to Storage, then a URL code that redirects to the public file.
+    const big = await api('/api/files', { method: 'POST', token, body: JSON.stringify({ type: 'pdf', size: 21 * 1024 * 1024 }) });
+    check('Pro: 21 MB upload → 403 LIMIT_FILE_SIZE', big.status === 403 && big.body?.code === 'LIMIT_FILE_SIZE' && big.body?.limit_mb === 20, `status=${big.status}`);
+    const badType = await api('/api/files', { method: 'POST', token, body: JSON.stringify({ type: 'exe', size: 10 }) });
+    check('Upload of an unknown type → 400', badType.status === 400, `got ${badType.status}`);
+    const pdfBytes = Buffer.from('%PDF-1.4\n%QA\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
+    const up = await api('/api/files', { method: 'POST', token, body: JSON.stringify({ type: 'pdf', size: pdfBytes.length }) });
+    check('POST /api/files → 201 with a signed upload token', up.status === 201 && !!up.body?.token && up.body?.path?.startsWith(`${uid}/`), `status=${up.status} ${JSON.stringify(up.body)}`);
+    if (up.body?.token) {
+      const { error: upErr } = await admin.storage.from('files').uploadToSignedUrl(up.body.path, up.body.token, pdfBytes, { contentType: 'application/pdf' });
+      check('Signed upload to Storage succeeds', !upErr, upErr?.message);
+      const file = await fetch(up.body.publicUrl);
+      check('Public file URL serves the PDF', file.status === 200 && (file.headers.get('content-type') || '').includes('pdf'), `status=${file.status}`);
+      const pdfSlug = (await mk({ title: 'QA PDF', destination_url: up.body.publicUrl, content_data: { kind: 'pdf', file_url: up.body.publicUrl } })).body?.slug;
+      const w = await runWorker(`/${pdfSlug}`, { ua: 'QA-pdf' });
+      check('PDF code redirects to the uploaded file', w.status === 302 && w.location === up.body.publicUrl, `status=${w.status} loc=${w.location}`);
+    }
+
+    // GS1 Digital Link: a random valid GTIN-13 so parallel QA runs never collide.
+    const base = String(Date.now()).slice(-12).padStart(12, '7');
+    const gtin = [...'0123456789'].map(d => base + d).find(g => gtinValid(g))!;
+    const g1 = await mk({ title: 'QA GS1', destination_url: 'https://example.com/product', gtin, is_dynamic: false });
+    check('GS1 code → 201, stored as GTIN-14, forced dynamic', g1.status === 201 && g1.body?.gtin === gtin.padStart(14, '0') && g1.body?.is_dynamic === true, `status=${g1.status} ${JSON.stringify(g1.body)}`);
+    check('GS1 QR content is /01/<GTIN-14>', getQRContent({ ...g1.body, slug: g1.body?.slug }, 'https://s.lk') === `https://s.lk/01/${gtin.padStart(14, '0')}`);
+    const dup = await mk({ title: 'QA GS1 dup', destination_url: 'https://example.com/p2', gtin });
+    check('Same GTIN twice → 409 GTIN_TAKEN', dup.status === 409 && dup.body?.code === 'GTIN_TAKEN', `status=${dup.status}`);
+    const badG = await mk({ title: 'QA GS1 bad', destination_url: 'https://example.com/p3', gtin: gtin.slice(0, -1) + ((Number(gtin.slice(-1)) + 1) % 10) });
+    check('Wrong GTIN check digit → 400 INVALID_GTIN', badG.status === 400 && badG.body?.code === 'INVALID_GTIN', `status=${badG.status}`);
+    const wg = await runWorker(`/01/${gtin.padStart(14, '0')}/10/LOT7`, { ua: 'QA-gs1' });
+    check('Worker: /01/<gtin>/10/<batch> → 302 to the product', wg.status === 302 && wg.location === 'https://example.com/product', `status=${wg.status} loc=${wg.location}`);
+    const wb = await runWorker(`/01/${gtin.slice(0, -1)}${(Number(gtin.slice(-1)) + 1) % 10}`, { ua: 'QA-gs1-bad' });
+    check('Worker: bad check digit → 400 page', wb.status === 400, `got ${wb.status}`);
+    const gi = await api(`/internal/gs1/${gtin}`);
+    check('/internal/gs1 without the secret → 401', gi.status === 401, `got ${gi.status}`);
+
+    // Event: scanning downloads an .ics file.
+    const ev = await mk({ qr_type: 'event', title: 'QA event', content_data: { title: 'QA Launch', start: '2026-12-01T18:00', end: '2026-12-01T20:00', location: 'Colombo' } });
+    const we = await runWorker(`/${ev.body?.slug}`, { ua: 'QA-event' });
+    check('Event code → text/calendar with the VEVENT', we.status === 200 && (we.type || '').startsWith('text/calendar') && we.body.includes('SUMMARY:QA Launch') && we.body.includes('DTSTART:20261201T180000'), `status=${we.status} type=${we.type}`);
+
+    // App store: the device picks the store, everyone else gets the fallback.
+    const app = { ios: 'https://apps.apple.com/app/id123', android: 'https://play.google.com/store/apps/details?id=lk.qa' };
+    const ap = (await mk({ title: 'QA app', destination_url: 'https://example.com/app', content_data: { kind: 'app', app } })).body?.slug;
+    const ios = await runWorker(`/${ap}`, { ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)' });
+    const droid = await runWorker(`/${ap}`, { ua: 'Mozilla/5.0 (Linux; Android 14; Pixel 8)' });
+    const desk = await runWorker(`/${ap}`, { ua: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' });
+    check('App code: iPhone → App Store', ios.location === app.ios, `got ${ios.location}`);
+    check('App code: Android → Play Store', droid.location === app.android, `got ${droid.location}`);
+    check('App code: desktop → fallback URL', desk.location === 'https://example.com/app', `got ${desk.location}`);
+
+    // Saved brand style.
+    const brand = { dot_color: '#2B4A3A', bg_color: '#FFF8F2', dot_style: 'extra-rounded', shape: 'circle', frame: { text: 'Menu', color: '#2B4A3A' } };
+    const sv = await api('/api/user/profile', { method: 'PUT', token, body: JSON.stringify({ brand_style: brand }) });
+    const got = (await api('/api/user/plan', { token })).body?.profile?.brand_style;
+    check('brand_style persists', sv.status === 200 && got?.frame?.text === 'Menu' && got?.shape === 'circle', JSON.stringify(got));
+  }
+
+  // ── 30. Cleanup ──────────────────────────────────────────────────────────────
+  section('30. Cleanup');
   {
     const del = await api('/api/user/account', { method: 'DELETE', token });
     check('DELETE /api/user/account → 200', del.status === 200, `status=${del.status} ${JSON.stringify(del.body)}`);
@@ -1399,6 +1468,8 @@ async function run() {
     await sleep(1000);
     const { data: gone } = await admin.auth.admin.getUserById(uid);
     check('Auth user removed from Supabase', !gone?.user, `user still exists: ${gone?.user?.id}`);
+    const { data: left } = await admin.storage.from('files').list(uid);
+    check('Account delete removes the user\'s uploads', (left || []).length === 0, `left=${left?.length}`);
   }
 
   // ─── Results ──────────────────────────────────────────────────────────────────
