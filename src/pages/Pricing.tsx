@@ -1,74 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Check, X, Zap, Crown, Building2, Loader2, ExternalLink } from 'lucide-react';
+import { Check, Zap, Crown, Users, Building2, Loader2 } from 'lucide-react';
 import { apiFetch } from '../lib/api';
-import { formatPrice, Currency, BillingInterval } from '../lib/plans';
+import { formatPrice, planFeatures, PLANS, PAID_PLANS, GRACE_DAYS, Currency, BillingInterval, PlanId, PaidPlan } from '../lib/plans';
+import { SITE, waLink } from '../lib/site';
 import { startCheckout } from '../lib/checkout';
 import { useUI } from '../shared/UIContext';
 
-const PLANS = [
-  {
-    id: 'free',
-    name: 'Free',
-    price: 0,
-    cycle: 'forever',
-    description: 'Get started with basic QR codes',
-    icon: Zap,
-    gradient: 'from-zinc-500/20 to-zinc-600/5',
-    iconColor: 'text-zinc-400',
-    borderColor: 'border-white/[0.06]',
-    features: [
-      { text: '3 QR codes, 1 dynamic', included: true },
-      { text: '1,000 scans / month', included: true },
-      { text: '7-day statistics', included: true },
-      { text: 'Colours, shapes and logo', included: true },
-      { text: 'PIN, expiry and scan limits', included: false },
-    ],
-    cta: 'Current Plan',
-    ctaStyle: 'border border-white/[0.08] text-zinc-400 cursor-default',
-  },
-  {
-    id: 'pro',
-    name: 'Pro',
-    price: 7,
-    cycle: '/month',
-    description: 'For professionals & small teams',
-    icon: Crown,
-    gradient: 'from-violet-500/20 to-indigo-600/10',
-    iconColor: 'text-violet-400',
-    borderColor: 'border-violet-500/30',
-    badge: 'Most Popular',
-    features: [
-      { text: '100 QR codes, all dynamic', included: true },
-      { text: '75,000 scans / month', included: true },
-      { text: '12 months of statistics', included: true },
-      { text: 'PIN, expiry and scan limits', included: true },
-      { text: 'Visitor Guard settings', included: true },
-      { text: 'WhatsApp support', included: true },
-    ],
-    cta: 'Upgrade to Pro',
-    ctaStyle: 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40',
-  },
-  {
-    id: 'team',
-    name: 'Team',
-    price: 29,
-    cycle: '/month',
-    description: 'For growing businesses',
-    icon: Building2,
-    gradient: 'from-amber-500/20 to-orange-600/10',
-    iconColor: 'text-amber-400',
-    borderColor: 'border-amber-500/20',
-    features: [
-      { text: 'Everything in Pro', included: true },
-      { text: '600 QR codes', included: true },
-      { text: '500,000 scans / month', included: true },
-      { text: '24 months of statistics', included: true },
-    ],
-    cta: 'Upgrade to Team',
-    ctaStyle: 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-lg shadow-amber-500/20 hover:shadow-amber-500/35',
-  },
-];
+// Presentation only. Prices and features come from plans.ts.
+const ORDER: PlanId[] = ['free', ...PAID_PLANS];
+const CARDS: Record<PlanId, { name: string; description: string; icon: typeof Zap; gradient: string; iconColor: string; borderColor: string; badge?: string; ctaStyle: string }> = {
+  free: { name: 'Free', description: 'Get started with basic QR codes', icon: Zap, gradient: 'from-zinc-500/20 to-zinc-600/5', iconColor: 'text-zinc-400', borderColor: 'border-white/[0.06]', ctaStyle: 'border border-white/[0.08] text-zinc-400 cursor-default' },
+  pro: { name: 'Pro', description: 'For professionals and small shops', icon: Crown, gradient: 'from-violet-500/20 to-indigo-600/10', iconColor: 'text-violet-400', borderColor: 'border-violet-500/30', badge: 'Most Popular', ctaStyle: 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40' },
+  team: { name: 'Team', description: 'For growing businesses', icon: Users, gradient: 'from-amber-500/20 to-orange-600/10', iconColor: 'text-amber-400', borderColor: 'border-amber-500/20', ctaStyle: 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-lg shadow-amber-500/20 hover:shadow-amber-500/35' },
+  business: { name: 'Business', description: 'For chains, agencies and many locations', icon: Building2, gradient: 'from-emerald-500/20 to-teal-600/10', iconColor: 'text-emerald-400', borderColor: 'border-emerald-500/20', ctaStyle: 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/35' },
+};
+const years = (d: number) => d >= 365 ? `${d / 365} year${d === 365 ? '' : 's'}` : `${d} days`;
 
 export default function Pricing() {
   const [planData, setPlanData] = useState<any>(null);
@@ -87,11 +34,11 @@ export default function Pricing() {
       .catch(err => console.error('Failed to fetch plan:', err));
   }, []);
 
-  const handleUpgrade = async (planId: string) => {
+  const handleUpgrade = async (planId: PlanId) => {
     if (planId === 'free' || planId === currentPlan) return;
     setLoading(planId);
     try {
-      await startCheckout(planId as 'pro' | 'team', interval, currency, planData);
+      await startCheckout(planId, interval, currency, planData);
     } catch (err: any) {
       console.error('Checkout error:', err);
       showToast('error', err?.message || 'Could not start checkout');
@@ -125,15 +72,16 @@ export default function Pricing() {
       </div>
 
       {/* Plans Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-4xl mx-auto">
-        {PLANS.map(plan => {
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 max-w-6xl mx-auto">
+        {ORDER.map(id => {
+          const plan = CARDS[id];
           const Icon = plan.icon;
-          const isCurrentPlan = currentPlan === plan.id;
-          const isDowngrade = (currentPlan === 'team' && plan.id === 'pro') || (['pro', 'team'].includes(currentPlan) && plan.id === 'free');
+          const isCurrentPlan = currentPlan === id;
+          const isDowngrade = ORDER.indexOf(id) < ORDER.indexOf(currentPlan);
 
           return (
             <div
-              key={plan.id}
+              key={id}
               className={`relative rounded-2xl bg-gradient-to-br ${plan.gradient} border ${plan.borderColor} p-6 flex flex-col ${
                 plan.badge ? 'ring-1 ring-violet-500/30' : ''
               }`}
@@ -156,45 +104,41 @@ export default function Pricing() {
               <p className="text-xs text-zinc-500 mb-4">{plan.description}</p>
 
               <div className="flex items-baseline gap-0.5 mb-5">
-                <span className="text-3xl font-bold text-white">{plan.id === 'free' ? 'Free' : formatPrice(plan.id as 'pro' | 'team', currency, interval)}</span>
-                <span className="text-sm text-zinc-500">{plan.id === 'free' ? plan.cycle : interval === 'annual' ? '/year' : '/month'}</span>
+                <span className="text-3xl font-bold text-white">{id === 'free' ? 'Free' : formatPrice(id as PaidPlan, currency, interval)}</span>
+                <span className="text-sm text-zinc-500">{id === 'free' ? 'forever' : interval === 'annual' ? '/year' : '/month'}</span>
               </div>
 
               <ul className="flex-1 space-y-2.5 mb-6">
-                {plan.features.map(feat => (
-                  <li key={feat.text} className="flex items-center gap-2.5">
-                    {feat.included ? (
-                      <div className="w-4 h-4 rounded-full bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
-                        <Check className="w-2.5 h-2.5 text-emerald-400" />
-                      </div>
-                    ) : (
-                      <div className="w-4 h-4 rounded-full bg-white/[0.04] flex items-center justify-center flex-shrink-0">
-                        <X className="w-2.5 h-2.5 text-zinc-600" />
-                      </div>
-                    )}
-                    <span className={`text-xs ${feat.included ? 'text-zinc-300' : 'text-zinc-600'}`}>{feat.text}</span>
+                {planFeatures(id).map(text => (
+                  <li key={text} className="flex items-center gap-2.5">
+                    <div className="w-4 h-4 rounded-full bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
+                      <Check className="w-2.5 h-2.5 text-emerald-400" />
+                    </div>
+                    <span className="text-xs text-zinc-300">{text}</span>
                   </li>
                 ))}
               </ul>
 
               <button
-                onClick={() => handleUpgrade(plan.id)}
-                disabled={isCurrentPlan || isDowngrade || loading === plan.id}
+                onClick={() => handleUpgrade(id)}
+                disabled={isCurrentPlan || isDowngrade || loading === id}
                 className={`w-full py-2.5 rounded-lg text-sm font-medium transition-all disabled:opacity-50 ${
                   isCurrentPlan
                     ? 'border border-white/[0.08] text-zinc-500 cursor-default'
                     : plan.ctaStyle
                 }`}
               >
-                {loading === plan.id ? (
+                {loading === id ? (
                   <span className="flex items-center justify-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin" />
                     Processing...
                   </span>
                 ) : isCurrentPlan ? (
                   'Current Plan'
+                ) : id === 'free' ? (
+                  'Free forever'
                 ) : (
-                  plan.cta
+                  `Upgrade to ${plan.name}`
                 )}
               </button>
             </div>
@@ -206,17 +150,25 @@ export default function Pricing() {
       <div className="mt-12 max-w-2xl mx-auto">
         <h2 className="text-sm font-semibold text-white text-center mb-6">Frequently Asked Questions</h2>
         <div className="space-y-3">
-          {[
-            { q: 'Can I change plans anytime?', a: 'Yes. Upgrade or downgrade anytime. Changes take effect immediately.' },
-            { q: 'What happens when a plan ends?', a: 'Nothing is deleted. All codes keep working for 30 days. After that, dynamic codes above the Free plan pause until you upgrade again — the printed link stays the same.' },
-            { q: 'Do you offer refunds?', a: 'Yes, a full refund within 7 days of your first payment. See the Refund Policy.' },
-            { q: 'What payment methods do you accept?', a: 'LKR: cards and local bank payments through PayHere. USD: international cards.' },
-            { q: 'Is this a payment QR?', a: 'No. Scnr makes marketing, menu and campaign codes. It does not replace LANKAQR.' },
-          ].map(faq => (
-            <div key={faq.q} className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4">
-              <h3 className="text-sm font-medium text-zinc-200 mb-1">{faq.q}</h3>
-              <p className="text-xs text-zinc-500">{faq.a}</p>
-            </div>
+          {([
+            ['Is the free plan really free?', `Yes. No card needed. You get ${PLANS.free.qr_codes} QR codes in total, ${PLANS.free.dynamic_qr_codes} of them dynamic, and the plan never expires.`],
+            ['Do my QR codes expire?', 'No. Static codes work forever. Dynamic codes keep working while your plan is active.'],
+            ['What happens if I stop paying?', `Nothing is deleted. After a ${GRACE_DAYS}-day grace period, dynamic codes above your plan's allowance pause. Upgrading again un-pauses them, and the printed code stays the same.`],
+            ['Are there ads on my codes?', 'No ads. On Free, hosted pages show a small Scnr badge. Paid plans remove it.'],
+            ['Are static QR codes unlimited?', `Static codes encode the destination directly and never stop working. They do count towards your plan's QR code cap, which covers static and dynamic codes in total (${PLANS.free.qr_codes} in total on Free).`],
+            ['Can I cancel any time?', 'Yes. Your plan stays active until the end of the period you already paid for.'],
+            ['How long is analytics history kept?', ORDER.map(p => `${CARDS[p].name}: ${years(PLANS[p].analytics_days)}`).join(' · ')],
+            ['Do you have a non-profit discount?', <>Yes. {SITE.whatsapp
+              ? <a className="text-violet-400 hover:underline" href={waLink(SITE.whatsapp, 'Hi, I would like to ask about the non-profit discount.')} target="_blank" rel="noreferrer">Message us on WhatsApp</a>
+              : <a className="text-violet-400 hover:underline" href={`mailto:${SITE.email}`}>Email us</a>} and tell us about your organisation.</>],
+            ['Do you offer refunds?', 'Yes, a full refund within 7 days of your first payment. See the Refund Policy.'],
+            ['What payment methods do you accept?', 'LKR: cards and local bank payments through PayHere. USD: international cards.'],
+            ['Is this a payment QR?', 'No. Scnr makes marketing, menu and campaign codes. It does not replace LANKAQR.'],
+          ] as [string, React.ReactNode][]).map(([q, a]) => (
+            <details key={q} className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-4">
+              <summary className="text-sm font-medium text-zinc-200 cursor-pointer">{q}</summary>
+              <p className="text-xs text-zinc-500 mt-2">{a}</p>
+            </details>
           ))}
         </div>
       </div>

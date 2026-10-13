@@ -6,25 +6,29 @@
 
 ```ts
 PRICES = {
-  pro:  { USD: { monthly: 7,  annual: 70  }, LKR: { monthly: 2290, annual: 22900 } },
-  team: { USD: { monthly: 29, annual: 290 }, LKR: { monthly: 9490, annual: 94900 } },
+  pro:      { USD: { monthly: 7,  annual: 70  }, LKR: { monthly: 2290,  annual: 22900  } },
+  team:     { USD: { monthly: 29, annual: 290 }, LKR: { monthly: 9490,  annual: 94900  } },
+  business: { USD: { monthly: 79, annual: 790 }, LKR: { monthly: 25990, annual: 259900 } },
 }
 formatPrice('pro', 'LKR', 'monthly') // "LKR 2,290"
 ```
 
-Annual = 10 × monthly, so 2 months are free. **The currency picks the provider:** LKR → PayHere, USD → Polar (card), with PayHere in USD as the fallback when Polar is not configured. Checkout, Pricing, Billing and Landing all read `PRICES` and `formatPrice`; every page has an LKR/USD switch.
+Annual = 10 × monthly, so 2 months are free. **The currency picks the provider:** LKR → PayHere, USD → Polar (card), with PayHere in USD as the fallback when Polar is not configured. Checkout, Pricing, Billing and Landing all read `PRICES` and `formatPrice`; every page has an LKR/USD switch. `PAID_PLANS` (the keys of `PRICES`) is the list checkout accepts, and `planFeatures(plan)` generates the feature list that Pricing, Billing and Landing show, so there is no second copy of the limits. `npx tsx src/lib/plans.ts` runs a self-check (annual = 10×, the LKR ratio, no limit shrinks on a higher plan).
 
 ### Limits and the free pilot
 
-- No plan is unlimited: Pro 100 codes, Team 600 (`qr_codes`), Free 3.
-- `dynamic_qr_codes` caps active dynamic codes: Free **1, forever** (the pilot), trial 3, Pro 100, Team 600. `POST /api/qr` returns `403 LIMIT_DYNAMIC_QR` above it.
-- History: Free 7 days, Pro 365, Team 730.
+- No plan is unlimited: Free 3, Pro 100, Team 600, Business 2,000 codes (`qr_codes`), all "in total".
+- `dynamic_qr_codes` caps active dynamic codes: Free **1, forever** (the pilot), trial 3, Pro 100, Team 600, Business 2,000. `POST /api/qr` returns `403 LIMIT_DYNAMIC_QR` above it.
+- **Per-object caps** (`OBJECT_CAPS` and `capError()` in `server.ts`, checked when `POST /api/qr` creates a row and when `PUT /api/qr/:slug` switches one back on): `short_links` counts `kind='link'` rows (`LIMIT_SHORT_LINKS`), `pages` counts `qr_type='page'` (`LIMIT_PAGES`), `forms` counts `qr_type='form'` (`LIMIT_FORMS`). Short links do not count against the QR caps; pages and forms do. The trial gets Free's link, page, form and domain caps, like its QR cap. `LIMIT_FORMS` becomes reachable when Phase 9 adds the `form` type.
+- History: Free 90 days, Pro 365, Team 730, Business 1,825.
+- Custom domains are a number now (`custom_domains`: Pro 1, Team 10, Business 50). The domain route still allows one per account until Phase 11, so pricing says "Your own short domain" rather than the count.
+- `remove_branding` decides the "Made with Scnr" footer on guest pages.
 
 ### Lapse rule (grace, then pause)
 
 `getLicense` returns `graceEndsAt = max(trial_expires_at, plan_expires_at) + GRACE_DAYS (30)` whenever the account is on Free limits. After it:
 
-- `/internal/slug` marks a dynamic code `paused` when the owner has at least `dynamic_qr_codes` *older* active dynamic codes.
+- `/internal/slug` marks a dynamic code `paused` when the owner has at least `dynamic_qr_codes` *older* active dynamic codes of the same kind. Short links are counted against `short_links` instead.
 - The Worker shows the "paused by its owner" page with the code's title.
 - Nothing is deleted, and upgrading un-pauses.
 
@@ -57,7 +61,7 @@ During a trial `effectivePlan` stays `'free'` while the limits are Pro's (with 3
 
 ## Checkout: `POST /api/billing/checkout`
 
-Body: `{ plan: 'pro'|'team', interval: 'monthly'|'annual' }`. Both are required, otherwise 400.
+Body: `{ plan: 'pro'|'team'|'business', interval: 'monthly'|'annual' }`. Both are required, otherwise 400.
 
 1. Look up the amount in `PRICES[plan].LKR[interval]`, for example `"2290.00"`.
 2. **Write a pending order:** `subscriptions { uid, plan, interval, order_id, amount, currency:'LKR', provider:'payhere', status:'pending' }`. This row is the **source of truth** at notify time.
@@ -110,6 +114,8 @@ The QA signs payloads with the same merchant secret the server uses. CI uses dum
 - `RECURRING_STOPPED` keeps the plan and the expiry
 - a chargeback gives `free`
 
+Section 28 covers the Business checkout amounts (LKR 25,990 monthly, 259,900 annual, $79.00 through the USD fallback), the Business limits, and the Free caps on short links and pages.
+
 ## Polar (USD card payments)
 
 Enabled when `POLAR_ACCESS_TOKEN` is set. Polar is the merchant of record and runs renewals; we mirror its period end.
@@ -128,7 +134,7 @@ Polar ── POST /api/billing/polar/webhook   (Standard Webhooks signature)
 ```
 
 - **Signature:** base64 HMAC-SHA256 of `${webhook-id}.${webhook-timestamp}.${rawBody}`, keyed with the UTF-8 bytes of `POLAR_WEBHOOK_SECRET`. Timestamps older than 5 minutes are rejected. The raw body is kept by the `express.json` `verify` hook.
-- **Products:** `POLAR_PRODUCT_PRO_MONTHLY`, `…_PRO_ANNUAL`, `…_TEAM_MONTHLY`, `…_TEAM_ANNUAL`. An unknown product returns 400.
+- **Products:** `POLAR_PRODUCT_PRO_MONTHLY`, `…_PRO_ANNUAL`, `…_TEAM_MONTHLY`, `…_TEAM_ANNUAL`, `…_BUSINESS_MONTHLY`, `…_BUSINESS_ANNUAL`. An unknown product returns 400.
 - **Sandbox:** `POLAR_SANDBOX=true` uses `sandbox-api.polar.sh`.
 - **Before going live:** confirm Polar can pay out to a Sri Lankan seller, and check the event names and fields against Polar's current docs.
 

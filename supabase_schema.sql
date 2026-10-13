@@ -45,6 +45,7 @@ create table if not exists public.qr_codes (
   title               text,
   destination_url     text,
   qr_type             text not null default 'url',
+  kind                text not null default 'qr' check (kind in ('qr', 'link')),  -- 'link' = short link (migration 005)
   is_dynamic          boolean not null default true,
   is_active           boolean not null default true,
   content_data        jsonb default '{}'::jsonb,

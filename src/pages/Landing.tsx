@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { loginWithGoogle } from '../supabase';
 import QRCode from 'qrcode';
-import { formatPrice, Currency } from '../lib/plans';
+import { formatPrice, planFeatures, PAID_PLANS, Currency, PaidPlan } from '../lib/plans';
 import { SHORT_DOMAIN, SHORT_HOST } from '../lib/qrContent';
 import { SITE, waLink } from '../lib/site';
 import './Landing.css';
@@ -64,7 +64,7 @@ export default function Landing() {
     a.click();
   };
 
-  const price = (plan: 'pro' | 'team') => {
+  const price = (plan: PaidPlan) => {
     const p = formatPrice(plan, currency, 'monthly');
     return currency === 'USD' ? p.replace('$', '') : p.replace('LKR ', '');
   };
@@ -315,42 +315,23 @@ export default function Landing() {
               <div className="plan-cycle">forever · no card needed</div>
               <div className="plan-divider"></div>
               <ul className="plan-feats">
-                <li><span className="pf-check">✓</span> 3 QR codes, 1 of them dynamic</li>
-                <li><span className="pf-check">✓</span> 1,000 scans / month</li>
-                <li><span className="pf-check">✓</span> 7-day statistics</li>
-                <li><span className="pf-check">✓</span> Colours, shapes and logo</li>
-                <li><span className="pf-x">–</span> PIN, expiry and scan limits</li>
+                {planFeatures('free').map(f => <li key={f}><span className="pf-check">✓</span> {f}</li>)}
               </ul>
               <button className="btn-plan outline" onClick={handleLogin}>Create a free code</button>
             </div>
-            <div className="plan featured">
-              <div className="plan-badge">For one business</div>
-              <div className="plan-tier">Pro</div>
-              <div className="plan-price"><sup>{currency === 'USD' ? '$' : 'LKR '}</sup>{price('pro')}</div>
-              <div className="plan-cycle">per month · {formatPrice('pro', currency, 'annual')} / year</div>
-              <div className="plan-divider"></div>
-              <ul className="plan-feats">
-                <li><span className="pf-check">✓</span> 100 QR codes, all dynamic</li>
-                <li><span className="pf-check">✓</span> 75,000 scans / month</li>
-                <li><span className="pf-check">✓</span> 12 months of statistics</li>
-                <li><span className="pf-check">✓</span> PIN, expiry and scan limits</li>
-                <li><span className="pf-check">✓</span> WhatsApp support</li>
-              </ul>
-              <button className="btn-plan filled" onClick={handleLogin}>Start 14-day trial</button>
-            </div>
-            <div className="plan">
-              <div className="plan-tier">Team</div>
-              <div className="plan-price"><sup>{currency === 'USD' ? '$' : 'LKR '}</sup>{price('team')}</div>
-              <div className="plan-cycle">per month · {formatPrice('team', currency, 'annual')} / year</div>
-              <div className="plan-divider"></div>
-              <ul className="plan-feats">
-                <li><span className="pf-check">✓</span> Everything in Pro</li>
-                <li><span className="pf-check">✓</span> 600 QR codes</li>
-                <li><span className="pf-check">✓</span> 500,000 scans / month</li>
-                <li><span className="pf-check">✓</span> 24 months of statistics</li>
-              </ul>
-              <button className="btn-plan outline" onClick={handleLogin}>Start 14-day trial</button>
-            </div>
+            {PAID_PLANS.map(p => (
+              <div key={p} className={`plan${p === 'pro' ? ' featured' : ''}`}>
+                {p === 'pro' && <div className="plan-badge">For one business</div>}
+                <div className="plan-tier">{p.charAt(0).toUpperCase() + p.slice(1)}</div>
+                <div className="plan-price"><sup>{currency === 'USD' ? '$' : 'LKR '}</sup>{price(p)}</div>
+                <div className="plan-cycle">per month · {formatPrice(p, currency, 'annual')} / year</div>
+                <div className="plan-divider"></div>
+                <ul className="plan-feats">
+                  {planFeatures(p).map(f => <li key={f}><span className="pf-check">✓</span> {f}</li>)}
+                </ul>
+                <button className={`btn-plan ${p === 'pro' ? 'filled' : 'outline'}`} onClick={handleLogin}>Start 14-day trial</button>
+              </div>
+            ))}
           </div>
           <p style={{ textAlign: 'center', fontSize: '13px', color: 'var(--ink3)', marginTop: '18px' }}>
             Prices in {currency}. {currency === 'LKR' ? 'Paid in rupees through PayHere.' : 'Paid by international card.'}

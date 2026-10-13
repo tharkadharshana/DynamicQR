@@ -169,7 +169,7 @@ If a skill is missing in the cloud session, follow its rules from this document 
 ### Progress checklist
 
 - [x] Step 0: roadmap and CLAUDE.md on GitHub
-- [ ] Phase 5: Plans v2
+- [x] Phase 5: Plans v2
 - [ ] Phase 6: Code types and design
 - [ ] Phase 7: Pages builder and templates
 - [ ] Phase 8: Short links and organization

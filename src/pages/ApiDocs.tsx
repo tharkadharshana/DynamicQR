@@ -29,7 +29,7 @@ export default function ApiDocs() {
         <div className="card">
           <div className="card-title">REST API</div>
           <p style={{ fontSize: '13px', color: 'var(--text2)' }}>
-            Manage codes and read statistics from your own systems. Available on the Team plan.
+            Manage codes and read statistics from your own systems. Available on the Team or Business plan.
             {!planData?.limits?.api_access && <> <button className="btn btn-primary btn-sm" style={{ marginLeft: '8px' }} onClick={() => navigate('/billing')}>Upgrade</button></>}
           </p>
         </div>
@@ -54,7 +54,7 @@ export default function ApiDocs() {
         </div>
         <div className="card">
           <div className="card-title">Errors and limits</div>
-          <p style={{ fontSize: '13px', color: 'var(--text2)' }}>Errors are JSON: <code>{'{ "error": "…", "code"?: "LIMIT_QR_CODES" }'}</code>. 401 = bad or revoked key, 403 = plan limit or feature, 404 = not found, 429 = rate limit (300 requests and 60 writes per 15 minutes). Plan caps (600 codes on Team) apply to the API too. Webhooks are not available yet.</p>
+          <p style={{ fontSize: '13px', color: 'var(--text2)' }}>Errors are JSON: <code>{'{ "error": "…", "code"?: "LIMIT_QR_CODES" }'}</code>. 401 = bad or revoked key, 403 = plan limit or feature, 404 = not found, 429 = rate limit (300 requests and 60 writes per 15 minutes). Plan caps apply to the API too. Webhooks are not available yet.</p>
         </div>
       </div>
     </div>

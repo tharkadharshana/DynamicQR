@@ -3,9 +3,16 @@ import { useOutletContext } from 'react-router-dom';
 import { supabase } from '../supabase';
 import { apiFetch } from '../lib/api';
 import { useUI } from '../shared/UIContext';
-import { formatPrice, Currency } from '../lib/plans';
+import { formatPrice, planFeatures, PLANS, PAID_PLANS, Currency, PlanId, PaidPlan, PlanLimits } from '../lib/plans';
 import { startCheckout } from '../lib/checkout';
 import { SITE, waLink } from '../lib/site';
+
+const ORDER: PlanId[] = ['free', ...PAID_PLANS];
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const ROWS: [string, keyof PlanLimits][] = [
+  ['QR codes in total', 'qr_codes'], ['Dynamic codes', 'dynamic_qr_codes'], ['Pages', 'pages'],
+  ['Scans per month', 'monthly_scans'], ['History (days)', 'analytics_days'], ['Seats', 'seats'],
+];
 
 export default function Billing() {
   const { planData } = useOutletContext<{ planData: any }>();
@@ -67,7 +74,7 @@ export default function Billing() {
     : '—';
   const billingEmail = email || userEmail || '—';
 
-  const handleCheckout = async (targetPlan: 'pro' | 'team') => {
+  const handleCheckout = async (targetPlan: PaidPlan) => {
     try {
       await startCheckout(targetPlan, isAnnual ? 'annual' : 'monthly', cur, planData);
     } catch (err: any) {
@@ -75,6 +82,7 @@ export default function Billing() {
     }
   };
 
+  const nextPlan = ORDER[ORDER.indexOf(plan) + 1] as PaidPlan | undefined;  // undefined on business
   const scanLimit = limits.monthly_scans;
   const scanPct = Math.min(100, (monthly_scans_used / scanLimit) * 100);
   const isUnlimitedQr = planData.limits.qr_codes === -1;
@@ -185,7 +193,7 @@ export default function Billing() {
             </div>
             <div className="billing-plan-name">{plan.charAt(0).toUpperCase() + plan.slice(1)} — {plan === 'free' ? 'Free' : `${formatPrice(plan, cur, 'monthly')} / month`}</div>
             <div className="billing-plan-desc">
-              {plan === 'free' ? '3 codes (1 dynamic) · 1,000 scans/month · 7-day statistics' : plan === 'pro' ? '100 codes · 75,000 scans/month · 12 months of statistics' : '600 codes · 500,000 scans/month · 24 months of statistics'}
+              {PLANS[plan as PlanId] && planFeatures(plan).slice(0, 4).join(' · ')}
             </div>
             <div className="billing-next">
               <span className="billing-next-dot"></span>
@@ -241,44 +249,35 @@ export default function Billing() {
               <thead>
                 <tr>
                   <th style={{ textAlign: 'left' }}>Feature</th>
-                  <th className={plan === 'free' ? 'current' : ''}>Free</th>
-                  <th className={plan === 'pro' ? 'current' : ''}>Pro</th>
-                  <th className={plan === 'team' ? 'current' : ''}>Team</th>
+                  {ORDER.map(p => <th key={p} className={plan === p ? 'current' : ''}>{cap(p)}</th>)}
                 </tr>
               </thead>
               <tbody>
-                <tr><td>QR codes</td><td>3 (1 dynamic)</td><td>100</td><td>600</td></tr>
-                <tr><td>Monthly Scans</td><td>1,000</td><td>75,000</td><td>500,000</td></tr>
-                <tr><td>Dynamic destinations</td><td>1 code</td><td>✓</td><td>✓</td></tr>
-                <tr><td>Scan statistics</td><td>✓</td><td>✓</td><td>✓</td></tr>
-                <tr><td>Statistics history</td><td>7 days</td><td>12 months</td><td>24 months</td></tr>
-                <tr><td>Password protection</td><td>—</td><td>✓</td><td>✓</td></tr>
-                <tr><td>Expiry dates</td><td>—</td><td>✓</td><td>✓</td></tr>
-                <tr><td>Visitor Guard</td><td>5 scans/hr</td><td>Configurable</td><td>Configurable</td></tr>
+                {ROWS.map(([label, k]) => (
+                  <tr key={k}><td>{label}</td>{ORDER.map(p => <td key={p}>{Number(PLANS[p][k]).toLocaleString('en-US')}</td>)}</tr>
+                ))}
                 <tr>
                   <td style={{ fontWeight: 600, color: 'var(--text)' }}>Price</td>
-                  <td style={{ fontWeight: 600 }}>Free</td>
-                  <td style={{ color: 'var(--coral)', fontWeight: 700 }}>
-                    {isAnnual ? `${formatPrice('pro', cur, 'annual')}/yr` : `${formatPrice('pro', cur, 'monthly')}/mo`}
-                  </td>
-                  <td style={{ fontWeight: 600 }}>
-                    {isAnnual ? `${formatPrice('team', cur, 'annual')}/yr` : `${formatPrice('team', cur, 'monthly')}/mo`}
-                  </td>
+                  {ORDER.map(p => (
+                    <td key={p} style={{ fontWeight: 600, color: p === plan ? 'var(--coral)' : undefined }}>
+                      {p === 'free' ? 'Free' : `${formatPrice(p, cur, isAnnual ? 'annual' : 'monthly')}${isAnnual ? '/yr' : '/mo'}`}
+                    </td>
+                  ))}
                 </tr>
               </tbody>
             </table>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {plan !== 'team' && (
+            {nextPlan && (
               <div className="card" style={{ borderColor: 'rgba(155,127,255,0.25)', background: 'rgba(155,127,255,0.04)' }}>
                 <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--purple)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '10px' }}>
-                  {plan === 'free' ? 'Pro Plan' : 'Team Plan'}
+                  {cap(nextPlan)} Plan
                 </div>
                 <div style={{ fontFamily: 'var(--font-h)', fontSize: '32px', fontWeight: 600, color: 'var(--text)', letterSpacing: '-1px', marginBottom: '4px' }}>
-                  {formatPrice(plan === 'free' ? 'pro' : 'team', cur, isAnnual ? 'annual' : 'monthly')}
+                  {formatPrice(nextPlan, cur, isAnnual ? 'annual' : 'monthly')}
                   <span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--text3)' }}>{isAnnual ? '/yr' : '/mo'}</span>
                 </div>
-                <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '11px' }} onClick={() => handleCheckout(plan === 'free' ? 'pro' : 'team')}>
+                <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '11px' }} onClick={() => handleCheckout(nextPlan)}>
                   Upgrade Now →
                 </button>
               </div>
