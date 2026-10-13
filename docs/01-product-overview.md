@@ -70,7 +70,8 @@ Legend: ✅ works · ⚠️ works with a known limit · 🗓 planned (phase) · 
 | Cancel | ✅ keeps the plan until the paid period ends |
 | Restaurant Kit, guest pages, WhatsApp code type, "Book setup on WhatsApp" (Landing, Billing, Kit) | ✅ |
 | Activation funnel (`events`: created, printed, first scan, offer changed, paid) | ✅ with founder queries in [migrations/queries.sql](../migrations/queries.sql) |
-| Team: bulk CSV creation and a print sheet ([Bulk.tsx](../src/pages/Bulk.tsx)), client folders, 5 seats, API keys and `/api/v1` ([ApiDocs.tsx](../src/pages/ApiDocs.tsx)), one custom short domain, white-label report branding | ✅ (Settings → Team section) |
+| Team: bulk CSV creation and a print sheet ([Bulk.tsx](../src/pages/Bulk.tsx)), client folders, 5 seats, API keys and `/api/v1` ([ApiDocs.tsx](../src/pages/ApiDocs.tsx)), custom short domains, white-label report branding | ✅ (Settings) |
+| Business (Phase 11) | ✅ | Webhooks with signed deliveries, up to 10 workspaces with a header-based switcher, 25 seats, up to 50 custom domains with a per-code choice, and a Settings menu that groups workspace, members, domains, webhooks, export, bulk, API, billing and account. |
 
 ## Plans (from [src/lib/plans.ts](../src/lib/plans.ts))
 

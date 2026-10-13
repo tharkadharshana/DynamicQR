@@ -21,7 +21,7 @@ Annual = 10 × monthly, so 2 months are free. **The currency picks the provider:
 - `dynamic_qr_codes` caps active dynamic codes: Free **1, forever** (the pilot), trial 3, Pro 100, Team 600, Business 2,000. `POST /api/qr` returns `403 LIMIT_DYNAMIC_QR` above it.
 - **Per-object caps** (`OBJECT_CAPS` and `capError()` in `server.ts`, checked when `POST /api/qr` creates a row and when `PUT /api/qr/:slug` switches one back on): `short_links` counts `kind='link'` rows (`LIMIT_SHORT_LINKS`), `pages` counts `qr_type='page'` (`LIMIT_PAGES`), `forms` counts `qr_type='form'` (`LIMIT_FORMS`). Short links do not count against the QR caps; pages and forms do. The trial gets Free's link, page, form and domain caps, like its QR cap. `LIMIT_FORMS` becomes reachable when Phase 9 adds the `form` type.
 - History: Free 90 days, Pro 365, Team 730, Business 1,825.
-- Custom domains are a number now (`custom_domains`: Pro 1, Team 10, Business 50). The domain route still allows one per account until Phase 11, so pricing says "Your own short domain" rather than the count.
+- Custom domains are a number now (`custom_domains`: Pro 1, Team 10, Business 50). The domain route counts against that number (Phase 11).
 - `remove_branding` decides the "Made with Scnr" footer on guest pages.
 
 ### Lapse rule (grace, then pause)

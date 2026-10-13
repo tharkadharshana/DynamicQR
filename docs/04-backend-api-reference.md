@@ -195,11 +195,15 @@ One set of views is served in two scopes:
 | `POST /api/keys` | owner session, write | `{name?}` → `201 {…, key}`. The full `sk_live_…` key is returned **only here**; it is stored as SHA-256. Needs `api_access` (`403 FEATURE_API`). |
 | `DELETE /api/keys/:id` | owner session, write | Revoke |
 | `GET /api/team` | user | Members `{id, member_email, joined}` |
-| `POST /api/team` | owner session, write | `{email}` invite. `403 LIMIT_SEATS` when owner + members ≥ `limits.seats` (Team: 5). `409` if already invited. |
+| `POST /api/team` | owner session, write | `{email, workspace_id?}` invite; with `workspace_id` the member only sees that workspace (Business). `403 LIMIT_SEATS` when owner + members ≥ `limits.seats` (Team 10, Business 25). `409` if already invited. |
 | `DELETE /api/team/:id` | owner session, write | Remove a member |
-| `GET /api/domains` | user | `{hostname, status: pending|active|failed, cname_target}` or `null`. A pending status is refreshed from Cloudflare. |
-| `POST /api/domains` | owner session, write | `{hostname}`. Needs `custom_domain` (Team). One per account. Registers a Cloudflare for SaaS custom hostname. `503` until `CF_API_TOKEN` / `CF_ZONE_ID` are set. |
-| `DELETE /api/domains` | owner session, write | Remove it from Cloudflare and the account |
+| `GET /api/domains` | user | `[{id, hostname, status: pending|active|failed, cname_target}]`. A pending status is refreshed from Cloudflare. |
+| `POST /api/domains` | owner session, write | `{hostname}`. Up to `limits.custom_domains` (Pro 1, Team 10, Business 50): `403 FEATURE_CUSTOM_DOMAIN` below Pro, `403 LIMIT_DOMAINS` at the cap, `409` if the hostname is taken. Registers a Cloudflare for SaaS custom hostname. `503` until `CF_API_TOKEN` / `CF_ZONE_ID` are set. |
+| `DELETE /api/domains/:id` | owner session, write | Remove it from Cloudflare and the account; codes that printed with it fall back to the account default |
+| `GET/POST /api/workspaces`, `PATCH/DELETE /api/workspaces/:id` | user / owner session | Business: up to `limits.workspaces` (10, the default one included): `403 LIMIT_WORKSPACES`. Deleting moves the codes and members back to the default workspace. |
+| `GET/POST /api/webhooks`, `POST /api/webhooks/:id/test`, `DELETE /api/webhooks/:id` | owner session | Business (`403 FEATURE_WEBHOOKS`). `POST {url, events[]}`: https and public hosts only, up to 10; the secret is returned once. Test sends a `webhook.test` ping and returns `{status, ok}`. |
+
+**Workspaces (Phase 11).** Any request may send `X-Workspace: default` or `X-Workspace: <uuid>`. Without the header a user sees every workspace; with it, lists, ownership checks, bulk actions and account analytics are limited to that workspace, and new codes are created in it. A member invited to one workspace is held to it (`403 WORKSPACE` otherwise). Caps stay account-wide. `POST /api/qr` and `PUT` accept `domain` (one of the account's active custom domains, else `400 INVALID_DOMAIN`).
 
 **Owner-only** (`sessionOwner`): checkouts, profile changes, deactivate-all, account deletion, keys, members and domains. These return `403 SESSION_ONLY` for an API key, or `403 OWNER_ONLY` for a member.
 

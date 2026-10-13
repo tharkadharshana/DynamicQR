@@ -101,7 +101,17 @@ Columns the code **reads but which do not exist**: `referrers`, `regions`, `isps
 |---|---|---|
 | `workspace_members` | `owner_uid, member_email (lower-case), member_uid, role, created_at`, unique `(owner_uid, member_email)` | `member_uid` is filled when the invite is claimed on the member's first sign-in (`workspaceOwner()` in `authenticate`) |
 | `api_keys` | `uid, name, prefix, key_hash (unique), created_at, last_used_at, revoked_at` | Only the SHA-256 is stored |
-| `custom_domains` | `uid, hostname (unique), cf_id, status` | One per account; Cloudflare for SaaS custom hostname id |
+| `custom_domains` | `uid, hostname (unique), cf_id, status` | Several per account (Pro 1, Team 10, Business 50); Cloudflare for SaaS custom hostname id |
+
+### Business tables (migration 011)
+
+| Table / column | Notes |
+|---|---|
+| `webhooks` | `uid, url, secret, events text[], created_at, last_status, last_delivery_at`. RLS on, no policies. |
+| `workspaces` | `owner_uid, name`. RLS on, no policies. |
+| `qr_codes.workspace_id` | → `workspaces(id)` on delete set null; `null` is the owner's default workspace, so existing rows need no backfill |
+| `qr_codes.domain` | the verified custom domain this code prints with; `null` = the account default |
+| `workspace_members.workspace_id` | a member held to one workspace; `null` = all |
 
 Also (migration 010): `scan_events.lang`, `scan_events.lat/lng` (opt-in GPS, 3 decimals), `qr_stats.cities/languages/referrers` (jsonb maps), and a 13-argument `record_scan` (adds `p_id, p_city, p_lang, p_ref_host`; the 9-argument version stays so the deployed API keeps working until the new code ships). `qr_codes.tags` (text[], GIN-indexed, migration 008; folders stay the `client` column), `qr_stats.clicks` (jsonb `{key: n}`, written only by `record_click(p_slug, p_key)`, migration 007), `qr_codes.gtin` (GS1 GTIN-14, unique when set, migration 006), `profiles.brand_style` (jsonb, the saved default design, migration 006), the public Storage bucket `files` (100 MB cap, PDF and images, written only through API-signed upload URLs, migration 006), `qr_codes.client` (folder name, indexed with `user_uid`), and `profiles.agency_name` / `profiles.agency_logo` (≤64 KB data URL) for white-label printed reports.
 
