@@ -88,7 +88,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
       case '/create': return { title: 'Create QR', sub: 'Generate a new QR code' };
       case '/kit': return { title: 'Restaurant Kit', sub: 'Menu, reviews, Wi-Fi and offers on one code' };
       case '/bulk': return { title: 'Bulk create', sub: 'Many codes from one CSV' };
-      case '/api-docs': return { title: 'API Docs', sub: 'Team plan · REST API v1' };
+      case '/api-docs': return { title: 'API Docs', sub: 'REST API v1' };
       case '/settings': return { title: 'Profile & Settings', sub: 'Manage your account' };
       case '/billing': return { title: 'Billing', sub: 'Subscription & invoices' };
       case '/pricing': return { title: 'Pricing', sub: 'Choose your plan' };
