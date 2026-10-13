@@ -45,7 +45,9 @@
  *      Worker /01/ path), event .ics, app-store routing by device, brand_style
  *  30. Pages builder: block page at the edge (escaping, javascript: dropped), tracked clicks
  *      (302, 404, counted with label and CTR, not a scan), Save as contact, template save
- *  31. Cleanup
+ *  31. Short links: custom back-half (edge, reserved, api prefix, 409, charset), tag/kind/folder
+ *      filters, bulk deactivate/folder/tag/delete with a foreign slug, UTM append
+ *  32. Cleanup
  */
 import 'dotenv/config';
 import crypto from 'crypto';
@@ -1508,8 +1510,58 @@ async function run() {
     check('A page from a template saves (fits the 20 KB cap)', fromTpl.status === 201, `status=${fromTpl.status}`);
   }
 
-  // ── 31. Cleanup ──────────────────────────────────────────────────────────────
-  section('31. Cleanup');
+  // ── 31. Short links and organisation: back-halves, tags, bulk, UTM ───────────
+  section('31. Short links — custom back-half, reserved words, tags, bulk actions, UTM');
+  {
+    await admin.from('profiles').update({ plan: 'pro', plan_expires_at: new Date(Date.now() + 30 * 86400000).toISOString(), is_trial: false }).eq('id', uid);
+    const mk = (body: any) => api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'url', is_dynamic: true, ...body }) });
+    const half = `qa-${Date.now().toString(36)}`;
+    const l1 = await mk({ kind: 'link', slug: half, destination_url: 'https://example.com/half', title: 'QA back-half', tags: ['Menu', 'qa'] });
+    check('Short link with a custom back-half → 201', l1.status === 201 && l1.body?.slug === half && l1.body?.kind === 'link', `status=${l1.status} ${JSON.stringify(l1.body)}`);
+    const w = await runWorker(`/${half}`, { ua: 'QA-half' });
+    check('Custom back-half resolves at the edge', w.status === 302 && w.location === 'https://example.com/half', `status=${w.status} loc=${w.location}`);
+    const res = await mk({ kind: 'link', slug: 'pricing', destination_url: 'https://example.com/x', title: 'QA reserved' });
+    check('Reserved back-half (pricing) → 400 RESERVED_SLUG', res.status === 400 && res.body?.code === 'RESERVED_SLUG', `status=${res.status} code=${res.body?.code}`);
+    const apiPrefix = await mk({ kind: 'link', slug: 'apix', destination_url: 'https://example.com/x', title: 'QA api prefix' });
+    check('Back-half starting with "api" → 400', apiPrefix.status === 400, `got ${apiPrefix.status}`);
+    const dup = await mk({ kind: 'link', slug: half, destination_url: 'https://example.com/y', title: 'QA dup' });
+    check('Duplicate back-half → 409 SLUG_TAKEN', dup.status === 409 && dup.body?.code === 'SLUG_TAKEN', `status=${dup.status}`);
+    const badHalf = await mk({ kind: 'link', slug: 'a/b', destination_url: 'https://example.com/z', title: 'QA bad' });
+    check('Back-half with a slash → 400 INVALID_SLUG', badHalf.status === 400 && badHalf.body?.code === 'INVALID_SLUG', `got ${badHalf.status}`);
+
+    // Tags filter.
+    const tagged = (await api('/api/qr?tag=menu', { token })).body;
+    const untagged = (await api('/api/qr?tag=nothing-here', { token })).body;
+    check('GET /api/qr?tag=menu finds the tagged link (tags lower-cased)', Array.isArray(tagged) && tagged.some((q: any) => q.slug === half) && tagged.every((q: any) => q.tags.includes('menu')), `n=${tagged?.length}`);
+    check('An unknown tag lists nothing', Array.isArray(untagged) && untagged.length === 0, `n=${untagged?.length}`);
+    const links = (await api('/api/qr?kind=link', { token })).body;
+    check('GET /api/qr?kind=link lists only short links', Array.isArray(links) && links.length > 0 && links.every((q: any) => q.kind === 'link'), `n=${links?.length}`);
+
+    // Bulk: 3 codes deactivated, moved to a folder, tagged; a foreign slug is reported, not touched.
+    const three = (await Promise.all([1, 2, 3].map(i => mk({ destination_url: `https://example.com/b${i}`, title: `QA bulk ${i}` })))).map(r => r.body?.slug);
+    const off = await api('/api/qr/bulk', { method: 'POST', token, body: JSON.stringify({ slugs: [...three, 'notmine1'], action: 'deactivate' }) });
+    check('Bulk deactivate → 3 done, foreign slug failed', off.status === 200 && off.body?.done?.length === 3 && off.body?.failed?.[0]?.slug === 'notmine1', JSON.stringify(off.body));
+    const rows3 = (await admin.from('qr_codes').select('slug, is_active').in('slug', three)).data || [];
+    check('Bulk deactivate: all 3 inactive', rows3.length === 3 && rows3.every(r => r.is_active === false));
+    const wOff = await runWorker(`/${three[0]}`, { ua: 'QA-bulk-off' });
+    check('Bulk-deactivated code → 410 at the edge', wOff.status === 410, `got ${wOff.status}`);
+    await api('/api/qr/bulk', { method: 'POST', token, body: JSON.stringify({ slugs: three, action: 'folder', value: 'QA Campaign' }) });
+    await api('/api/qr/bulk', { method: 'POST', token, body: JSON.stringify({ slugs: three, action: 'tag', value: 'Spring' }) });
+    const folder = (await api('/api/qr?folder=QA%20Campaign&tag=spring', { token })).body;
+    check('Bulk folder + tag, then filter by both', Array.isArray(folder) && folder.length === 3, `n=${folder?.length}`);
+    const badAct = await api('/api/qr/bulk', { method: 'POST', token, body: JSON.stringify({ slugs: three, action: 'explode' }) });
+    check('Bulk with an unknown action → 400', badAct.status === 400, `got ${badAct.status}`);
+    const gone = await api('/api/qr/bulk', { method: 'POST', token, body: JSON.stringify({ slugs: three, action: 'delete' }) });
+    check('Bulk delete → 3 done', gone.body?.done?.length === 3, JSON.stringify(gone.body));
+
+    // UTM appended on redirect; a parameter already in the destination wins.
+    const utm = await mk({ title: 'QA UTM', destination_url: 'https://example.com/p?utm_source=keep&x=1', content_data: { utm: { source: 'qr', medium: 'print', campaign: 'avurudu' } } });
+    const wu = await runWorker(`/${utm.body?.slug}`, { ua: 'QA-utm' });
+    check('UTM appended without clobbering existing params', wu.location === 'https://example.com/p?utm_source=keep&x=1&utm_medium=print&utm_campaign=avurudu', `got ${wu.location}`);
+  }
+
+  // ── 32. Cleanup ──────────────────────────────────────────────────────────────
+  section('32. Cleanup');
   {
     const del = await api('/api/user/account', { method: 'DELETE', token });
     check('DELETE /api/user/account → 200', del.status === 200, `status=${del.status} ${JSON.stringify(del.body)}`);
