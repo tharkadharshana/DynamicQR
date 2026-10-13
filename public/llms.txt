@@ -4,7 +4,14 @@
 
 ## Pages
 
-- [Home](https://scnr.tharkak.com/): product overview, features and pricing (Free, Pro and Team plans)
+- [Home](https://scnr.tharkak.com/): product overview, features and pricing (Free, Pro, Team and Business plans)
+- [Free tools](https://scnr.tharkak.com/tools): index of the free tools, no sign-in needed
+- [QR code scanner](https://scnr.tharkak.com/tools/qr-scanner): read a QR code with a camera or a photo
+- [UTM link builder](https://scnr.tharkak.com/tools/utm-builder): add utm tags to a link
+- [Google review link](https://scnr.tharkak.com/tools/google-review-link): make a direct review link from a Place ID
+- [WhatsApp link maker](https://scnr.tharkak.com/tools/whatsapp-link): make a click-to-chat link
+- [Free QR generator](https://scnr.tharkak.com/tools/qr-generator): make a static QR code, PNG or SVG
+- [What's new](https://scnr.tharkak.com/whats-new): release notes for customers
 - [Privacy Policy](https://scnr.tharkak.com/legal/privacy-policy)
 - [Terms and Conditions](https://scnr.tharkak.com/legal/terms-and-conditions)
 - [Refund Policy](https://scnr.tharkak.com/legal/refund-policy)

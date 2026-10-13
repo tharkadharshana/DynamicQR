@@ -993,3 +993,41 @@
   .landing-page .section-wrap { padding: 0 24px; }
   .landing-page .cta-box { padding: 48px 32px; }
 }
+
+/* ── FREE TOOLS, WHAT'S NEW, FOOTER HUB ── */
+.landing-page .footer-hub { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 28px; width: 100%; margin-bottom: 28px; }
+.landing-page .footer-hub h2 { font-family: var(--font-b); font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 10px; }
+.landing-page .footer-hub a { display: block; font-size: 13px; color: var(--ink3); text-decoration: none; padding: 4px 0; }
+.landing-page .footer-hub a:hover { color: var(--ink); text-decoration: underline; }
+.landing-page .tool-main { padding: 120px 24px 80px; max-width: 760px; margin: 0 auto; color: var(--ink2); font-size: 15px; line-height: 1.7; }
+.landing-page .tool-h1 { opacity: 1; animation: none; font-size: 40px; margin-bottom: 8px; }
+.landing-page .tool-intro { margin-bottom: 24px; }
+.landing-page .tool-crumb { font-size: 13px; color: var(--ink3); display: block; }
+.landing-page .tool-box { background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 20px; display: grid; gap: 16px; }
+.landing-page .tool-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+.landing-page .tool-card { display: grid; gap: 4px; padding: 20px; background: #fff; border: 1px solid var(--border); border-radius: var(--radius); text-decoration: none; color: var(--ink2); font-size: 14px; }
+.landing-page .tool-card strong { color: var(--ink); font-size: 16px; }
+.landing-page .tool-card:hover, .landing-page .tool-card:focus-visible { border-color: var(--coral); }
+.landing-page .tool-field { display: grid; gap: 6px; }
+.landing-page .tool-field label { font-size: 13px; font-weight: 600; color: var(--ink); }
+.landing-page .tool-field small { font-size: 12px; color: var(--ink3); }
+.landing-page .tool-input { width: 100%; padding: 10px 12px; border: 1px solid var(--border2); border-radius: 8px; font: inherit; background: var(--white); color: var(--ink); }
+.landing-page .tool-input:focus-visible, .landing-page .tool-field input[type=color]:focus-visible { outline: 2px solid var(--coral-ink); outline-offset: 1px; }
+.landing-page .tool-field input[type=color] { width: 56px; height: 44px; padding: 2px; border: 1px solid var(--border2); border-radius: 8px; background: none; }
+.landing-page .tool-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+.landing-page .tool-out { display: grid; gap: 12px; }
+.landing-page .tool-result { display: block; padding: 12px; background: var(--off); border-radius: 8px; word-break: break-all; font-family: monospace; font-size: 13px; min-height: 44px; }
+.landing-page .tool-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.landing-page .tool-actions .btn-cta, .landing-page .tool-actions .btn-text { min-height: 44px; display: inline-flex; align-items: center; cursor: pointer; text-decoration: none; }
+.landing-page .btn-cta:disabled { opacity: 0.5; cursor: not-allowed; }
+.landing-page .tool-file { position: relative; }
+.landing-page .tool-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.landing-page .tool-file:focus-within { outline: 2px solid var(--coral-ink); }
+.landing-page .tool-status { font-size: 13px; color: var(--green); }
+.landing-page .tool-error { color: #B3261E; font-size: 14px; }
+.landing-page .tool-note { font-size: 13px; color: var(--ink3); }
+.landing-page .tool-cta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 16px; border-top: 1px solid var(--border); }
+.landing-page .tool-cta .btn-cta { text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; }
+.landing-page .tool-video video { width: 100%; max-height: 360px; border-radius: 8px; background: #000; }
+.landing-page .tool-qr { display: flex; justify-content: center; max-width: 100%; overflow: hidden; }
+.landing-page .tool-qr canvas, .landing-page .tool-qr svg { max-width: 100%; height: auto; }

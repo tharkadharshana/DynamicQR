@@ -3,6 +3,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase, logout } from '../supabase';
 import { useUI } from '../shared/UIContext';
 import WorkspaceSwitcher from './WorkspaceSwitcher';
+import HelpButton from './HelpButton';
 
 export default function DynamicQRLayout({ planData }: { planData?: any }) {
   const location = useLocation();
@@ -297,6 +298,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
 
         {/* Keep the sidebar on screen while the next page chunk loads. */}
         <Suspense fallback={null}><Outlet context={{ planData }} /></Suspense>
+        <HelpButton />
       </div>
     </div>
   );
