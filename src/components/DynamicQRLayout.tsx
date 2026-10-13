@@ -40,6 +40,9 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
     { name: 'Pages', path: '/pages', icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="4" y="1.5" width="8" height="13" rx="1.5"/><path d="M6 5h4M6 8h4M6 11h2"/></svg>
     ) },
+    { name: 'Forms', path: '/forms', icon: (
+      <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="1.5" width="12" height="13" rx="1.5"/><path d="M5 5h6M5 8h6"/><rect x="5" y="10.5" width="3" height="2"/></svg>
+    ) },
     { name: 'Restaurant Kit', path: '/kit', icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 2v5a2 2 0 004 0V2M5 2v12M11 2c-1.5 1-2 3-2 5h2v7"/></svg>
     ) },
@@ -91,6 +94,8 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
       case '/create': return { title: 'Create QR', sub: 'Generate a new QR code' };
       case '/pages': return { title: 'Pages', sub: 'Mobile landing pages behind one QR' };
       case '/pages/new': return { title: 'New page', sub: 'Start from a template or a blank page' };
+      case '/forms': return { title: 'Forms', sub: 'Collect answers from a QR scan' };
+      case '/forms/new': return { title: 'New form', sub: 'Fields, preview and where answers go' };
       case '/kit': return { title: 'Restaurant Kit', sub: 'Menu, reviews, Wi-Fi and offers on one code' };
       case '/bulk': return { title: 'Bulk create', sub: 'Many codes from one CSV' };
       case '/api-docs': return { title: 'API Docs', sub: 'REST API v1' };

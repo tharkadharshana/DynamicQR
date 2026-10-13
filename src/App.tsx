@@ -13,6 +13,9 @@ const CreateQR = lazy(() => import('./pages/CreateQR'));
 const Kit = lazy(() => import('./pages/Kit'));
 const Pages = lazy(() => import('./pages/Pages'));
 const PageEditor = lazy(() => import('./pages/PageEditor'));
+const Forms = lazy(() => import('./pages/Forms'));
+const FormResponses = lazy(() => import('./pages/Forms').then(m => ({ default: m.FormResponses })));
+const FormEditor = lazy(() => import('./pages/FormEditor'));
 const Bulk = lazy(() => import('./pages/Bulk'));
 const ApiDocs = lazy(() => import('./pages/ApiDocs'));
 const KitPrint = lazy(() => import('./pages/KitPrint'));
@@ -105,6 +108,10 @@ export default function App() {
                 <Route path="pages" element={<Pages />} />
                 <Route path="pages/new" element={<PageEditor />} />
                 <Route path="pages/:slug/edit" element={<PageEditor />} />
+                <Route path="forms" element={<Forms />} />
+                <Route path="forms/new" element={<FormEditor />} />
+                <Route path="forms/:slug/edit" element={<FormEditor />} />
+                <Route path="forms/:slug/responses" element={<FormResponses />} />
                 <Route path="bulk" element={<Bulk />} />
                 <Route path="api-docs" element={<ApiDocs />} />
                 <Route path="kit/print/:slug" element={<KitPrint />} />
