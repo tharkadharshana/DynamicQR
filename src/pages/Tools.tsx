@@ -50,10 +50,10 @@ const Cta = ({ text = 'Need to change where it points later? Make a dynamic code
 function UtmBuilder() {
   const [url, setUrl] = useState('');
   const [u, setU] = useState({ source: '', medium: '', campaign: '', term: '', content: '' });
-  const set = (k: keyof typeof u) => (v: string) => setU(p => ({ ...p, [k]: v.trim() }));
+  const set = (k: keyof typeof u) => (v: string) => setU(p => ({ ...p, [k]: v }));
   let valid = true;
   try { valid = /^https?:$/.test(new URL(url).protocol); } catch { valid = false; }
-  const out = url && valid ? withUtm(url.trim(), u) : '';
+  const out = url && valid ? withUtm(url.trim(), Object.fromEntries(Object.entries(u).map(([k, v]) => [k, v.trim()]))) : '';
   return (
     <>
       <Field label="Website link" type="url" value={url} onChange={setUrl} placeholder="https://yourcafe.lk/menu" hint={url && !valid ? 'Start with http:// or https://' : undefined} />
@@ -73,11 +73,12 @@ function UtmBuilder() {
 
 function ReviewLink() {
   const [id, setId] = useState('');
+  const ok = /^[A-Za-z0-9_-]{10,}$/.test(id.trim()); // real Place IDs are long (they start with ChIJ…)
   return (
     <>
       <Field label="Google Place ID" value={id} onChange={setId} placeholder="ChIJ..." hint={<>Don't know it? <a href={PLACE_ID_FINDER} target="_blank" rel="noreferrer">Find your Place ID with Google's finder</a>.</>} />
-      <CopyResult value={buildDestination('google_review', { place_id: id })}>
-        {id.trim() && <a className="btn-text" href={buildDestination('google_review', { place_id: id })} target="_blank" rel="noreferrer">Test link</a>}
+      <CopyResult value={ok ? buildDestination('google_review', { place_id: id }) : ''}>
+        {ok && <a className="btn-text" href={buildDestination('google_review', { place_id: id })} target="_blank" rel="noreferrer">Test link</a>}
       </CopyResult>
       <Cta text="Put it on a table tent as a QR code, and change it later if you move or rebrand." />
     </>
@@ -141,6 +142,7 @@ function QrScanner() {
   const video = useRef<HTMLVideoElement>(null);
   const stream = useRef<MediaStream | null>(null);
   const raf = useRef(0);
+  const bdOk = useRef<boolean | undefined>(undefined); // whether this browser's BarcodeDetector can read QR codes
   const [on, setOn] = useState(false);
   const [result, setResult] = useState('');
   const [error, setError] = useState('');
@@ -157,9 +159,15 @@ function QrScanner() {
   /** Decode one image source: the browser's BarcodeDetector when present, else jsQR on a canvas. */
   const decode = async (src: HTMLVideoElement | ImageBitmap, w: number, h: number): Promise<string> => {
     const BD = (window as any).BarcodeDetector;
-    if (BD) {
-      const found = await new BD({ formats: ['qr_code'] }).detect(src);
-      return found[0]?.rawValue || '';
+    if (BD && bdOk.current !== false) {
+      try {
+        const found = await new BD({ formats: ['qr_code'] }).detect(src);
+        bdOk.current = true;
+        return found[0]?.rawValue || '';
+      } catch (e) {
+        // The browser has BarcodeDetector but not the qr_code format (or it failed): use jsQR from now on.
+        if (bdOk.current !== true) bdOk.current = false; else throw e;
+      }
     }
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
@@ -185,16 +193,18 @@ function QrScanner() {
     await v.play().catch(() => {});
     setOn(true);
     let last = 0;
+    const mine = stream.current; // a loop belongs to its own stream: Stop or a restart ends it
     const tick = async (t: number) => {
-      if (!stream.current) return;
+      if (stream.current !== mine) return;
       if (t - last > 150 && v.videoWidth) {
         last = t;
         try {
           const text = await decode(v, v.videoWidth, v.videoHeight);
+          if (stream.current !== mine) return;
           if (text) { setResult(text); stop(); return; }
         } catch { /* keep trying */ }
       }
-      raf.current = requestAnimationFrame(tick);
+      if (stream.current === mine) raf.current = requestAnimationFrame(tick);
     };
     raf.current = requestAnimationFrame(tick);
   };

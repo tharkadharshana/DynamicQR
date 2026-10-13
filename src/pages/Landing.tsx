@@ -32,6 +32,9 @@ export default function Landing() {
     }
   };
 
+  // The footer's /login#pricing link: scroll to the pricing section once the page is up.
+  useEffect(() => { if (window.location.hash === '#pricing') document.getElementById('pricing')?.scrollIntoView(); }, []);
+
   useEffect(() => {
     // Scroll reveal (sections start visible in CSS when reduced motion is on)
     const ro = new IntersectionObserver(entries => {
@@ -237,7 +240,7 @@ export default function Landing() {
               <div className="feat-num">07</div>
               <div className="feat-icon" style={{ background: '#EEF0FF' }}>📄</div>
               <div className="feat-name">Mobile pages</div>
-              <p className="feat-desc">Build a page from blocks (buttons, social icons, images, video, products, a contact card) or start from one of twelve templates. Free includes {PLANS.free.pages} page; Pro includes {PLANS.pro.pages}.</p>
+              <p className="feat-desc">Build a page from blocks (buttons, social icons, images, video, products, a contact card) or start from one of a dozen ready-made templates. Free includes {PLANS.free.pages} page; Pro includes {PLANS.pro.pages}.</p>
               <div className="feat-arrow">↗</div>
             </div>
             <div className="feat">

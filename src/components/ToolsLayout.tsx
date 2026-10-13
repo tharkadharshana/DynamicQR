@@ -9,13 +9,11 @@ import '../pages/Landing.css';
 export default function ToolsLayout({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   useEffect(() => {
     window.scrollTo(0, 0);
-    const prev = document.title;
+    // Set on arrival; the next page sets its own. ponytail: the original title is not restored when leaving to the app (it sets its own).
     document.title = `${title} | ${SITE.name}`;
     let meta = document.querySelector<HTMLMetaElement>('meta[name="description"]');
     if (!meta) { meta = document.createElement('meta'); meta.name = 'description'; document.head.appendChild(meta); }
-    const prevDesc = meta.content;
     meta.content = description;
-    return () => { document.title = prev; if (meta) meta.content = prevDesc; };
   }, [title, description]);
   return (
     <div className="landing-page">

@@ -1816,8 +1816,16 @@ async function run() {
     check('The tool and What\'s new paths are reserved (never a code back-half)', ['tools', 'whats-new', 'help'].every(isReservedSlug));
     const reserved = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'url', is_dynamic: true, kind: 'link', slug: 'tools', destination_url: 'https://example.com/x', title: 'QA reserved tools' }) });
     check('A back-half of "tools" → 400', reserved.status === 400, `got ${reserved.status}`);
-    const toolsEdge = await runWorker('/tools/qr-scanner', { ua: 'QA-tools' });
-    check('Worker: /tools/* passes through to the app, not a code lookup', toolsEdge.status !== 404 && toolsEdge.status !== 410, `got ${toolsEdge.status}`);
+    // A pass-through is the Worker calling fetch(request) on its own host: stub that one call and see it happen.
+    const realFetch = globalThis.fetch, passed: string[] = [];
+    globalThis.fetch = (async (i: any, init?: any) => {
+      const u = typeof i === 'string' ? i : i.url;
+      if (u.startsWith('https://qa.scnr.test')) { passed.push(u); return new Response('APP', { status: 200 }); }
+      return realFetch(i, init);
+    }) as typeof fetch;
+    let toolsEdge: { status: number; body: string } = { status: 0, body: '' };
+    try { toolsEdge = await runWorker('/tools/qr-scanner', { ua: 'QA-tools' }); } finally { globalThis.fetch = realFetch; }
+    check('Worker: /tools/* passes through to the app, not a code lookup', toolsEdge.status === 200 && toolsEdge.body === 'APP' && passed.length === 1 && passed[0].endsWith('/tools/qr-scanner'), `status=${toolsEdge.status} passed=${passed}`)
   }
 
   // ── 36. Cleanup ──────────────────────────────────────────────────────────────
