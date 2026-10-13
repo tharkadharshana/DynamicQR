@@ -38,7 +38,8 @@ All five phases are merged: safe and working, credible, Restaurant Kit, retentio
 - **Retention (Phase 3):** atomic scan recording (`record_scan`, migration 003), real per-day uniques, a busiest-hours chart, CSV export and a print report, a weekly email digest, and 400-day retention. The Firestore shim is gone (server.ts went from 2,457 to about 1,600 lines).
 - **Team plan (Phase 4):** API keys and `/api/v1`, 5 seats (invite by email), client folders, bulk CSV creation with a print sheet, one custom short domain (Cloudflare for SaaS), and white-label report branding (migration 004).
 - Run the migrations in order: 001 → 002 → 003 → 004 ([doc 10](10-operations.md#deployment)).
-- The phase plan is in [doc 11](11-review-findings.md#recommended-order-of-work).
+- The phase plan for phases 0–4 is in [doc 11](11-review-findings.md#recommended-order-of-work).
+- **What is next:** [ROADMAP.md](ROADMAP.md) plans phases 5–12 (competitor parity with Hovercode and Bitly: a Business tier, more code types, a Pages builder with templates, short links and folders, forms, advanced tracking, webhooks and workspaces, public tools). It also holds the working agreement for every change. Competitor screenshots are in [competitors/](competitors/).
 
 ## Source map
 
