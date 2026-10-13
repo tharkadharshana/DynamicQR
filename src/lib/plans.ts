@@ -47,6 +47,9 @@ export function formatPrice(plan: PaidPlan, currency: Currency, interval: Billin
   return currency === 'USD' ? `$${n}` : `LKR ${n.toLocaleString('en-US')}`;
 }
 
+/** Webhook endpoints per account (Business only; the plan flag `webhooks` turns the feature on). */
+export const MAX_WEBHOOKS = 10;
+
 export const PLANS: Record<PlanId, PlanLimits> = {
   free: {
     qr_codes: 3,
@@ -183,8 +186,7 @@ const n = (x: number) => x.toLocaleString('en-US');
 
 /**
  * The feature list every pricing surface shows, generated from PLANS so there is no second copy.
- * ponytail: lists shipped features only. Add workspaces,
- * webhooks and the domain count (Phase 11) here when each ships; pricing must never claim what the app can't do yet.
+ * ponytail: lists shipped features only; add a line here in the phase that ships a feature. Pricing must never claim what the app can't do yet.
  */
 export function planFeatures(plan: PlanId): string[] {
   const l = PLANS[plan];
@@ -198,10 +200,10 @@ export function planFeatures(plan: PlanId): string[] {
     ...(l.custom_slug ? ['Custom back-halves for links'] : []),
     ...(l.smart_routing ? ['Smart routing and GPS tracking'] : []),
     ...(l.remove_branding ? ['No Scnr branding'] : []),
-    // ponytail: one domain per account until Phase 11 lifts the route's "1 per account" check; then show the count.
-    ...(l.custom_domains ? ['Your own short domain'] : []),
-    ...(l.seats > 1 ? [`${l.seats} team members`] : []),
+    ...(l.custom_domains ? [`${l.custom_domains} custom domain${l.custom_domains === 1 ? '' : 's'}`] : []),
+    ...(l.seats > 1 ? [`${l.seats} team members${l.workspaces > 1 ? `, ${l.workspaces} workspaces` : ''}`] : []),
     ...(l.api_access ? ['API, bulk create and CSV export'] : []),
+    ...(l.webhooks ? ['Webhooks'] : []),
   ];
 }
 
@@ -220,6 +222,7 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('plans.ts')) {
   assert(PLANS.free.analytics_days === 90 && PLANS.free.forms === 0 && PLANS.business.workspaces === 10, 'table values');
   assert(planFeatures('free')[0] === '3 QR codes in total (1 dynamic)', planFeatures('free')[0]);
   assert(planFeatures('free')[3] === '90 days of analytics' && planFeatures('team')[3] === '2 years of analytics', 'history wording');
-  assert(planFeatures('business').includes('25 team members') && !planFeatures('pro').some(f => f.includes('team members')), 'seats');
+  assert(planFeatures('business').includes('25 team members, 10 workspaces') && planFeatures('team').includes('10 team members') && !planFeatures('pro').some(f => f.includes('team members')), 'seats');
+  assert(planFeatures('business').includes('Webhooks') && !planFeatures('team').includes('Webhooks') && planFeatures('team').includes('10 custom domains') && planFeatures('pro').includes('1 custom domain'), 'webhooks and domains');
   console.log('plans self-check ok');
 }

@@ -49,6 +49,8 @@ create table if not exists public.qr_codes (
   kind                text not null default 'qr' check (kind in ('qr', 'link')),  -- 'link' = short link (migration 005)
   gtin                text,  -- GS1 GTIN-14, unique when set (migration 006)
   tags                text[] not null default '{}',  -- lower-case labels (migration 008)
+  workspace_id        uuid,  -- → workspaces(id) on delete set null; null = default workspace (migration 011)
+  domain              text,  -- the verified custom domain this code prints with (migration 011)
   is_dynamic          boolean not null default true,
   is_active           boolean not null default true,
   content_data        jsonb default '{}'::jsonb,
@@ -205,3 +207,28 @@ alter table public.form_submissions enable row level security;
 -- No policies: RLS denies anon/authenticated. The API uses the service-role key, which bypasses RLS.
 
 -- record_scan: see migrations 003 and 010 (the 13-argument version records city, language, referrer domain and the event id).
+
+-- ──────────────────────────────────────────────────────────────
+-- BUSINESS (migration 011): webhooks, workspaces. qr_codes.workspace_id / workspace_members.workspace_id
+-- reference workspaces(id) (qr_codes: on delete set null; workspace_members: on delete cascade), added by the migration after workspaces exists.
+-- ──────────────────────────────────────────────────────────────
+create table if not exists public.webhooks (
+  id                uuid primary key default gen_random_uuid(),
+  uid               uuid not null references public.profiles(id) on delete cascade,
+  url               text not null,
+  secret            text not null,
+  events            text[] not null default '{}',
+  created_at        timestamptz not null default now(),
+  last_status       integer,
+  last_delivery_at  timestamptz
+);
+create index if not exists webhooks_uid_idx on public.webhooks(uid);
+alter table public.webhooks enable row level security;
+create table if not exists public.workspaces (
+  id          uuid primary key default gen_random_uuid(),
+  owner_uid   uuid not null references public.profiles(id) on delete cascade,
+  name        text not null,
+  created_at  timestamptz not null default now()
+);
+create index if not exists workspaces_owner_idx on public.workspaces(owner_uid);
+alter table public.workspaces enable row level security;

@@ -2,6 +2,14 @@
 
 One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-review-findings.md](11-review-findings.md).
 
+## Phase 11: Business tier (branch `feat/business-tier`)
+
+- **Webhooks** (Business): `scan.created`, `form.submitted`, `qr.created`, `qr.updated`, `qr.deleted`, one `deliver(uid, event, payload)` helper that signs with the Standard Webhooks signer (`src/lib/webhooks.ts`, now shared with the Polar verifier), retries 3 times inside the request and records `last_status`. `scan.created` is sent from `/internal/scan`, which the Worker already calls in `waitUntil`. Add, test ping and delete in Settings.
+- **Workspaces** (Business, up to 10): `X-Workspace` header resolved in `authenticate`; `workspace_id` on codes (null = default, so no backfill) and on members; filters in the list, ownership checks, bulk and analytics. Caps stay account-wide. A workspace switcher in the header.
+- **Several custom domains**: the "1 per account" check is gone; the cap is `limits.custom_domains` (Pro 1, Team 10, Business 50). Each code can print with one of them (`qr_codes.domain`).
+- **Settings menu** like Hovercode's, regrouping existing pages with the new sections.
+- Pricing lists domain counts, workspaces and webhooks. Migration 011; QA section 34. No Worker change.
+
 ## Phase 10: Tracking and smart routing (branch `feat/tracking-routing`)
 
 - **Cities, languages and referrer domains.** The Worker sends `cf.city`, the language and an event id with each scan; migration 010 adds `scan_events.lang/lat/lng`, `qr_stats.cities/languages/referrers`, and a 13-argument `record_scan` next to the old one. New analytics views `cities`, `languages`, `referrers` and `geo`.

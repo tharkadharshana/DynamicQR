@@ -73,6 +73,8 @@ export function resizeLogo(file: File, maxPx = 256): Promise<string> {
 }
 
 export function getQRContent(qr: any, shortDomain: string = activeDomain): string {
+  // A code can print with one of the account's verified custom domains (Phase 11, `qr.domain`).
+  if (qr.domain && /^[a-z0-9.-]+$/i.test(qr.domain)) shortDomain = `https://${qr.domain}`;
   if (qr.is_dynamic !== false && qr.gtin) return `${shortDomain}${gs1Path(qr.gtin, qr.content_data?.batch)}`;
   if (qr.is_dynamic !== false) return `${shortDomain}/${qr.slug}`;
   const d = qr.content_data || {};
@@ -220,5 +222,6 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('qrContent.ts'
     const routes = [...fs.readFileSync('src/App.tsx', 'utf8').matchAll(/path="\/?([^"/:*]*)/g)].map((m: string[]) => m[1]);
     for (const r of routes) assert(RESERVED_SLUGS.has(r), `App.tsx route "${r}" is not in RESERVED_SLUGS`);
   }
+  assert(getQRContent({ slug: 'abc', domain: 'go.brand.lk' }, 'https://s.lk') === 'https://go.brand.lk/abc' && getQRContent({ slug: 'abc', domain: 'x/y' }, 'https://s.lk') === 'https://s.lk/abc', 'per-code domain');
   console.log('qrContent self-check ok');
 }
