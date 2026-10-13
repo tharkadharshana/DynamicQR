@@ -2,6 +2,14 @@
 
 One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-review-findings.md](11-review-findings.md).
 
+## Phase 12: Public tools, help and What's new (branch `feat/public-tools`)
+
+- **Free tools** at `/tools/*`, no sign-in: QR scanner (`BarcodeDetector`, `jsqr` fallback, the one new dependency), UTM builder, Google review link, WhatsApp link, and a static QR generator. Each reuses the shared builders (`buildDestination`, `withUtm`, `stylingOptions`), so what a visitor copies is exactly what the app and the Worker produce.
+- **Help button**: a floating WhatsApp link in the app, on Pricing and on the tools.
+- **What's new** at `/whats-new`, from `src/lib/changelog.ts`, written for customers (with a self-check that entries are complete and newest first).
+- **Landing**: sections for Pages, Forms, Short links and Business, and a footer link hub of real pages only. The sitemap and `llms.txt` list the new public pages.
+- QA section 35. No migration and no Worker change: this is the last phase of the competitor-parity roadmap.
+
 ## Phase 11: Business tier (branch `feat/business-tier`)
 
 - **Webhooks** (Business): `scan.created`, `form.submitted`, `qr.created`, `qr.updated`, `qr.deleted`, one `deliver(uid, event, payload)` helper that signs with the Standard Webhooks signer (`src/lib/webhooks.ts`, now shared with the Polar verifier), retries 3 times inside the request and records `last_status`. `scan.created` is sent from `/internal/scan`, which the Worker already calls in `waitUntil`. Add, test ping and delete in Settings.

@@ -6,6 +6,7 @@ import { formatPrice, planFeatures, PLANS, PAID_PLANS, GRACE_DAYS, Currency, Bil
 import { SITE, waLink } from '../lib/site';
 import { startCheckout } from '../lib/checkout';
 import { useUI } from '../shared/UIContext';
+import HelpButton from '../components/HelpButton';
 
 // Presentation only. Prices and features come from plans.ts.
 const ORDER: PlanId[] = ['free', ...PAID_PLANS];
@@ -181,6 +182,7 @@ export default function Pricing() {
         <span className="hidden sm:inline w-1 h-1 rounded-full bg-zinc-700"></span>
         <Link to="/legal/terms-and-conditions" className="hover:text-zinc-300 transition-colors">Terms & Conditions</Link>
       </div>
+      <HelpButton />
     </div>
   );
 }

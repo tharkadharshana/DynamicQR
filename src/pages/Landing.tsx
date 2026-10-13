@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { loginWithGoogle } from '../supabase';
 import QRCode from 'qrcode';
-import { formatPrice, planFeatures, PAID_PLANS, Currency, PaidPlan } from '../lib/plans';
+import { formatPrice, planFeatures, PAID_PLANS, PLANS, Currency, PaidPlan } from '../lib/plans';
+import FooterHub from '../components/FooterHub';
 import { SHORT_DOMAIN, SHORT_HOST } from '../lib/qrContent';
 import { SITE, waLink } from '../lib/site';
 import './Landing.css';
@@ -30,6 +31,9 @@ export default function Landing() {
       setLoginLoading(false);
     }
   };
+
+  // The footer's /login#pricing link: scroll to the pricing section once the page is up.
+  useEffect(() => { if (window.location.hash === '#pricing') document.getElementById('pricing')?.scrollIntoView(); }, []);
 
   useEffect(() => {
     // Scroll reveal (sections start visible in CSS when reduced motion is on)
@@ -232,6 +236,34 @@ export default function Landing() {
               <p className="feat-desc">If a plan ends, your codes keep working for 30 days. After that, codes above your plan pause — they are never deleted.</p>
               <div className="feat-arrow">↗</div>
             </div>
+            <div className="feat">
+              <div className="feat-num">07</div>
+              <div className="feat-icon" style={{ background: '#EEF0FF' }}>📄</div>
+              <div className="feat-name">Mobile pages</div>
+              <p className="feat-desc">Build a page from blocks (buttons, social icons, images, video, products, a contact card) or start from one of a dozen ready-made templates. Free includes {PLANS.free.pages} page; Pro includes {PLANS.pro.pages}.</p>
+              <div className="feat-arrow">↗</div>
+            </div>
+            <div className="feat">
+              <div className="feat-num">08</div>
+              <div className="feat-icon" style={{ background: '#FFF8E8' }}>📝</div>
+              <div className="feat-name">Forms</div>
+              <p className="feat-desc">Print a code that opens a form. Get each answer by email, see them in a table and download a CSV. Pro includes {PLANS.pro.forms} forms.</p>
+              <div className="feat-arrow">↗</div>
+            </div>
+            <div className="feat">
+              <div className="feat-num">09</div>
+              <div className="feat-icon" style={{ background: 'var(--coral-l)' }}>🔗</div>
+              <div className="feat-name">Short links</div>
+              <p className="feat-desc">Shorten any link with your own back-half. Pro includes {PLANS.pro.short_links} short links; Free includes {PLANS.free.short_links}.</p>
+              <div className="feat-arrow">↗</div>
+            </div>
+            <div className="feat">
+              <div className="feat-num">10</div>
+              <div className="feat-icon" style={{ background: '#E8F5EC' }}>🏢</div>
+              <div className="feat-name">For agencies and chains</div>
+              <p className="feat-desc">The Business plan has {PLANS.business.workspaces} workspaces, {PLANS.business.seats} team members, up to {PLANS.business.custom_domains} custom domains and webhooks.</p>
+              <div className="feat-arrow">↗</div>
+            </div>
           </div>
         </div>
       </section>
@@ -371,13 +403,7 @@ export default function Landing() {
             </div>
             {SITE.name}
           </a>
-          <div className="footer-links">
-            <a href="#pricing">Pricing</a>
-            {SITE.statusUrl && <a href={SITE.statusUrl} target="_blank" rel="noreferrer">Status</a>}
-            <Link to="/legal/refund-policy">Refunds</Link>
-            <Link to="/legal/privacy-policy">Privacy</Link>
-            <Link to="/legal/terms-and-conditions">Terms</Link>
-          </div>
+          <FooterHub />
           <div className="footer-copy">© 2026 {SITE.legalName} · {SITE.location} · {SITE.email}</div>
         </div>
       </footer>

@@ -27,6 +27,8 @@ const SettingsPage = lazy(() => import('./pages/Settings'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
 const TermsConditions = lazy(() => import('./pages/TermsConditions'));
 const RefundPolicy = lazy(() => import('./pages/RefundPolicy'));
+const Tools = lazy(() => import('./pages/Tools'));
+const WhatsNew = lazy(() => import('./pages/WhatsNew'));
 
 const loadingScreen = (
   <div style={{
@@ -99,6 +101,11 @@ export default function App() {
             <Route path="/legal/privacy-policy" element={<PrivacyPolicy />} />
             <Route path="/legal/terms-and-conditions" element={<TermsConditions />} />
             <Route path="/legal/refund-policy" element={<RefundPolicy />} />
+
+            {/* Public tools and release notes: no login */}
+            <Route path="/tools" element={<Tools />} />
+            <Route path="/tools/:slug" element={<Tools />} />
+            <Route path="/whats-new" element={<WhatsNew />} />
 
             {user ? (
               <Route path="/" element={<DynamicQRLayout planData={planData} />}>

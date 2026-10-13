@@ -53,14 +53,16 @@
  *      rounded fix (no overwrite, secret), smart routing (iOS, country, fallback, invalid, Free gate)
  *  34. Business tier: webhooks (Team 403, https/public, signed qr.created/deleted verified with the shared
  *      verifier, test ping), workspaces (scoping, member held to B, 403s, delete), domains (Team 10 → 11th 403, per-code domain)
- *  35. Cleanup
+ *  35. Public tools: seven public routes return the app shell without auth, UTM builder output equals the
+ *      Worker redirect, shared link builders, reserved paths
+ *  36. Cleanup
  */
 import 'dotenv/config';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import worker from './worker/worker.js';
 import { waLink } from './src/lib/site.ts';
-import { getQRContent, setShortDomain, buildDestination, gtinValid } from './src/lib/qrContent.ts';
+import { getQRContent, setShortDomain, buildDestination, gtinValid, withUtm, isReservedSlug } from './src/lib/qrContent.ts';
 import { csvToObjects, toCsv } from './src/lib/csv.ts';
 import { PAGE_TEMPLATES } from './src/lib/pageTemplates.ts';
 import { pickRoute, routeCtx } from './src/lib/routing.ts';
@@ -1798,8 +1800,37 @@ async function run() {
     await admin.from('custom_domains').delete().eq('uid', uid);
   }
 
-  // ── 35. Cleanup ──────────────────────────────────────────────────────────────
-  section('35. Cleanup');
+  // ── 35. Public tools, What's new, Help ───────────────────────────────────────
+  section('35. Public tools — routes open without sign-in, UTM builder = Worker append, reserved slugs');
+  {
+    for (const path of ['/tools', '/tools/qr-scanner', '/tools/utm-builder', '/tools/google-review-link', '/tools/whatsapp-link', '/tools/qr-generator', '/whats-new']) {
+      const r = await rawGet(path);
+      check(`GET ${path} without auth → 200 (the app shell)`, r.status === 200 && r.body.includes('id="root"'), `status=${r.status}`);
+    }
+    // The UTM builder page and the Worker use the same function, so the link a visitor copies is the link the Worker redirects to.
+    const utm = { source: 'newsletter', medium: 'email', campaign: 'avurudu', term: 'kottu', content: 'hero' };
+    const built = withUtm('https://example.com/menu?lang=si', utm);
+    const l = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'url', is_dynamic: true, destination_url: 'https://example.com/menu?lang=si', title: 'QA UTM builder', content_data: { utm } }) });
+    const w = await runWorker(`/${l.body?.slug}`, { ua: 'QA-utm-builder' });
+    check('UTM builder output matches the Worker redirect', w.location === built && built.includes('utm_campaign=avurudu') && built.includes('lang=si'), `builder=${built} worker=${w.location}`);
+    check('Review and WhatsApp link tools use the shared builders', buildDestination('google_review', { place_id: 'ChIJ1' }) === 'https://search.google.com/local/writereview?placeid=ChIJ1' && buildDestination('whatsapp', { phone: '+94 77 1', text: 'Hi' }) === 'https://wa.me/94771?text=Hi');
+    check('The tool and What\'s new paths are reserved (never a code back-half)', ['tools', 'whats-new', 'help'].every(isReservedSlug));
+    const reserved = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'url', is_dynamic: true, kind: 'link', slug: 'tools', destination_url: 'https://example.com/x', title: 'QA reserved tools' }) });
+    check('A back-half of "tools" → 400', reserved.status === 400, `got ${reserved.status}`);
+    // A pass-through is the Worker calling fetch(request) on its own host: stub that one call and see it happen.
+    const realFetch = globalThis.fetch, passed: string[] = [];
+    globalThis.fetch = (async (i: any, init?: any) => {
+      const u = typeof i === 'string' ? i : i.url;
+      if (u.startsWith('https://qa.scnr.test')) { passed.push(u); return new Response('APP', { status: 200 }); }
+      return realFetch(i, init);
+    }) as typeof fetch;
+    let toolsEdge: { status: number; body: string } = { status: 0, body: '' };
+    try { toolsEdge = await runWorker('/tools/qr-scanner', { ua: 'QA-tools' }); } finally { globalThis.fetch = realFetch; }
+    check('Worker: /tools/* passes through to the app, not a code lookup', toolsEdge.status === 200 && toolsEdge.body === 'APP' && passed.length === 1 && passed[0].endsWith('/tools/qr-scanner'), `status=${toolsEdge.status} passed=${passed}`)
+  }
+
+  // ── 36. Cleanup ──────────────────────────────────────────────────────────────
+  section('36. Cleanup');
   {
     const del = await api('/api/user/account', { method: 'DELETE', token });
     check('DELETE /api/user/account → 200', del.status === 200, `status=${del.status} ${JSON.stringify(del.body)}`);
