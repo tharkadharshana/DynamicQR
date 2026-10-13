@@ -81,6 +81,9 @@ const wifiBox = (ssid: string, password: string, t: Record<string, string>) => `
 const icsEsc = (s: unknown) => String(s ?? '').replace(/[\\;,]/g, m => `\\${m}`).replace(/\r?\n/g, '\\n');
 const icsTime = (s: unknown) => String(s || '').replace(/[-:]/g, '').replace(/\.\d+$/, '').padEnd(15, '0').slice(0, 15);
 
+// RFC 5545 line folding. ponytail: folds at 74 characters, not octets; fine for ASCII, a long Sinhala line may run over.
+const fold = (l: string) => (l.length <= 75 ? l : l.match(/.{1,74}/g)!.join('\r\n '));
+
 /** An event code downloads one VEVENT. Times are floating (the guest's local time), as typed in the editor. */
 export function icsText(d: any = {}, uid = 'scnr'): string {
   return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Scnr//Event//EN', 'BEGIN:VEVENT',
@@ -88,7 +91,7 @@ export function icsText(d: any = {}, uid = 'scnr'): string {
     `DTSTART:${icsTime(d.start)}`, ...(d.end ? [`DTEND:${icsTime(d.end)}`] : []),
     `SUMMARY:${icsEsc(d.title)}`, ...(d.location ? [`LOCATION:${icsEsc(d.location)}`] : []),
     ...(d.description ? [`DESCRIPTION:${icsEsc(d.description)}`] : []), ...(safeUrl(d.url) ? [`URL:${safeUrl(d.url)}`] : []),
-    'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    'END:VEVENT', 'END:VCALENDAR'].map(fold).join('\r\n');
 }
 
 /** config: the cached gate config (qr_type, content_data, title, branding). url: the scanned URL (for language links). */
@@ -157,5 +160,7 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('guestPage.ts'
   const app = { ios: 'https://apps.apple.com/app/id1', android: 'https://play.google.com/store/apps/details?id=x' };
   assert(appTarget(app, 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)') === app.ios && appTarget(app, 'Linux; Android 14') === app.android, 'app routing');
   assert(appTarget(app, 'Windows NT 10.0') === '' && appTarget({ ios: 'javascript:x' }, 'iPhone') === '' && appTarget(null, 'iPhone') === '', 'app fallback');
+  const long = icsText({ title: 'x', start: '2026-01-01T10:00', description: 'y'.repeat(200) });
+  assert(long.split('\r\n').every(l => l.length <= 75) && long.includes('\r\n y'), 'ics folds long lines');
   console.log('guestPage self-check ok');
 }

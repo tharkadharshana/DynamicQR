@@ -24,10 +24,13 @@ export function vcardText(d: any = {}): string {
 // Dot styles offered by the editor. Older codes stored 'diamond' and 'star'; they keep rendering.
 export const DOT_STYLES = ['square', 'dots', 'rounded', 'classy', 'classy-rounded', 'extra-rounded'] as const;
 
+/** A stored dot_style as one of DOT_STYLES (older codes stored 'diamond' and 'star'). */
+export const normDotStyle = (d: unknown): string =>
+  ({ diamond: 'classy', star: 'classy-rounded' } as Record<string, string>)[String(d)] || ((DOT_STYLES as readonly string[]).includes(String(d)) ? String(d) : 'square');
+
 /** qr-code-styling options from a stored `style` (used by the editor preview, downloads and the viewer modal). */
 export function stylingOptions(style: any = {}, data: string, size: number) {
-  const dotType = ({ diamond: 'classy', star: 'classy-rounded' } as any)[style.dot_style]
-    || (DOT_STYLES.includes(style.dot_style) ? style.dot_style : 'square');
+  const dotType = normDotStyle(style.dot_style);
   const cornerType = ({ dot: 'dot', rounded: 'extra-rounded' } as any)[style.corner_style] || 'square';
   const cornerDot = style.corner_dot_style === 'dot' || style.corner_dot_style === 'square'
     ? style.corner_dot_style : cornerType === 'extra-rounded' ? 'dot' : cornerType;

@@ -50,6 +50,7 @@ export default {
         if (res && res.status === 400) return page('Invalid product code', '<h2>Invalid product code</h2><p>This GTIN has a wrong check digit.</p>', 400);
         if (res && res.status === 404) return page('Product not found', '<h2>Product not found</h2><p>No code is linked to this product yet.</p>', 404);
         if (!res || !res.ok) return page('Temporarily unavailable', '<h2>Temporarily unavailable</h2><p>Please scan again in a minute.</p>', 503);
+        // ponytail: unknown GTINs are not cached, so each scan of one asks the origin. Cache a miss marker if that gets busy.
         resolved = (await res.json()).slug;
         ctx.waitUntil(env.QR_CACHE.put(key, resolved, { expirationTtl: 300 }));
       }

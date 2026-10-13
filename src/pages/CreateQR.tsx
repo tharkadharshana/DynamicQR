@@ -4,7 +4,7 @@ import { supabase } from '../supabase';
 import QRCodeStyling from 'qr-code-styling';
 import { apiFetch } from '../lib/api';
 import { useUI } from '../shared/UIContext';
-import { getQRContent, stylingOptions, resizeLogo, SHORT_DOMAIN, shortHost, buildDestination, SOCIALS, gtinValid, FRAME_TEXTS, DOT_STYLES } from '../lib/qrContent';
+import { getQRContent, stylingOptions, resizeLogo, SHORT_DOMAIN, shortHost, buildDestination, SOCIALS, gtinValid, FRAME_TEXTS, DOT_STYLES, normDotStyle } from '../lib/qrContent';
 import { waLink } from '../lib/site';
 import { downloadQR } from '../components/QRViewerModal';
 
@@ -622,7 +622,7 @@ export default function CreateQR() {
               <div style={{ display: 'flex', gap: '16px' }}>
                 <div className="form-section" style={{ flex: 1 }}>
                   <label className="form-label" htmlFor="dot-style">Dot style</label>
-                  <select id="dot-style" className="form-input" value={({ diamond: 'classy', star: 'classy-rounded' } as any)[formData.style.dot_style] || formData.style.dot_style}
+                  <select id="dot-style" className="form-input" value={normDotStyle(formData.style.dot_style)}
                     onChange={(e) => setStyle({ dot_style: e.target.value })}>
                     {DOT_STYLES.map(d => <option key={d} value={d}>{d[0].toUpperCase() + d.slice(1).replace('-', ' ')}</option>)}
                   </select>
@@ -928,7 +928,7 @@ export default function CreateQR() {
                     qr_type: 'url',
                     is_active: true,
                     content_data: {},
-                    style: { ...DEFAULT_STYLE },
+                    style: { ...DEFAULT_STYLE, ...(planData?.profile?.brand_style || {}) },
                     options: {
                       password_protect: false,
                       password: '',

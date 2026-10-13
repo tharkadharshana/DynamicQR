@@ -1428,6 +1428,15 @@ async function run() {
     check('GS1 QR content is /01/<GTIN-14>', getQRContent({ ...g1.body, slug: g1.body?.slug }, 'https://s.lk') === `https://s.lk/01/${gtin.padStart(14, '0')}`);
     const dup = await mk({ title: 'QA GS1 dup', destination_url: 'https://example.com/p2', gtin });
     check('Same GTIN twice → 409 GTIN_TAKEN', dup.status === 409 && dup.body?.code === 'GTIN_TAKEN', `status=${dup.status}`);
+    // Editing: a static code switched to Event becomes dynamic; taking another code's GTIN → 409.
+    const st = await mk({ title: 'QA static to event', destination_url: 'https://example.com/s', is_dynamic: false });
+    const toEv = await api(`/api/qr/${st.body?.slug}`, { method: 'PUT', token, body: JSON.stringify({ qr_type: 'event', content_data: { title: 'E', start: '2026-12-02T10:00' } }) });
+    const evRow = (await api(`/api/qr/${st.body?.slug}`, { token })).body;
+    check('PUT: static URL → event, now dynamic', toEv.status === 200 && evRow?.qr_type === 'event' && evRow?.is_dynamic === true, `status=${toEv.status} ${evRow?.qr_type}/${evRow?.is_dynamic}`);
+    const takeG = await api(`/api/qr/${st.body?.slug}`, { method: 'PUT', token, body: JSON.stringify({ gtin }) });
+    check('PUT: another code\'s GTIN → 409 GTIN_TAKEN', takeG.status === 409 && takeG.body?.code === 'GTIN_TAKEN', `got ${takeG.status}`);
+    const noStart = await mk({ qr_type: 'event', title: 'QA event without start', content_data: { title: 'x' } });
+    check('Event without a start time → 400', noStart.status === 400, `got ${noStart.status}`);
     const badG = await mk({ title: 'QA GS1 bad', destination_url: 'https://example.com/p3', gtin: gtin.slice(0, -1) + ((Number(gtin.slice(-1)) + 1) % 10) });
     check('Wrong GTIN check digit → 400 INVALID_GTIN', badG.status === 400 && badG.body?.code === 'INVALID_GTIN', `status=${badG.status}`);
     const wg = await runWorker(`/01/${gtin.padStart(14, '0')}/10/LOT7`, { ua: 'QA-gs1' });

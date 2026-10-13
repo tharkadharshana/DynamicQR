@@ -243,8 +243,9 @@ async function startServer() {
   ] as const;
 
   /** Plan caps for one more active row like `next` (create or reactivate). Returns the 403 body, or null if it fits. */
-  async function capError(uid: string, limits: PlanLimits, next: { kind?: string; qr_type?: string; is_dynamic?: boolean }) {
-    const active = (await rows('qr_codes', 'user_uid', uid)).filter(q => q.is_active !== false);
+  async function capError(uid: string, limits: PlanLimits, next: { slug?: string; kind?: string; qr_type?: string; is_dynamic?: boolean }) {
+    // `next` itself is left out of the counts, so an edit of an existing row is checked like a create.
+    const active = (await rows('qr_codes', 'user_uid', uid)).filter(q => q.is_active !== false && q.slug !== next.slug);
     for (const cap of OBJECT_CAPS) {
       if (!cap.is(next)) continue;
       const current = active.filter(cap.is).length, limit = limits[cap.field];
@@ -476,6 +477,10 @@ async function startServer() {
     try {
       const uid = (req as any).user.uid;
       const { company, jobTitle, country, timezone } = req.body;
+      const bs = req.body.brand_style;
+      if (bs !== undefined && bs !== null && (typeof bs !== 'object' || Array.isArray(bs) || JSON.stringify(bs).length > 90000)) {
+        return res.status(400).json({ error: 'brand_style must be an object under 90 KB (try a smaller logo)' });
+      }
       const { error } = await supabase.from('profiles').update({
         company: company || '',
         job_title: jobTitle || '',
@@ -486,8 +491,7 @@ async function startServer() {
         ...(typeof req.body.agencyLogo === 'string' && req.body.agencyLogo.length <= 65536 && (req.body.agencyLogo === '' || req.body.agencyLogo.startsWith('data:image/'))
           ? { agency_logo: req.body.agencyLogo } : {}),
         // Saved design for new codes (colours, dots, logo, frame). Object or null; capped like content_data plus a logo.
-        ...(req.body.brand_style === null || (typeof req.body.brand_style === 'object' && !Array.isArray(req.body.brand_style) && JSON.stringify(req.body.brand_style).length <= 90000)
-          ? { brand_style: req.body.brand_style } : {}),
+        ...(bs !== undefined ? { brand_style: bs } : {}),
         updated_at: nowIso(),
       }).eq('id', uid);
       if (error) throw error;
@@ -983,6 +987,9 @@ async function startServer() {
       if (content_data !== undefined && JSON.stringify(content_data).length > CONTENT_MAX) {
         return res.status(400).json({ error: 'content_data is too large (max 20 KB)' });
       }
+      if (type === 'event' && (!content_data?.start || isNaN(new Date(content_data.start).getTime()))) {
+        return res.status(400).json({ error: 'An event needs a valid start time' });
+      }
       const gtin = req.body.gtin === undefined ? null : normGtin(req.body.gtin);
       if (gtin === undefined) return res.status(400).json({ error: 'gtin must be a GTIN-8, 12, 13 or 14 with a valid check digit', code: 'INVALID_GTIN' });
       // Guest pages, events and GS1 codes only exist as dynamic codes; every other type can be either.
@@ -1182,18 +1189,30 @@ async function startServer() {
         return res.status(400).json({ error: 'password must be a string under 128 characters' });
       }
 
-      // Switching a row back on must fit the plan caps, like creating it.
-      if (is_active === true && (req as any).user) {
-        const cur = await row('qr_codes', 'slug', slug);
-        if (cur && cur.is_active === false) {
-          const capped = await capError(cur.user_uid, (await getLicense(cur.user_uid)).limits, cur);
+      const cur = (req as any).qr; // set by requireOwnership for a user edit; internal calls only switch codes off
+      if (cur) {
+        if (req.body.gtin !== undefined) {
+          updateData.gtin = normGtin(req.body.gtin);
+          if (updateData.gtin === undefined) return res.status(400).json({ error: 'gtin must be a GTIN-8, 12, 13 or 14 with a valid check digit', code: 'INVALID_GTIN' });
+        }
+        // The editor can switch a code's type. Guest pages have their own editor, so page ↔ other is refused.
+        const type = req.body.qr_type ?? cur.qr_type ?? 'url';
+        if (!QR_TYPES.includes(type) || ((type === 'page') !== ((cur.qr_type || 'url') === 'page'))) {
+          return res.status(400).json({ error: 'qr_type cannot be changed to or from a page here' });
+        }
+        if (type !== (cur.qr_type || 'url')) updateData.qr_type = type;
+        if (type === 'event') {
+          const d = content_data ?? cur.content_data;
+          if (!d?.start || isNaN(new Date(d.start).getTime())) return res.status(400).json({ error: 'An event needs a valid start time' });
+        }
+        // Static → dynamic (asked for, or implied by an event or a GTIN). Dynamic never goes back: the print encodes the slug.
+        const toDynamic = cur.is_dynamic === false && (req.body.is_dynamic === true || type === 'event' || !!(updateData.gtin ?? cur.gtin));
+        if (toDynamic) updateData.is_dynamic = true;
+        // Switching a row back on, or making it dynamic, must fit the plan caps like creating it.
+        if ((is_active === true && cur.is_active === false) || toDynamic) {
+          const capped = await capError(cur.user_uid, (await getLicense(cur.user_uid)).limits, { ...cur, qr_type: type, is_dynamic: cur.is_dynamic !== false || toDynamic });
           if (capped) return res.status(403).json(capped);
         }
-      }
-
-      if (req.body.gtin !== undefined) {
-        updateData.gtin = normGtin(req.body.gtin);
-        if (updateData.gtin === undefined) return res.status(400).json({ error: 'gtin must be a GTIN-8, 12, 13 or 14 with a valid check digit', code: 'INVALID_GTIN' });
       }
       if (destination_url !== undefined) updateData.destination_url = destination_url;
       if (title !== undefined) updateData.title = title;
@@ -1250,8 +1269,10 @@ async function startServer() {
         }
       }
       const { error: updErr } = await supabase.from('qr_codes').update(updateData).eq('slug', slug);
+      if (updErr?.code === '23505' && updateData.gtin) return res.status(409).json({ error: 'This GTIN is already used by another code', code: 'GTIN_TAKEN' });
       if (updErr) throw updErr;
       await purgeEdge(slug);
+      if (cur?.gtin && updateData.gtin !== undefined && updateData.gtin !== cur.gtin) purgeEdge(`gs1:${cur.gtin}`);
       res.json({ success: true, slug });
     } catch (error: any) {
       logger.error('QR update error:', error);
@@ -1269,6 +1290,7 @@ async function startServer() {
       if (error) throw error;
       res.json({ message: 'QR code deleted successfully' });
       purgeEdge(slug);
+      if ((req as any).qr?.gtin) purgeEdge(`gs1:${(req as any).qr.gtin}`);
     } catch (error: any) {
       logger.error('QR delete error:', error);
       res.status(500).json({ error: 'Failed to delete QR code' });
@@ -1690,7 +1712,7 @@ async function startServer() {
         qr_type: qr.qr_type || 'url',
         content_data: qr.qr_type && qr.qr_type !== 'url' ? qr.content_data || {} : undefined,
         slug: qr.slug,
-        app: qr.qr_type === 'url' || !qr.qr_type ? qr.content_data?.app : undefined, // app-store code: device picks the store
+        app: (qr.qr_type || 'url') === 'url' && qr.content_data?.kind === 'app' ? qr.content_data.app : undefined, // device picks the store
         branding: !license.limits.remove_branding, // "Made with Scnr" on Free guest pages
         owner_plan: license.effectivePlan,
       };
