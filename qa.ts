@@ -51,7 +51,9 @@
  *      honeypot dropped, unknown field stripped, CSV, not a scan, 6th answer 429, export, delete
  *  33. Tracking: city/language/referrer maps (code and account), opt-in GPS interstitial and
  *      rounded fix (no overwrite, secret), smart routing (iOS, country, fallback, invalid, Free gate)
- *  34. Cleanup
+ *  34. Business tier: webhooks (Team 403, https/public, signed qr.created/deleted verified with the shared
+ *      verifier, test ping), workspaces (scoping, member held to B, 403s, delete), domains (Team 10 → 11th 403, per-code domain)
+ *  35. Cleanup
  */
 import 'dotenv/config';
 import crypto from 'crypto';
@@ -62,6 +64,8 @@ import { getQRContent, setShortDomain, buildDestination, gtinValid } from './src
 import { csvToObjects, toCsv } from './src/lib/csv.ts';
 import { PAGE_TEMPLATES } from './src/lib/pageTemplates.ts';
 import { pickRoute, routeCtx } from './src/lib/routing.ts';
+import { verifyStandardWebhook } from './src/lib/webhooks.ts';
+import http from 'http';
 
 // ─── config ──────────────────────────────────────────────────────────────────
 const API             = process.env.QA_API_URL || 'http://localhost:3000';
@@ -1674,8 +1678,114 @@ async function run() {
     await admin.from('profiles').update({ plan: 'pro', plan_expires_at: new Date(Date.now() + 30 * 86400000).toISOString() }).eq('id', uid);
   }
 
-  // ── 34. Cleanup ──────────────────────────────────────────────────────────────
-  section('34. Cleanup');
+  // ── 34. Business tier: webhooks, workspaces, several custom domains ──────────
+  section('34. Business tier — signed webhooks, workspace isolation, domains per plan');
+  {
+    const bizUntil = () => new Date(Date.now() + 30 * 86400000).toISOString();
+    await admin.from('profiles').update({ plan: 'team', plan_expires_at: bizUntil(), is_trial: false }).eq('id', uid);
+    const hook = (body: any) => api('/api/webhooks', { method: 'POST', token, body: JSON.stringify(body) });
+
+    // Webhooks need Business.
+    const teamHook = await hook({ url: 'https://example.com/hook', events: ['qr.created'] });
+    check('Team: adding a webhook → 403 FEATURE_WEBHOOKS', teamHook.status === 403 && teamHook.body?.code === 'FEATURE_WEBHOOKS', `got ${teamHook.status}`);
+    await admin.from('profiles').update({ plan: 'business', plan_expires_at: bizUntil(), is_trial: false }).eq('id', uid);
+    const biz = (await api('/api/user/plan', { token })).body?.limits;
+    check('Business limits apply after a Business payment state', biz?.webhooks === true && biz?.workspaces === 10 && biz?.seats === 25 && biz?.custom_domains === 50, JSON.stringify(biz));
+    const plain = await hook({ url: 'http://example.com/hook', events: ['qr.created'] });
+    const priv = await hook({ url: 'https://192.168.1.5/hook', events: ['qr.created'] });
+    const badEvt = await hook({ url: 'https://example.com/hook', events: ['everything'] });
+    check('Webhook URL must be https and public; events must be known', plain.status === 400 && priv.status === 400 && badEvt.status === 400, `${plain.status}/${priv.status}/${badEvt.status}`);
+
+    // A local receiver: records each delivery and verifies the signature with the shared verifier.
+    const received: { ok: boolean; type: string; slug?: string }[] = [];
+    let secret = '';
+    const receiver = http.createServer((rq, rs) => {
+      let raw = '';
+      rq.on('data', c => (raw += c));
+      rq.on('end', () => {
+        const ok = verifyStandardWebhook(rq.headers as any, raw, secret);
+        const body = JSON.parse(raw || '{}');
+        received.push({ ok, type: body.type, slug: body.data?.slug });
+        rs.writeHead(200).end('ok');
+      });
+    });
+    await new Promise<void>(r => receiver.listen(0, '127.0.0.1', r));
+    const rport = (receiver.address() as any).port;
+    const made = await hook({ url: `http://127.0.0.1:${rport}/hook`, events: ['qr.created', 'qr.deleted'] });
+    secret = made.body?.secret || '';
+    check('Business: webhook created, secret shown once', made.status === 201 && secret.startsWith('whsec_'), `status=${made.status} ${JSON.stringify(made.body)}`);
+    const listed = (await api('/api/webhooks', { token })).body;
+    check('The list never shows the secret', Array.isArray(listed) && listed.length === 1 && !('secret' in listed[0]));
+
+    const wq = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'url', is_dynamic: true, destination_url: 'https://example.com/wh', title: 'QA webhook' }) });
+    await sleep(300);
+    const got = received.find(r => r.type === 'qr.created' && r.slug === wq.body?.slug);
+    check('qr.created delivered with a signature that verifies', !!got && got.ok, JSON.stringify(received));
+    await api(`/api/qr/${wq.body?.slug}`, { method: 'PUT', token, body: JSON.stringify({ title: 'QA webhook renamed' }) });
+    await sleep(300);
+    check('An event the endpoint did not subscribe to (qr.updated) is not sent', !received.some(r => r.type === 'qr.updated'));
+    const test = await api(`/api/webhooks/${made.body?.id}/test`, { method: 'POST', token });
+    check('Test ping → 200 from the receiver', test.status === 200 && test.body?.ok === true && received.some(r => r.type === 'webhook.test' && r.ok), JSON.stringify(test.body));
+    await api(`/api/qr/${wq.body?.slug}`, { method: 'DELETE', token });
+    await sleep(300);
+    check('qr.deleted delivered', received.some(r => r.type === 'qr.deleted' && r.slug === wq.body?.slug && r.ok));
+    check('A tampered body fails the shared verifier', !verifyStandardWebhook({ 'webhook-id': 'm', 'webhook-timestamp': String(Math.floor(Date.now() / 1000)), 'webhook-signature': 'v1,AAAA' }, '{}', secret));
+    await api(`/api/webhooks/${made.body?.id}`, { method: 'DELETE', token });
+    await new Promise(r => receiver.close(r));
+
+    // Workspaces: two workspaces, a member held to B cannot see A's codes.
+    const wsA = (await api('/api/workspaces', { method: 'POST', token, body: JSON.stringify({ name: 'QA A' }) })).body;
+    const wsB = (await api('/api/workspaces', { method: 'POST', token, body: JSON.stringify({ name: 'QA B' }) })).body;
+    check('Create two workspaces', !!wsA?.id && !!wsB?.id, JSON.stringify({ wsA, wsB }));
+    const inA = await api('/api/qr', { method: 'POST', token: token, headers: { 'X-Workspace': wsA.id }, body: JSON.stringify({ qr_type: 'url', is_dynamic: true, destination_url: 'https://example.com/a', title: 'QA in A' }) });
+    const inB = await api('/api/qr', { method: 'POST', token: token, headers: { 'X-Workspace': wsB.id }, body: JSON.stringify({ qr_type: 'url', is_dynamic: true, destination_url: 'https://example.com/b', title: 'QA in B' }) });
+    const listA = (await api('/api/qr', { token, headers: { 'X-Workspace': wsA.id } })).body;
+    const listAll = (await api('/api/qr', { token })).body;
+    check('Header X-Workspace scopes the list to that workspace', listA.some((q: any) => q.slug === inA.body?.slug) && !listA.some((q: any) => q.slug === inB.body?.slug) && listAll.some((q: any) => q.slug === inB.body?.slug), `A=${listA?.length} all=${listAll?.length}`);
+    const crossGet = await api(`/api/qr/${inB.body?.slug}`, { token, headers: { 'X-Workspace': wsA.id } });
+    check('A code from workspace B is not reachable while in workspace A', crossGet.status === 403, `got ${crossGet.status}`);
+    const strangeWs = await api('/api/qr', { token, headers: { 'X-Workspace': '00000000-0000-4000-8000-000000000000' } });
+    check('An unknown workspace id → 403', strangeWs.status === 403, `got ${strangeWs.status}`);
+
+    const memEmail = `qa-wsmember-${Date.now()}@test.dynamicqr.local`;
+    const { data: wm } = await admin.auth.admin.createUser({ email: memEmail, password: TEST_PASS, email_confirm: true });
+    if (wm?.user?.id) createdUids.push(wm.user.id);
+    const invB = await api('/api/team', { method: 'POST', token, body: JSON.stringify({ email: memEmail, workspace_id: wsB.id }) });
+    const mclient = createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false } });
+    const { data: msess } = await mclient.auth.signInWithPassword({ email: memEmail, password: TEST_PASS });
+    const wmTok = msess?.session?.access_token || '';
+    if (invB.status === 201 && wmTok) {
+      const mList = (await api('/api/qr', { token: wmTok })).body;
+      check('A member of workspace B lists only B\'s codes', Array.isArray(mList) && mList.some((q: any) => q.slug === inB.body?.slug) && !mList.some((q: any) => q.slug === inA.body?.slug), `n=${mList?.length}`);
+      const mOther = await api('/api/qr', { token: wmTok, headers: { 'X-Workspace': wsA.id } });
+      check('…and cannot switch to workspace A', mOther.status === 403, `got ${mOther.status}`);
+      const mGet = await api(`/api/qr/${inA.body?.slug}`, { token: wmTok });
+      check('…nor open a code from workspace A', mGet.status === 403, `got ${mGet.status}`);
+    } else check('Invite and sign in a workspace member', false, `invite=${invB.status} token=${!!wmTok}`);
+    if (wm?.user?.id) await admin.auth.admin.deleteUser(wm.user.id);
+    const delWs = await api(`/api/workspaces/${wsA.id}`, { method: 'DELETE', token });
+    const afterDel = (await api('/api/qr', { token, headers: { 'X-Workspace': 'default' } })).body;
+    check('Deleting a workspace moves its codes to the default one', delWs.status === 200 && afterDel.some((q: any) => q.slug === inA.body?.slug), `status=${delWs.status}`);
+    await admin.from('profiles').update({ plan: 'team', plan_expires_at: bizUntil() }).eq('id', uid);
+    const teamWs = await api('/api/workspaces', { method: 'POST', token, body: JSON.stringify({ name: 'QA over' }) });
+    check('Team: a 2nd workspace → 403 LIMIT_WORKSPACES', teamWs.status === 403 && teamWs.body?.code === 'LIMIT_WORKSPACES', `got ${teamWs.status}`);
+
+    // Domains: Team has 10 (not 1); the (N+1)th is refused. Rows are inserted directly (no Cloudflare in CI).
+    const hosts = Array.from({ length: 10 }, (_, i) => `qa${i}-${Date.now().toString(36)}.example.lk`);
+    await admin.from('custom_domains').insert(hosts.map(hostname => ({ uid, hostname, status: 'active' })));
+    const doms = (await api('/api/domains', { token })).body;
+    check('Team: 10 domains stored and listed', Array.isArray(doms) && doms.length === 10, `n=${doms?.length}`);
+    const eleventh = await api('/api/domains', { method: 'POST', token, body: JSON.stringify({ hostname: `qa11-${Date.now().toString(36)}.example.lk` }) });
+    check('Team: the 11th domain → 403 LIMIT_DOMAINS', eleventh.status === 403 && eleventh.body?.code === 'LIMIT_DOMAINS', `got ${eleventh.status}`);
+    const withDom = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'url', is_dynamic: true, destination_url: 'https://example.com/d', title: 'QA domain', domain: hosts[3] }) });
+    check('A code prints with a chosen verified domain', withDom.status === 201 && getQRContent(withDom.body) === `https://${hosts[3]}/${withDom.body?.slug}`, JSON.stringify(withDom.body?.domain));
+    const badDom = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'url', is_dynamic: true, destination_url: 'https://example.com/d', title: 'QA bad domain', domain: 'evil.example.com' }) });
+    check('A domain that is not yours → 400 INVALID_DOMAIN', badDom.status === 400 && badDom.body?.code === 'INVALID_DOMAIN', `got ${badDom.status}`);
+    await admin.from('custom_domains').delete().eq('uid', uid);
+  }
+
+  // ── 35. Cleanup ──────────────────────────────────────────────────────────────
+  section('35. Cleanup');
   {
     const del = await api('/api/user/account', { method: 'DELETE', token });
     check('DELETE /api/user/account → 200', del.status === 200, `status=${del.status} ${JSON.stringify(del.body)}`);
