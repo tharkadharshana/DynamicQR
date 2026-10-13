@@ -3,7 +3,7 @@ import { apiFetch } from '../lib/api';
 import { resizeLogo } from '../lib/qrContent';
 import { useUI } from '../shared/UIContext';
 
-// Team plan settings: API keys, members (seats from the plan), one custom short domain, white-label report branding.
+// Plan settings for Pro and up: API keys, members (seats from the plan), one custom short domain, white-label report branding.
 export default function TeamSettings({ planData }: { planData: any }) {
   const { showToast, showModal } = useUI();
   const limits = planData?.limits || {};
@@ -27,7 +27,7 @@ export default function TeamSettings({ planData }: { planData: any }) {
 
   if (!limits.api_access && limits.seats <= 1 && !(limits.custom_domains > 0)) return null;
   if (!owner) {
-    return <div className="settings-section mb16"><div className="settings-body" style={{ fontSize: '13px', color: 'var(--text3)' }}>You are a member of a Team workspace. The owner manages keys, members, domains and billing.</div></div>;
+    return <div className="settings-section mb16"><div className="settings-body" style={{ fontSize: '13px', color: 'var(--text3)' }}>You are a member of a shared workspace. The owner manages keys, members, domains and billing.</div></div>;
   }
 
   const run = async (fn: () => Promise<any>, ok: string) => {

@@ -163,7 +163,7 @@ Phase 0 added these sections:
   - Keys: API keys through `/api/v1` (create, use, scope limits, revoke, downgrade → 403).
   - Seats, with a second real test user: member sees the owner's workspace, can't pay or invite, the seat cap holds, and removal works.
   - Client folders through the API.
-- **28, Plans v2.** Business checkout amounts (LKR monthly and annual, USD fallback), an unknown plan → 400, Business limits, the Free caps on short links (4th → `LIMIT_SHORT_LINKS`) and pages (2nd → `LIMIT_PAGES`), short links outside the QR cap, a short link redirecting at the edge, Free's 90-day history and a logo on Free (needs migration 005).
+- **28, Plans v2.** Business checkout amounts (LKR monthly and annual, USD fallback), an unknown plan → 400, Business limits, the Free caps on short links (4th → `LIMIT_SHORT_LINKS`, also when reactivating; no destination → 400) and pages (2nd → `LIMIT_PAGES`), short links outside the QR cap, a short link redirecting at the edge, Free's 90-day history and a logo on Free (needs migration 005).
   - Custom domain: validation, 503 without Cloudflare, the Worker redirect on a custom host, and QR content using the domain.
   - Also covered: white-label branding and the CSV parser.
   - Needs migration 004.

@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Check, Zap, Crown, Users, Building2, Loader2 } from 'lucide-react';
 import { apiFetch } from '../lib/api';
-import { formatPrice, planFeatures, PLANS, GRACE_DAYS, Currency, BillingInterval, PlanId, PaidPlan } from '../lib/plans';
+import { formatPrice, planFeatures, PLANS, PAID_PLANS, GRACE_DAYS, Currency, BillingInterval, PlanId, PaidPlan } from '../lib/plans';
 import { SITE, waLink } from '../lib/site';
 import { startCheckout } from '../lib/checkout';
 import { useUI } from '../shared/UIContext';
 
 // Presentation only. Prices and features come from plans.ts.
-const ORDER: PlanId[] = ['free', 'pro', 'team', 'business'];
+const ORDER: PlanId[] = ['free', ...PAID_PLANS];
 const CARDS: Record<PlanId, { name: string; description: string; icon: typeof Zap; gradient: string; iconColor: string; borderColor: string; badge?: string; ctaStyle: string }> = {
   free: { name: 'Free', description: 'Get started with basic QR codes', icon: Zap, gradient: 'from-zinc-500/20 to-zinc-600/5', iconColor: 'text-zinc-400', borderColor: 'border-white/[0.06]', ctaStyle: 'border border-white/[0.08] text-zinc-400 cursor-default' },
   pro: { name: 'Pro', description: 'For professionals and small shops', icon: Crown, gradient: 'from-violet-500/20 to-indigo-600/10', iconColor: 'text-violet-400', borderColor: 'border-violet-500/30', badge: 'Most Popular', ctaStyle: 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40' },

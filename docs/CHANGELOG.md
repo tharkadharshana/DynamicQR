@@ -5,8 +5,8 @@ One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-r
 ## Phase 5: Plans v2 (branch `feat/plans-v2`)
 
 - **Business tier.** $79 / LKR 25,990 a month (10× for a year). `PlanId`, `PRICES`, PayHere checkout, Polar checkout and the Polar product map all accept `business`; new env vars `POLAR_PRODUCT_BUSINESS_MONTHLY` and `…_ANNUAL`.
-- **Per-object limits** in `src/lib/plans.ts`: `short_links`, `pages`, `forms`, `custom_domains` (a number, replacing the boolean), `workspaces`, `webhooks`, `gps_tracking`, `smart_routing`, `remove_branding`, `file_mb`. Team now has 10 seats and 10 domains; Free keeps 90 days of history (was 7). Pro gets one custom domain.
-- **Caps enforced** in `POST /api/qr`: `LIMIT_SHORT_LINKS`, `LIMIT_PAGES`, `LIMIT_FORMS`. Short links are rows with the new `kind='link'` (migration 005) and do not count against the QR caps. The lapse rule pauses links above `short_links` the same way.
+- **Per-object limits** in `src/lib/plans.ts`: `short_links`, `pages`, `forms`, `custom_domains` (a number, replacing the boolean), `workspaces`, `webhooks`, `gps_tracking`, `smart_routing`, `remove_branding`, `file_mb`. Team now has 10 seats and 10 domains; Free keeps 90 days of history (was 7). Pro gets one custom domain; the trial does not (a domain is a real Cloudflare hostname).
+- **Caps enforced** by one `capError()` helper when a row is created (`POST /api/qr`) or switched back on (`PUT`, which used to skip every cap): `LIMIT_SHORT_LINKS`, `LIMIT_PAGES`, `LIMIT_FORMS`. Short links are rows with the new `kind='link'` (migration 005) and do not count against the QR caps. The lapse rule pauses links above `short_links` the same way.
 - **Pricing pages.** Pricing, Billing and Landing show four cards generated from `PLANS` and `PRICES` through `planFeatures()`, with "in total" wording and a native `<details>` FAQ on Pricing. The cards list shipped features only; short links, forms, workspaces and webhooks join the list in the phase that ships them.
 - **Logo on Free** was already allowed; QA now proves it.
 - QA section 28; `src/lib/plans.ts` self-check.

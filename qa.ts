@@ -40,7 +40,7 @@
  *      (member access, owner-only actions, seat cap, removal), client folders, custom domain
  *      (validation, edge redirect, QR content), white-label branding, CSV parser
  *  28. Plans v2: Business checkout (LKR, annual, USD), Business limits, Free caps on short links
- *      and pages, links outside the QR cap, Free 90-day history, logo on Free
+ *      and pages (create and reactivate), links outside the QR cap, Free 90-day history, logo on Free
  *  29. Cleanup
  */
 import 'dotenv/config';
@@ -1359,6 +1359,15 @@ async function run() {
     check('Free: 4th short link → 403 LIMIT_SHORT_LINKS', links[3] === 403 && l4.body?.code === 'LIMIT_SHORT_LINKS', `status=${links[3]} code=${l4.body?.code}`);
     const badKind = await mk({ kind: 'link', qr_type: 'vcard', content_data: { first_name: 'x' } });
     check('kind=link on a non-url type → 400', badKind.status === 400, `got ${badKind.status}`);
+    const noDest = await mk({ kind: 'link', title: 'QA link without destination' });
+    check('kind=link without destination_url → 400', noDest.status === 400, `got ${noDest.status}`);
+    // Reactivating must fit the caps too: switch one link off, fill its slot, switch it back on.
+    const mine = (await api('/api/qr', { token })).body;
+    const link1 = Array.isArray(mine) ? mine.find((q: any) => q.title === 'QA link 1') : null;
+    await api(`/api/qr/${link1?.slug}`, { method: 'PUT', token, body: JSON.stringify({ is_active: false }) });
+    const refill = await mk({ kind: 'link', destination_url: 'https://example.com/refill', title: 'QA link refill' });
+    const back = await api(`/api/qr/${link1?.slug}`, { method: 'PUT', token, body: JSON.stringify({ is_active: true }) });
+    check('Free: reactivating a 4th short link → 403 LIMIT_SHORT_LINKS', refill.status === 201 && back.status === 403 && back.body?.code === 'LIMIT_SHORT_LINKS', `refill=${refill.status} back=${back.status} ${back.body?.code}`);
 
     // Links do not use the dynamic pilot: the one dynamic slot is still free for a page.
     const p1 = await mk({ qr_type: 'page', title: 'QA page 1', content_data: { name: 'QA' } });

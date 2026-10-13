@@ -19,7 +19,7 @@ import { customAlphabet } from 'nanoid';
 import logger from "./logger.js";
 import { renderGuestPage, pickLang } from './src/lib/guestPage.js';
 import { buildDigest } from './src/lib/digest.js';
-import { PLANS, TRIAL_LIMITS, GRACE_DAYS, DEFAULT_ADDONS, PRICES, PAID_PLANS, PlanId, PaidPlan, UserAddons, Currency, BillingInterval } from './src/lib/plans.js';
+import { PLANS, TRIAL_LIMITS, GRACE_DAYS, DEFAULT_ADDONS, PRICES, PAID_PLANS, PlanId, PaidPlan, PlanLimits, UserAddons, Currency, BillingInterval } from './src/lib/plans.js';
 
 // Direct table helpers (replaced the Firestore-compat shim in Phase 3).
 async function row(table: string, col: string, val: string): Promise<any | null> {
@@ -238,6 +238,26 @@ async function startServer() {
     { field: 'pages', code: 'LIMIT_PAGES', is: (q: any) => q.qr_type === 'page' },
     { field: 'forms', code: 'LIMIT_FORMS', is: (q: any) => q.qr_type === 'form' },
   ] as const;
+
+  /** Plan caps for one more active row like `next` (create or reactivate). Returns the 403 body, or null if it fits. */
+  async function capError(uid: string, limits: PlanLimits, next: { kind?: string; qr_type?: string; is_dynamic?: boolean }) {
+    const active = (await rows('qr_codes', 'user_uid', uid)).filter(q => q.is_active !== false);
+    for (const cap of OBJECT_CAPS) {
+      if (!cap.is(next)) continue;
+      const current = active.filter(cap.is).length, limit = limits[cap.field];
+      if (current >= limit) return { error: `Your plan includes ${limit} ${cap.field.replace('_', ' ')}. Upgrade for more.`, code: cap.code, limit, current };
+    }
+    if (isLink(next)) return null;
+    const codes = active.filter(q => !isLink(q));
+    if (limits.qr_codes !== -1 && codes.length >= limits.qr_codes) {
+      return { error: 'Plan limit reached. Upgrade to create more QRs.', code: 'LIMIT_QR_CODES', limit: limits.qr_codes, current: codes.length };
+    }
+    const dynamic = codes.filter(q => q.is_dynamic !== false).length;
+    if (next.is_dynamic !== false && dynamic >= limits.dynamic_qr_codes) {
+      return { error: 'Dynamic QR limit reached. Upgrade for more dynamic codes.', code: 'LIMIT_DYNAMIC_QR', limit: limits.dynamic_qr_codes, current: dynamic };
+    }
+    return null;
+  }
   const CONTENT_MAX = 20_000;
 
   // Activation funnel (see migrations/queries.sql). Never blocks or fails the request.
@@ -918,8 +938,8 @@ async function startServer() {
         return res.status(400).json({ error: `qr_type must be one of ${QR_TYPES.join(', ')}` });
       }
       const kind = req.body.kind || 'qr';
-      if (kind !== 'qr' && !(kind === 'link' && type === 'url' && requestedDynamic !== false)) {
-        return res.status(400).json({ error: "kind must be 'qr', or 'link' for a dynamic url" });
+      if (kind !== 'qr' && !(kind === 'link' && type === 'url' && requestedDynamic !== false && destination_url)) {
+        return res.status(400).json({ error: "kind must be 'qr', or 'link' for a dynamic url with a destination_url" });
       }
       if (content_data !== undefined && JSON.stringify(content_data).length > CONTENT_MAX) {
         return res.status(400).json({ error: 'content_data is too large (max 20 KB)' });
@@ -969,39 +989,8 @@ async function startServer() {
       logger.info(`Checking limits for plan: ${license.effectivePlan}`, { limits: license.limits });
 
 
-      const myQrs = (await rows('qr_codes', 'user_uid', uid)).filter(q => q.is_active !== false);
-      const newRow = { kind, qr_type: type };
-      for (const cap of OBJECT_CAPS) {
-        if (!cap.is(newRow)) continue;
-        const current = myQrs.filter(cap.is).length;
-        const limit = license.limits[cap.field];
-        if (current >= limit) {
-          return res.status(403).json({ error: `Your plan includes ${limit} ${cap.field.replace('_', ' ')}. Upgrade for more.`, code: cap.code, limit, current });
-        }
-      }
-      const myCodes = myQrs.filter(q => !isLink(q));
-      const activeCount = myCodes.length;
-      
-      // Sentinel -1 check for unlimited
-      if (kind === 'qr' && license.limits.qr_codes !== -1 && activeCount >= license.limits.qr_codes) {
-        logger.warn(`User ${uid} reached plan limit (${activeCount}/${license.limits.qr_codes})`);
-        return res.status(403).json({ 
-          error: 'Plan limit reached. Upgrade to create more QRs.',
-          code: 'LIMIT_QR_CODES',
-          limit: license.limits.qr_codes === -1 ? 'Unlimited' : license.limits.qr_codes,
-          current: activeCount
-        });
-      }
-
-      const activeDynamic = myCodes.filter(q => q.is_dynamic !== false).length;
-      if (kind === 'qr' && is_dynamic && activeDynamic >= license.limits.dynamic_qr_codes) {
-        return res.status(403).json({
-          error: 'Dynamic QR limit reached. Upgrade for more dynamic codes.',
-          code: 'LIMIT_DYNAMIC_QR',
-          limit: license.limits.dynamic_qr_codes,
-          current: activeDynamic,
-        });
-      }
+      const capped = await capError(uid, license.limits, { kind, qr_type: type, is_dynamic });
+      if (capped) return res.status(403).json(capped);
 
       // Feature Gates
       if (is_dynamic && !license.limits.dynamic_qr) {
@@ -1148,6 +1137,15 @@ async function startServer() {
       }
       if (options?.password && (typeof options.password !== 'string' || options.password.length > 128)) {
         return res.status(400).json({ error: 'password must be a string under 128 characters' });
+      }
+
+      // Switching a row back on must fit the plan caps, like creating it.
+      if (is_active === true && (req as any).user) {
+        const cur = await row('qr_codes', 'slug', slug);
+        if (cur && cur.is_active === false) {
+          const capped = await capError(cur.user_uid, (await getLicense(cur.user_uid)).limits, cur);
+          if (capped) return res.status(403).json(capped);
+        }
       }
 
       if (destination_url !== undefined) updateData.destination_url = destination_url;

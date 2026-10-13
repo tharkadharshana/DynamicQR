@@ -86,7 +86,7 @@ On Vercel each serverless instance keeps its own counters, so these limits are s
   "title": "Menu",                       // ≤120 chars
   "destination_url": "https://…",        // must parse with new URL(), or ''
   "qr_type": "url|vcard|wifi|text|email|page",   // anything else → 400
-  "kind": "qr|link",                     // default qr; link = short link, only for a dynamic url (else 400)
+  "kind": "qr|link",                     // default qr; link = short link: dynamic url with a destination_url (else 400)
   "is_dynamic": true,
   "content_data": { … },                 // type-specific (see doc 05), max 20 KB
   "style": { "dot_color", "bg_color", "dot_style", "corner_style",

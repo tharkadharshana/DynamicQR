@@ -153,6 +153,8 @@ export const TRIAL_LIMITS: PlanLimits = {
   dynamic_qr_codes: PLANS.free.qr_codes,
   short_links: PLANS.free.short_links,
   pages: PLANS.free.pages,
+  forms: PLANS.free.forms,
+  custom_domains: PLANS.free.custom_domains, // a domain is a real Cloudflare hostname: paid only
 };
 
 // Lapsed trial or plan: dynamic codes above the allowance keep working this long, then pause.
@@ -176,8 +178,8 @@ const n = (x: number) => x.toLocaleString('en-US');
 
 /**
  * The feature list every pricing surface shows, generated from PLANS so there is no second copy.
- * ponytail: lists shipped features only. Add short links (Phase 8), forms (Phase 9), and workspaces
- * and webhooks (Phase 11) here when each ships; pricing must never claim what the app can't do yet.
+ * ponytail: lists shipped features only. Add short links (Phase 8), forms (Phase 9), and workspaces,
+ * webhooks and the domain count (Phase 11) here when each ships; pricing must never claim what the app can't do yet.
  */
 export function planFeatures(plan: PlanId): string[] {
   const l = PLANS[plan];
@@ -189,7 +191,8 @@ export function planFeatures(plan: PlanId): string[] {
     'Colours, shapes and logo',
     ...(l.password_protect ? ['PIN, expiry, scan limits and Visitor Guard'] : []),
     ...(l.remove_branding ? ['No Scnr branding'] : []),
-    ...(l.custom_domains ? [`${l.custom_domains} custom domain${l.custom_domains === 1 ? '' : 's'}`] : []),
+    // ponytail: one domain per account until Phase 11 lifts the route's "1 per account" check; then show the count.
+    ...(l.custom_domains ? ['Your own short domain'] : []),
     ...(l.seats > 1 ? [`${l.seats} team members`] : []),
     ...(l.api_access ? ['API, bulk create and CSV export'] : []),
   ];
