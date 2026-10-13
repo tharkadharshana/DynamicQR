@@ -70,19 +70,27 @@ Legend: ✅ works · ⚠️ works with a known limit · 🗓 planned (phase) · 
 
 ## Plans (from [src/lib/plans.ts](../src/lib/plans.ts))
 
-| | Free | Trial (14 days) | Pro | Team |
-|---|---|---|---|---|
-| Price, LKR (PayHere) | Free | Free | 2,290/mo · 22,900/yr | 9,490/mo · 94,900/yr |
-| Price, USD (card) | | | $7/mo · $70/yr | $29/mo · $290/yr |
-| QR codes (active) | 3 | 3 | 100 | 600 |
-| Dynamic codes | **1 (forever)** | 3 | 100 | 600 |
-| Monthly scans | 1,000 | 75,000 | 75,000 | 500,000 |
-| PIN / expiry / scan limit / Visitor Guard | No | Yes | Yes | Yes |
-| Statistics history | 7 days | 365 days | 365 days | 730 days |
-| Users (seats) | 1 | 1 | 1 | 5 |
-| Bulk CSV, API, custom domain, white-label | No | No | No | Yes |
+| | Free | Trial (14 days) | Pro | Team | Business |
+|---|---|---|---|---|---|
+| Price, LKR (PayHere) | Free | Free | 2,290/mo · 22,900/yr | 9,490/mo · 94,900/yr | 25,990/mo · 259,900/yr |
+| Price, USD (card) | | | $7/mo · $70/yr | $29/mo · $290/yr | $79/mo · $790/yr |
+| QR codes (active, in total) | 3 | 3 | 100 | 600 | 2,000 |
+| Dynamic codes | **1 (forever)** | 3 | 100 | 600 | 2,000 |
+| Short links | 3 | 3 | 100 | 600 | 2,000 |
+| Pages | 1 | 1 | 5 | 50 | 400 |
+| Forms | 0 | 3 | 3 | 20 | 100 |
+| Monthly scans | 1,000 | 75,000 | 75,000 | 500,000 | 2,000,000 |
+| PIN / expiry / scan limit / Visitor Guard | No | Yes | Yes | Yes | Yes |
+| Statistics history | 90 days | 365 days | 365 days | 730 days | 1,825 days |
+| Custom domains | 0 | 1 | 1 | 10 | 50 |
+| Users (seats) / workspaces | 1 / 1 | 1 / 1 | 1 / 1 | 10 / 1 | 25 / 10 |
+| Bulk CSV, API, white-label | No | No | No | Yes | Yes |
+| GPS tracking, smart routing (from Phase 10) | No | Yes | Yes | Yes | Yes |
+| Webhooks (from Phase 11) | No | No | No | No | Yes |
+| Logo on QR | Yes | Yes | Yes | Yes | Yes |
+| Scnr branding removed / upload size | No / 5 MB | Yes / 20 MB | Yes / 20 MB | Yes / 50 MB | Yes / 100 MB |
 
-No plan is "unlimited". Yearly = 10× monthly (2 months free).
+No plan is "unlimited", and caps are "in total", not per month. Yearly = 10× monthly (2 months free). Pages and forms are QR codes too, so they also count against the QR and dynamic caps; short links do not. Limits that belong to later phases (forms, workspaces, webhooks, GPS, routing, uploads) are defined now and enforced when the feature ships.
 
 ## Names and domains
 

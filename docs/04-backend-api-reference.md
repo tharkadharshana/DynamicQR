@@ -27,6 +27,7 @@ On Vercel each serverless instance keeps its own counters, so these limits are s
 |---|---|
 | `LIMIT_QR_CODES` | active QR count ≥ plan limit (also returns `limit` and `current`) |
 | `LIMIT_DYNAMIC_QR` | active dynamic codes ≥ `limits.dynamic_qr_codes` (Free: 1) |
+| `LIMIT_SHORT_LINKS`, `LIMIT_PAGES`, `LIMIT_FORMS` | active short links (`kind='link'`), pages (`qr_type='page'`) or forms (`qr_type='form'`) ≥ the plan's `short_links`, `pages` or `forms` (also returns `limit` and `current`) |
 | `FEATURE_DYNAMIC_QR` | `is_dynamic` without the dynamic feature |
 | `FEATURE_PASSWORD` | `password_protect` without the feature |
 | `FEATURE_EXPIRY` | `expiry_date_enabled` without the feature |
@@ -85,6 +86,7 @@ On Vercel each serverless instance keeps its own counters, so these limits are s
   "title": "Menu",                       // ≤120 chars
   "destination_url": "https://…",        // must parse with new URL(), or ''
   "qr_type": "url|vcard|wifi|text|email|page",   // anything else → 400
+  "kind": "qr|link",                     // default qr; link = short link, only for a dynamic url (else 400)
   "is_dynamic": true,
   "content_data": { … },                 // type-specific (see doc 05), max 20 KB
   "style": { "dot_color", "bg_color", "dot_style", "corner_style",

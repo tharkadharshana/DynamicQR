@@ -62,7 +62,7 @@ QR codes made while the dashboard runs on localhost encode `http://localhost…/
 | `PORT` | | default 3000 |
 | `LOG_LEVEL` | | `error` / `warn` / `info` / `debug`. Default: `info` in prod, `debug` in dev. |
 | `POLAR_ACCESS_TOKEN`, `POLAR_WEBHOOK_SECRET`, `POLAR_SANDBOX` | for USD card payments | Without the token, USD checkouts fall back to PayHere in USD. Webhook URL to register in Polar: `{APP_URL}/api/billing/polar/webhook`. |
-| `POLAR_PRODUCT_PRO_MONTHLY`, `…_PRO_ANNUAL`, `…_TEAM_MONTHLY`, `…_TEAM_ANNUAL` | for Polar | Product ids created in the Polar dashboard ($7, $70, $29, $290) |
+| `POLAR_PRODUCT_PRO_MONTHLY`, `…_PRO_ANNUAL`, `…_TEAM_MONTHLY`, `…_TEAM_ANNUAL`, `…_BUSINESS_MONTHLY`, `…_BUSINESS_ANNUAL` | for Polar | Product ids created in the Polar dashboard ($7, $70, $29, $290, $79, $790). A plan without a product id gets a 503 on card checkout and can still pay in LKR. |
 | `POLAR_PORTAL_URL` | optional | Customer portal link shown on Billing |
 | `CRON_SECRET` | ✅ for crons | Vercel sends it as `Authorization: Bearer …` to `/api/cron/*`. Set it in Vercel env; CI uses a dummy. |
 | `RESEND_API_KEY`, `DIGEST_FROM` | for the weekly digest | Resend API key and sender (e.g. `Scnr <digest@yourdomain>`, on a domain verified in Resend). Without the key the digest cron skips. |
@@ -163,6 +163,7 @@ Phase 0 added these sections:
   - Keys: API keys through `/api/v1` (create, use, scope limits, revoke, downgrade → 403).
   - Seats, with a second real test user: member sees the owner's workspace, can't pay or invite, the seat cap holds, and removal works.
   - Client folders through the API.
+- **28, Plans v2.** Business checkout amounts (LKR monthly and annual, USD fallback), an unknown plan → 400, Business limits, the Free caps on short links (4th → `LIMIT_SHORT_LINKS`) and pages (2nd → `LIMIT_PAGES`), short links outside the QR cap, a short link redirecting at the edge, Free's 90-day history and a logo on Free (needs migration 005).
   - Custom domain: validation, 503 without Cloudflare, the Worker redirect on a custom host, and QR content using the domain.
   - Also covered: white-label branding and the CSV parser.
   - Needs migration 004.

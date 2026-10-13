@@ -47,7 +47,8 @@ All foreign keys `on delete cascade`, so deleting the auth user removes everythi
 | `user_uid` | uuid → profiles | indexed |
 | `title` | text | default `My QR` |
 | `destination_url` | text | `''` for non-URL types |
-| `qr_type` | text | `url`, `vcard`, `wifi`, `text` or `email` |
+| `qr_type` | text | `url`, `vcard`, `wifi`, `text`, `email` or `page` |
+| `kind` | text, default `qr` | `qr` or `link` (check constraint, migration 005). A `link` is a short link: a dynamic URL row shown without a QR image, counted against `short_links` and not against the QR caps. |
 | `is_dynamic` | bool | |
 | `is_active` | bool | |
 | `content_data` | jsonb | type-specific, see below |
