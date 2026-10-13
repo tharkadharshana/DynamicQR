@@ -244,9 +244,10 @@ async function startServer() {
   ] as const;
 
   /** Plan caps for one more active row like `next` (create or reactivate). Returns the 403 body, or null if it fits. */
-  async function capError(uid: string, limits: PlanLimits, next: { slug?: string; kind?: string; qr_type?: string; is_dynamic?: boolean }) {
+  async function capError(uid: string, limits: PlanLimits, next: { slug?: string; kind?: string; qr_type?: string; is_dynamic?: boolean }, activeRows?: any[]) {
     // `next` itself is left out of the counts, so an edit of an existing row is checked like a create.
-    const active = (await rows('qr_codes', 'user_uid', uid)).filter(q => q.is_active !== false && q.slug !== next.slug);
+    // `activeRows` lets a caller that checks many rows read the account once.
+    const active = (activeRows || (await rows('qr_codes', 'user_uid', uid)).filter(q => q.is_active !== false)).filter(q => q.slug !== next.slug);
     for (const cap of OBJECT_CAPS) {
       if (!cap.is(next)) continue;
       const current = active.filter(cap.is).length, limit = limits[cap.field];
@@ -1198,35 +1199,52 @@ async function startServer() {
       if (!['folder', 'tag', 'untag', 'activate', 'deactivate', 'delete'].includes(action)) {
         return res.status(400).json({ error: 'action must be folder, tag, untag, activate, deactivate or delete' });
       }
-      const { data: owned, error } = await supabase.from('qr_codes').select('*').eq('user_uid', uid).in('slug', slugs);
+      const { data: owned, error } = await supabase.from('qr_codes').select('slug, is_active, is_dynamic, kind, qr_type, tags, gtin').eq('user_uid', uid).in('slug', slugs);
       if (error) throw error;
       const tag = normTags([value])?.[0];
       if ((action === 'tag' || action === 'untag') && !tag) return res.status(400).json({ error: 'value must be a tag' });
-      const limits = action === 'activate' ? (await getLicense(uid)).limits : null;
-      const done: string[] = [], failed: { slug: string; error: string }[] = slugs.filter(sl => !owned!.some(o => o.slug === sl)).map(sl => ({ slug: sl, error: 'not found' }));
-      for (const qr of owned || []) {
-        let patch: any = null;
-        if (action === 'folder') patch = { client: typeof value === 'string' && value.trim() ? value.trim().slice(0, 60) : null };
-        if (action === 'tag') patch = { tags: normTags([...(qr.tags || []), tag]) };
-        if (action === 'untag') patch = { tags: (qr.tags || []).filter((t: string) => t !== tag) };
-        if (action === 'deactivate') patch = { is_active: false };
-        if (action === 'activate' && qr.is_active === false) {
-          // One at a time, so each activation counts the ones before it against the caps.
-          const capped = await capError(uid, limits!, qr);
+      const mine = owned || [];
+      const failed: { slug: string; error: string }[] = slugs.filter(sl => !mine.some(o => o.slug === sl)).map(sl => ({ slug: sl, error: 'not found' }));
+      let done: string[] = [];
+      const all = mine.map(q => q.slug);
+      if (!all.length) return res.json({ done: [], failed });
+      if (action === 'folder' || action === 'deactivate') {
+        const patch = action === 'folder' ? { client: typeof value === 'string' && value.trim() ? value.trim().slice(0, 60) : null } : { is_active: false };
+        const { error: e } = await supabase.from('qr_codes').update({ ...patch, updated_at: nowIso() }).in('slug', all);
+        if (e) throw e;
+        done = all;
+      } else if (action === 'delete') {
+        const { error: e } = await supabase.from('qr_codes').delete().in('slug', all);
+        if (e) throw e;
+        done = all;
+        mine.filter(q => q.gtin).forEach(q => purgeEdge(`gs1:${q.gtin}`));
+      } else if (action === 'activate') {
+        // One at a time against one read of the account, so each activation counts the ones before it.
+        const { limits } = await getLicense(uid);
+        const active = (await rows('qr_codes', 'user_uid', uid)).filter(q => q.is_active !== false);
+        for (const qr of mine) {
+          if (qr.is_active !== false) { done.push(qr.slug); continue; }
+          const capped = await capError(uid, limits, qr, active);
           if (capped) { failed.push({ slug: qr.slug, error: capped.code }); continue; }
-          patch = { is_active: true };
+          active.push({ ...qr, is_active: true });
+          done.push(qr.slug);
         }
-        if (action === 'delete') {
-          const { error: e } = await supabase.from('qr_codes').delete().eq('slug', qr.slug);
-          if (e) { failed.push({ slug: qr.slug, error: 'failed' }); continue; }
-          if (qr.gtin) purgeEdge(`gs1:${qr.gtin}`);
-        } else if (patch) {
-          const { error: e } = await supabase.from('qr_codes').update({ ...patch, updated_at: nowIso() }).eq('slug', qr.slug);
-          if (e) { failed.push({ slug: qr.slug, error: 'failed' }); continue; }
+        if (done.length) {
+          const { error: e } = await supabase.from('qr_codes').update({ is_active: true, updated_at: nowIso() }).in('slug', done);
+          if (e) throw e;
         }
-        done.push(qr.slug);
+      } else {
+        // tag / untag: each row keeps its own list (at most 10 tags).
+        for (const qr of mine) {
+          const tagsNow = action === 'tag' ? normTags([...(qr.tags || []), tag])! : (qr.tags || []).filter((t: string) => t !== tag);
+          if (action === 'tag' && !tagsNow.includes(tag!)) { failed.push({ slug: qr.slug, error: 'already has 10 tags' }); continue; }
+          const { error: e } = await supabase.from('qr_codes').update({ tags: tagsNow, updated_at: nowIso() }).eq('slug', qr.slug);
+          if (e) { failed.push({ slug: qr.slug, error: 'failed' }); continue; }
+          done.push(qr.slug);
+        }
       }
-      await Promise.all(done.map(purgeEdge));
+      // Folders and tags never reach the Worker; only status changes need an edge purge.
+      if (action === 'activate' || action === 'deactivate' || action === 'delete') await Promise.all(done.map(purgeEdge));
       res.json({ done, failed });
     } catch (error: any) {
       logger.error('Bulk action error:', { message: error.message });
