@@ -192,13 +192,15 @@
 
 .landing-page .hero-form {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: 20px;
   opacity: 0;
   animation: riseIn 0.55s 0.25s ease forwards;
 }
 .landing-page .hero-input {
-  flex: 1;
+  flex: 1 1 200px;
+  min-width: 0;
   background: #fff;
   border: 1.5px solid var(--border2);
   color: var(--ink);
@@ -981,7 +983,8 @@
 
 /* ── RESPONSIVE ── */
 @media (max-width: 960px) {
-  .landing-page .hero { grid-template-columns: 1fr; gap: 48px; padding: 120px 24px 60px; }
+  .landing-page .hero { grid-template-columns: minmax(0, 1fr); gap: 48px; padding: 120px 24px 60px; }
+  .landing-page .hero > * { min-width: 0; } /* a wide child must not stretch the column past the screen */
   .landing-page .hero-p { max-width: 100%; }
   .landing-page .features-header { flex-direction: column; align-items: flex-start; }
   .landing-page .features-grid { grid-template-columns: 1fr 1fr; }
@@ -997,6 +1000,10 @@
 /* ── FREE TOOLS, WHAT'S NEW, FOOTER HUB ── */
 .landing-page .footer-hub { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 28px; width: 100%; margin-bottom: 28px; }
 .landing-page .footer-hub h2 { font-family: var(--font-b); font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 10px; }
+/* The top bar styles every `.landing-page nav` as fixed; the hub's link groups are plain columns. */
+.landing-page .footer-hub nav { position: static; background: none; backdrop-filter: none; border: 0; z-index: auto; }
+/* Ten cards in three columns: let the last one fill its row instead of leaving an empty grey cell. */
+@media (min-width: 961px) { .landing-page .features-grid > :last-child:nth-child(3n + 1) { grid-column: 1 / -1; } }
 .landing-page .footer-hub a { display: block; font-size: 13px; color: var(--ink3); text-decoration: none; padding: 4px 0; }
 .landing-page .footer-hub a:hover { color: var(--ink); text-decoration: underline; }
 .landing-page .tool-main { padding: 120px 24px 80px; max-width: 760px; margin: 0 auto; color: var(--ink2); font-size: 15px; line-height: 1.7; }
