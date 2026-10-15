@@ -68,6 +68,12 @@ One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-r
 - **Logo on Free** was already allowed; QA now proves it.
 - QA section 28; `src/lib/plans.ts` self-check.
 
+## Landing layout fixes (branch `fix/landing-layout`)
+
+- **Footer link groups were pinned to the top-left of the page.** The top bar's `.landing-page nav` rule (position fixed) also matched the footer hub's `<nav>` groups, so they stacked unstyled over the header and the footer collapsed to zero height. The hub's groups are now plain columns.
+- **Mobile hero was wider than the screen.** The one-column grid used `1fr`, which cannot shrink below its content; the email field's default width stretched it to 401 px on a 390 px phone. The column is now `minmax(0, 1fr)`, the field can shrink, and the field and button wrap on very narrow screens.
+- The last feature card now fills its row instead of leaving an empty grey cell.
+
 ## Roadmap added (branch `docs/roadmap-competitor-parity`)
 
 - `docs/ROADMAP.md`: the plan for phases 5–12, with the competitor facts it is based on, the per-change workflow, and a progress checklist.
