@@ -56,6 +56,7 @@ export default function Kit() {
   const [step, setStep] = useState(0);
   const [f, setF] = useState<Form>(empty);
   const [saving, setSaving] = useState(false);
+  const [tried, setTried] = useState(false); // messages show only after a failed Continue
   const set = (k: keyof Form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setF({ ...f, [k]: e.target.value });
 
   useEffect(() => {
@@ -64,7 +65,21 @@ export default function Kit() {
       .catch(() => showToast('error', 'Could not load this kit'));
   }, [editSlug]);
 
-  const valid = [!!f.name, !!(f.menu || f.review || f.whatsapp || f.phone || f.extraUrl || f.wifiSsid), true][step];
+  // What blocks Continue on this step, recomputed on every keystroke so a message disappears once it is fixed.
+  const problems: Record<string, string> = {};
+  if (step === 0 && !f.name.trim()) problems.name = 'Enter your business name.';
+  if (step === 1) {
+    if (!(f.menu || f.review || f.whatsapp || f.phone || f.extraUrl || f.wifiSsid)) problems.links = 'Add at least one link, number or Wi-Fi so guests have something to tap.';
+    for (const k of ['menu', 'review', 'extraUrl'] as const) if (f[k] && !/^https?:\/\//i.test(f[k])) problems[k] = 'Enter the full link, starting with https://';
+    for (const k of ['whatsapp', 'phone'] as const) if (f[k] && f[k].replace(/\D/g, '').length < 7) problems[k] = 'Enter the full number with country code, e.g. +94 77 123 4567';
+    if (f.extraLabel && !f.extraUrl) problems.extraUrl = 'Add the link for this button.';
+  }
+  const next = () => {
+    const first = Object.keys(problems)[0];
+    if (!first) { setTried(false); setStep(step + 1); return; }
+    setTried(true);
+    document.getElementById(first === 'links' ? 'kit-menu' : `kit-${first}`)?.focus();
+  };
 
   const save = async () => {
     setSaving(true);
@@ -100,7 +115,8 @@ export default function Kit() {
   const field = (label: string, k: keyof Form, ph = '', type = 'text') => (
     <div className="form-section">
       <label className="form-label" htmlFor={`kit-${k}`}>{label}</label>
-      <input id={`kit-${k}`} type={type} className="form-input" placeholder={ph} value={f[k]} onChange={set(k)} />
+      <input id={`kit-${k}`} type={type} className={`form-input${tried && problems[k] ? ' error' : ''}`} aria-invalid={tried && !!problems[k]} placeholder={ph} value={f[k]} onChange={set(k)} />
+      {tried && problems[k] && <div className="error-msg" role="alert">{problems[k]}</div>}
     </div>
   );
 
@@ -125,6 +141,7 @@ export default function Kit() {
 
           {step === 1 && (<>
             <div className="card-title">Links on the guest page</div>
+            {tried && problems.links && <div className="error-msg" role="alert" style={{ marginBottom: '10px', fontSize: '13px' }}>{problems.links}</div>}
             {field('Menu (link to your menu or PDF)', 'menu', 'https://cafelagoon.lk/menu.pdf', 'url')}
             {field('Google review link', 'review', 'https://g.page/r/…/review', 'url')}
             <div className="grid-2">
@@ -161,7 +178,7 @@ export default function Kit() {
               <a className="btn btn-ghost" href={waLink(SITE.whatsapp, `Hi, I'd like help setting up my Restaurant Kit (${f.name}).`)} target="_blank" rel="noreferrer">Book setup on WhatsApp</a>
             )}
             {step < 2
-              ? <button className="btn btn-primary" disabled={!valid} onClick={() => setStep(step + 1)}>Continue →</button>
+              ? <button className="btn btn-primary" onClick={next}>Continue →</button>
               : <button className="btn btn-primary" disabled={saving} onClick={save}>{saving ? 'Saving…' : editSlug ? 'Save changes' : 'Create kit and print →'}</button>}
           </div>
         </div>

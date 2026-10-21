@@ -130,6 +130,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
       {/* MOBILE OVERLAY */}
       {mobileMenuOpen && (
         <div 
+          className="menu-overlay"
           style={{ 
             position: 'fixed', 
             inset: 0, 
@@ -157,7 +158,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
           </div>
           <span className="logo-text">Scnr</span>
           <button 
-            className="btn btn-icon btn-sm md:hidden" 
+            className="btn btn-icon btn-sm mobile-only" 
             style={{ marginLeft: 'auto', border: 'none' }}
             aria-label="Close menu"
             onClick={() => setMobileMenuOpen(false)}
@@ -227,7 +228,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
         <div className="topbar">
           <div className="topbar-left">
             <button 
-              className="btn btn-icon btn-sm md:hidden" 
+              className="btn btn-icon btn-sm mobile-only" 
               style={{ marginRight: '8px' }}
               aria-label="Open menu"
               onClick={() => setMobileMenuOpen(true)}
