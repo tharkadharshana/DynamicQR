@@ -1,6 +1,6 @@
 # 03 — Scan Flow and Gate Engine
 
-A dynamic QR code encodes `${VITE_SHORT_DOMAIN}/<slug>`, which today is `https://scnr.tharkak.com/<slug>`. Everything below happens in [worker/worker.js](../worker/worker.js). The config, policy and analytics writes happen in [server.ts](../server.ts) (`/internal/slug`, `/internal/scan`, `captureAnalyticsFromPayload`).
+A dynamic QR code encodes `${VITE_SHORT_DOMAIN}/<slug>`, which today is `https://scnr.tharkak.com/<slug>`. Everything below happens in [worker/worker.js](../worker/worker.js). The config, policy and analytics writes happen in [server/index.ts](../server/index.ts) (`/internal/slug`, `/internal/scan`, `captureAnalyticsFromPayload`).
 
 A static QR code encodes its final content directly (URL, vCard text, a `WIFI:` string, `mailto:`). **Scanning one never reaches the platform.** We cannot gate it, count it or change it.
 
@@ -123,7 +123,7 @@ Scanner          Worker                 KV            Vercel/Express          Su
 
 ## Local dev redirect (no Worker)
 
-`GET /:slug` in [server.ts](../server.ts) (`// Redirect Engine`) renders every type when you run `npm run dev`:
+`GET /:slug` in [server/index.ts](../server/index.ts) (`// Redirect Engine`) renders every type when you run `npm run dev`:
 
 - vCard: a `.vcf` built by `vcardText()` from [src/lib/qrContent.ts](../src/lib/qrContent.ts)
 - text and wifi: HTML pages
@@ -134,7 +134,7 @@ It checks only `is_active` and records analytics. On Vercel this route never run
 
 ## Testing the Worker
 
-[qa.ts](../qa.ts) section **15b** imports `worker.js` and runs it in Node against the local API, with an in-memory KV. No Wrangler or Cloudflare account is needed. It covers:
+[tests/qa.ts](../tests/qa.ts) section **15b** imports `worker.js` and runs it in Node against the local API, with an in-memory KV. No Wrangler or Cloudflare account is needed. It covers:
 
 - a redirect on a cache miss, then on a cache hit
 - the 404 and 503 pages

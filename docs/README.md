@@ -31,11 +31,11 @@ Scnr is a SaaS that creates static and dynamic QR codes. A **dynamic** QR code e
 All five phases are merged: safe and working, credible, Restaurant Kit, retention, and the Team plan. The change log is in [CHANGELOG.md](CHANGELOG.md).
 
 - **Redirects fixed.** `vercel.json` now routes `/internal/*` to Express, so the Worker's origin lookup works ([doc 11, C1](11-review-findings.md#c1)). The Worker never crashes: origin failures show a branded 503 page.
-- **RLS closed** by [migrations/001_phase0.sql](../migrations/001_phase0.sql). It must be run in the Supabase SQL editor; QA section 20 fails until it has been.
+- **RLS closed** by [db/migrations/001_phase0.sql](../db/migrations/001_phase0.sql). It must be run in the Supabase SQL editor; QA section 20 fails until it has been.
 - **Billing is correct.** Server-side orders, amount and currency checks, idempotent payments, interval-aware expiry, LKR pricing ([doc 07](07-plans-billing-payhere.md)).
 - **Credible (Phase 1):** honest Landing, SaaS legal pages, capped plans (Pro 100 / Team 600 codes), a free dynamic pilot, the 30-day grace then pause rule, LKR/USD with Polar for cards, print-ready downloads.
 - **Restaurant Kit (Phase 2):** one table code opens a hosted guest page (menu, reviews, WhatsApp, Wi-Fi, today's offer) in English, Sinhala and Tamil, plus an A6 print view. "Swap today's offer" from the dashboard, the WhatsApp code type, dynamic vCard/Text/Email/Wi-Fi, and activation events (migration 002).
-- **Retention (Phase 3):** atomic scan recording (`record_scan`, migration 003), real per-day uniques, a busiest-hours chart, CSV export and a print report, a weekly email digest, and 400-day retention. The Firestore shim is gone (server.ts went from 2,457 to about 1,600 lines).
+- **Retention (Phase 3):** atomic scan recording (`record_scan`, migration 003), real per-day uniques, a busiest-hours chart, CSV export and a print report, a weekly email digest, and 400-day retention. The Firestore shim is gone (server/index.ts went from 2,457 to about 1,600 lines).
 - **Team plan (Phase 4):** API keys and `/api/v1`, 5 seats (invite by email), client folders, bulk CSV creation with a print sheet, one custom short domain (Cloudflare for SaaS), and white-label report branding (migration 004).
 - **Plans v2 (Phase 5):** a fourth tier, Business ($79 / LKR 25,990), and per-object caps for short links, pages and forms, generated pricing cards with an FAQ (they list shipped features only), Free history raised to 90 days ([doc 07](07-plans-billing-payhere.md)). Migration 005 adds `qr_codes.kind`.
 - **Code types and design (Phase 6):** PDF, Google review, socials, phone, SMS, location, event, app-store and GS1 codes; dot styles, gradient, circle shape, frames and a saved brand style. Migration 006 adds `gtin`, `brand_style` and the `files` bucket.
@@ -52,29 +52,27 @@ All five phases are merged: safe and working, credible, Restaurant Kit, retentio
 ## Source map
 
 ```
-server.ts               Express API: every route, analytics views, crons, scan capture (direct supabase-js)
-api/index.ts            Vercel entry point: re-exports the Express app
-worker/worker.js        Cloudflare Worker: edge redirect and gate engine
-worker/wrangler.toml    Worker config and KV binding (QR_CACHE)
-supabase_schema.sql     Postgres schema and RLS policies (6 tables)
-logger.ts               Winston logger (JSON in prod, pretty output plus log files in dev)
-qa.ts                   End-to-end API QA suite (run by GitHub Actions)
-src/                    React SPA
-  App.tsx               Router and auth gate
-  supabase.ts           Browser Supabase client, Google OAuth
-  lib/api.ts            apiFetch() with JWT injection
-  lib/plans.ts          Plan limits, trial limits, add-ons (shared with server)
-  pages/                Dashboard, CreateQR, Analytics, AccountAnalytics, Billing, Pricing, Settings, ApiDocs, Landing, legal
-  components/           DynamicQRLayout (app shell), QRViewerModal, modals, toasts, ErrorBoundary
-  lib/pageTemplates.ts  the 12 Pages templates
-  lib/forms.ts          form field types, definition check, answer validation
-  lib/changelog.ts      customer-facing What's new entries
-  lib/webhooks.ts       Standard Webhooks signer/verifier (Polar in, our webhooks out), Node only
-  lib/routing.ts        smart routing: pickRoute(), rulesError(), the app-store preset
-  lib/qrContent.ts      getQRContent()/vcardText() and SHORT_DOMAIN: what every QR encodes (shared with server)
-migrations/             Incremental SQL, run in order in the Supabase SQL editor (001_phase0.sql, …)
-vercel.json             Static build plus Node function; rewrites /api/* and /internal/* to the function
-.github/workflows/      api-qa.yml: typecheck, boot the server, run qa.ts (API + in-process Worker) on push and PR
+api/index.ts              Vercel entry point: re-exports the Express app
+server/                   Express API (see server/README.md)
+  index.ts                every route, analytics views, crons, scan capture (direct supabase-js)
+  logger.ts               Winston logger (JSON in prod, pretty output plus log files in dev)
+src/                      React SPA (see src/README.md)
+  App.tsx                 router and auth gate
+  supabase.ts             browser Supabase client, Google OAuth
+  pages/                  Landing, Dashboard, CreateQR, Pages, Forms, Analytics, Billing, Pricing, Settings, tools, legal
+  components/             app shell, modals, toasts, switchers, footer hub
+  lib/                    pure modules shared by the browser, the API and the Worker (plans, qrContent, guestPage,
+                          routing, forms, webhooks, csv, digest, pageTemplates, changelog, site, api)
+worker/                   Cloudflare Worker: edge redirect and gate engine (see worker/README.md)
+db/                       SQL (see db/README.md)
+  schema.sql              the full end-state schema, for a new project
+  migrations/             incremental files, run in order in the Supabase SQL editor (001_phase0.sql, ...)
+  queries.sql             saved analysis queries (activation funnel)
+tests/qa.ts               end-to-end QA suite: API plus the in-process Worker (see tests/README.md)
+scripts/                  CI guards: server import extensions, bundle size
+docs/                     these docs, the roadmap, the changelog, competitor screenshots
+vercel.json               static build plus Node function; rewrites /api/* and /internal/* to the function
+.github/workflows/        api-qa.yml: typecheck, build, boot the server, run tests/qa.ts on push and PR
 ```
 
 These docs are committed with the code. The private business files (`docs/SCNR*`, the competitor research and the plan exports) stay git-ignored.

@@ -34,13 +34,13 @@ Fix: add `{ "source": "/internal/(.*)", "destination": "/api/index.ts" }` before
 ## High
 
 <a id="h1"></a>
-**H1. Editing a QR through the UI hits the dotted-key bug.** ✅ Phase 0 CreateQR always sends `options`, so PUT always adds the keys `rate_limit.enabled`, `rate_limit.max_scans` and `rate_limit.period` ([server.ts:1227-1229](../server.ts#L1227-L1229)). Postgres has no columns with these names. Depending on the PostgREST version, the whole update either fails ("Failed to save QR code") or those fields are dropped. Either way the scan-limit edits are lost. Fix: build the whole `rate_limit` object (`updateData.rate_limit = {enabled, max_scans, period:'total'}`).
+**H1. Editing a QR through the UI hits the dotted-key bug.** ✅ Phase 0 CreateQR always sends `options`, so PUT always adds the keys `rate_limit.enabled`, `rate_limit.max_scans` and `rate_limit.period` ([server/index.ts:1227-1229](../server/index.ts#L1227-L1229)). Postgres has no columns with these names. Depending on the PostgREST version, the whole update either fails ("Failed to save QR code") or those fields are dropped. Either way the scan-limit edits are lost. Fix: build the whole `rate_limit` object (`updateData.rate_limit = {enabled, max_scans, period:'total'}`).
 
 **H2. Edits and deactivations do not purge the Worker cache.** ✅ Phase 0 (purgeEdge) Changes take up to 5 min to apply, including "Deactivate all", which matters for a stolen or misprinted code. Fix: call the existing purge in PUT and deactivate-all, as DELETE already does.
 
-**H3. The monthly quota is checked per QR, not per account** ✅ Phase 0 ([server.ts:2126](../server.ts#L2126)). A Free user with 3 codes gets 3,000 scans. Use `profiles.monthly_scans`.
+**H3. The monthly quota is checked per QR, not per account** ✅ Phase 0 ([server/index.ts:2126](../server/index.ts#L2126)). A Free user with 3 codes gets 3,000 scans. Use `profiles.monthly_scans`.
 
-**H4. Annual plans grant 1 month** ✅ Phase 0 ([server.ts:894](../server.ts#L894)).
+**H4. Annual plans grant 1 month** ✅ Phase 0 ([server/index.ts:894](../server/index.ts#L894)).
 
 **H5. The Pricing page upgrade always returns 400** ✅ Phase 0 (`interval` is missing). See [Pricing.tsx](../src/pages/Pricing.tsx).
 
@@ -69,20 +69,20 @@ This is a legal and trust risk with paying customers. Remove the claims, or labe
 |---|---|---|
 | ✅ M1 | Trial users see Pro toggles as locked (the UI checks `plan === 'free'`, not `limits`), and the Worker forces their Visitor Guard to 5 | CreateQR.tsx, worker.js:117 |
 | ✅ M2 | Dynamic codes keep working after a trial or plan lapses. Nothing enforces the "Free = static only" rule after the fact. | worker.js, getLicense |
-| ✅ M3 | `qr_stats` and `profiles.monthly_scans` read-modify-write races lose counts | server.ts:2347-2374 |
+| ✅ M3 | `qr_stats` and `profiles.monthly_scans` read-modify-write races lose counts | server/index.ts:2347-2374 |
 | M4 | KV write volume: up to 3 puts per scan, and the `{slug}` key is rewritten per scan (KV allows 1 write/s per key; the free tier allows 1k writes/day) | worker.js:231-245 |
 | M5 | Scan limit is approximate across edges, and bots count toward the limits at the edge | worker.js |
 | M6 | Expiry is a time-zone-less local string, compared as UTC at the edge | CreateQR / worker |
 | ✅ M7 | Date range filters only the time series. Breakdowns are all-time and are not labelled as such. Custom ranges skip the plan's `analytics_days` cap. | Analytics pages, server timeseries |
-| M8 | Webhook treats PayHere `-3` (chargeback) as a cancellation and ignores recurring `message_type` events | server.ts:916 |
-| ✅ M9 | `PUT /api/qr/:slug` cannot change `qr_type` or `content_data`, so a vCard cannot be edited | server.ts:1193 |
-| M10 | Reactivating codes through PUT skips the QR-count limit | server.ts:1212 |
-| M11 | Rate limiters are in memory on serverless, so they are soft | server.ts:239-267 |
+| M8 | Webhook treats PayHere `-3` (chargeback) as a cancellation and ignores recurring `message_type` events | server/index.ts:916 |
+| ✅ M9 | `PUT /api/qr/:slug` cannot change `qr_type` or `content_data`, so a vCard cannot be edited | server/index.ts:1193 |
+| M10 | Reactivating codes through PUT skips the QR-count limit | server/index.ts:1212 |
+| M11 | Rate limiters are in memory on serverless, so they are soft | server/index.ts:239-267 |
 | ✅ M12 | Billing "Next billing" always shows N/A (`_seconds`) | Billing.tsx:57-60 |
 | ✅ M13 | The quota page links to `dynamicqr.app/pricing`, and the brand differs across 5+ domains | worker.js:30, doc 01 |
-| ✅ M14 | Service-role key fallbacks with `VITE_` names risk leaking the key into the bundle | server.ts:12 |
+| ✅ M14 | Service-role key fallbacks with `VITE_` names risk leaking the key into the bundle | server/index.ts:12 |
 | ✅ M15 | `scan_events` has no retention limit, and the `qr_stats.days` map grows without limit | schema |
-| ✅ M16 | `/api/qr/:slug` and the export return `password_hash` | server.ts:1170, 567 |
+| ✅ M16 | `/api/qr/:slug` and the export return `password_hash` | server/index.ts:1170, 567 |
 
 ## Low
 
@@ -111,7 +111,7 @@ This is a legal and trust risk with paying customers. Remove the claims, or labe
 
 ## Simplification opportunities (smaller code, same behaviour)
 
-1. ✅ **Remove the Firestore shim** (Phase 3) ([server.ts:23-196](../server.ts#L23-L196)) and call supabase-js directly. This fixes H1 and H6 as a side effect, and it removes the 30-item chunking and the fake batches. Keep `qa.ts` green before and after the change.
+1. ✅ **Remove the Firestore shim** (Phase 3) ([server/index.ts:23-196](../server/index.ts#L23-L196)) and call supabase-js directly. This fixes H1 and H6 as a side effect, and it removes the 30-item chunking and the fake batches. Keep `tests/qa.ts` green before and after the change.
 2. ✅ **Merge the 9 account-analytics handlers** (Phase 3, one `views` map) into one helper `loadStats(uid, slugs)` plus small mappers. That cuts about 450 lines.
 3. ✅ **Use one atomic Postgres function for scan capture** (Phase 3, `record_scan`): insert the event and increment the stats and the monthly counter in one call. This fixes M3, removes 3 round trips, and helps H8.
 4. ✅ **Use one QR content builder**: `src/lib/qrContent.ts`, done in Phase 0.

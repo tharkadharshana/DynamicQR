@@ -14,7 +14,7 @@
 
 ## Controls that exist
 
-- **API auth.** `supabase.auth.getUser(token)` on every protected route ([server.ts:293](../server.ts#L293)). This is correct: it validates against Supabase, not just the JWT signature.
+- **API auth.** `supabase.auth.getUser(token)` on every protected route ([server/index.ts:293](../server/index.ts#L293)). This is correct: it validates against Supabase, not just the JWT signature.
 - **Ownership.** `requireOwnership` on per-QR routes, and a `uid` match on account routes.
 - **Input validation** on create and update: title length, `new URL()` on the destination, password length.
 - **Rate limits**: global, write and webhook (in-memory; see doc 04).
@@ -30,11 +30,11 @@
 
 ## Findings (ranked)
 
-### S1 — Critical: RLS policies grant every role full access — ✅ fixed in Phase 0 (migrations/001_phase0.sql)
+### S1 — Critical: RLS policies grant every role full access — ✅ fixed in Phase 0 (db/migrations/001_phase0.sql)
 
 The QA run before the fix proved the anon key could **write** too: a QR title was overwritten with "pwned". QA section 20 now checks reads and writes for both anon and signed-in users.
 
-[supabase_schema.sql](../supabase_schema.sql) creates `"Service role full access …" on <table> for all using (true) with check (true)` on `qr_codes`, `qr_stats`, `scan_events`, `subscriptions` and `addon_purchases`. Without `to service_role`, the policy applies to `anon` and `authenticated` too. The anon key is public, because it ships in the JS bundle.
+[db/schema.sql](../db/schema.sql) creates `"Service role full access …" on <table> for all using (true) with check (true)` on `qr_codes`, `qr_stats`, `scan_events`, `subscriptions` and `addon_purchases`. Without `to service_role`, the policy applies to `anon` and `authenticated` too. The anon key is public, because it ships in the JS bundle.
 
 - **Confirmed live (read-only):** an anon request read `qr_codes` rows, including `password_hash`, `destination_url` and `user_uid`.
 - From the policy text, anon can also **update or delete any QR code**: hijack destinations, delete codes, inflate stats. Write access was **not** tested on purpose.

@@ -68,6 +68,14 @@ One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-r
 - **Logo on Free** was already allowed; QA now proves it.
 - QA section 28; `src/lib/plans.ts` self-check.
 
+## Repository structure (branch `chore/repo-structure`)
+
+- The root now holds only config and folders. Moves: `server.ts` → `server/index.ts`, `logger.ts` → `server/logger.ts`, `qa.ts` → `tests/qa.ts`, `migrations/` → `db/migrations/`, `supabase_schema.sql` → `db/schema.sql`, `migrations/queries.sql` → `db/queries.sql`.
+- `vercel.json` and `api/index.ts` are unchanged apart from the import path, so the Vercel project settings are untouched. Verified with a local `vercel build`: the function bundle contains `server/index.js`, `server/logger.js` and `src/lib`.
+- Every code folder has a README, and `docs/README.md` has the new source map. All doc links and commands use the new paths (older changelog entries keep the paths of their time).
+- `scratch/`, `logs/` and `.claude/settings.local.json` are git-ignored.
+- Added "Hosting the web app and the API separately" to doc 02: what splitting would take.
+
 ## Landing layout fixes (branch `fix/landing-layout`)
 
 - **Footer link groups were pinned to the top-left of the page.** The top bar's `.landing-page nav` rule (position fixed) also matched the footer hub's `<nav>` groups, so they stacked unstyled over the header and the footer collapsed to zero height. The hub's groups are now plain columns.

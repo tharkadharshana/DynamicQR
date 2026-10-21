@@ -67,7 +67,7 @@ There is no second router, no second analytics pipeline, and no new table per ty
 | Task | Cloud session | Needs the user |
 |---|---|---|
 | Code, tests, docs, branches, PRs, merges | Yes (`gh` and git work with the repo token) | – |
-| Run `qa.ts` against Supabase | Only if the sandbox has the secrets (see Environment) | Provide secrets |
+| Run `tests/qa.ts` against Supabase | Only if the sandbox has the secrets (see Environment) | Provide secrets |
 | Run migrations `00N_*.sql` | No (no DB password, no Supabase CLI) | **Paste the file into the Supabase SQL editor** and say "done" |
 | Deploy the Worker (`wrangler deploy`) | No (no Cloudflare login on cloud) | Run it locally, or run `wrangler login` in the session if the sandbox allows a browser step |
 | Cloudflare route / DNS changes | No | The user, in the dashboard |
@@ -81,17 +81,17 @@ When a phase needs a migration, the session **stops before merging**, prints the
 1. `git checkout main && git pull`, then `git checkout -b <type>/<short-name>` (`feat/`, `fix/`, `chore/`, `docs/`). Never commit to `main`.
 2. Plan the phase's tasks, then build in small commits. Commit messages are normal English and end with the attribution line from the session's system reminder.
 3. Tests are part of the change, not a follow-up:
-   - Add a numbered `section()` in `qa.ts` using `check()` for every new API behavior.
+   - Add a numbered `section()` in `tests/qa.ts` using `check()` for every new API behavior.
    - Worker behavior goes in section 15b (the Worker runs in-process with a fake KV).
    - Pure logic gets an assert-based self-check at the bottom of its own file (see `src/lib/guestPage.ts`, `csv.ts`, `digest.ts`). Run it with `npx tsx <file>`.
    - Anything the server imports needs a `.js` extension on relative imports; `scripts/check-server-imports.mjs` enforces it.
 4. Docs are part of the change: update the matching file in `docs/01–11`, add an entry to `docs/CHANGELOG.md`, and update `docs/README.md` if a page is added. Mark any review finding fixed in `docs/11-review-findings.md`.
-5. If the schema changed: add `migrations/00N_<name>.sql` (idempotent: `if not exists`, `drop policy if exists`) and mirror the end state into `supabase_schema.sql`. Stop for the user to run it.
+5. If the schema changed: add `db/migrations/00N_<name>.sql` (idempotent: `if not exists`, `drop policy if exists`) and mirror the end state into `db/schema.sql`. Stop for the user to run it.
 6. Local checks, all green before pushing:
    - `npm run lint`
    - `node scripts/check-server-imports.mjs`
    - the self-checks for any touched `src/lib` file
-   - `qa.ts` (see "Running QA")
+   - `tests/qa.ts` (see "Running QA")
 7. `git push -u origin <branch>`, then `gh pr create --base main`. The body has a summary, the verification run, and a `🤖 Generated with [Claude Code](https://claude.com/claude-code)` line.
 8. `gh pr checks <n> --watch`. Fix and push until green. Never skip hooks or bypass checks.
 9. `gh pr merge <n> --squash --delete-branch`, then `git checkout main && git pull && git branch -D <branch>`.
@@ -101,20 +101,20 @@ When a phase needs a migration, the session **stops before merging**, prints the
 
 ### Running QA
 
-- CI (`.github/workflows/api-qa.yml`) runs `qa.ts` against the real Supabase project with dummy PayHere/Polar/Cron secrets. A PR cannot merge red.
+- CI (`.github/workflows/api-qa.yml`) runs `tests/qa.ts` against the real Supabase project with dummy PayHere/Polar/Cron secrets. A PR cannot merge red.
 - Locally or in a sandbox with secrets, start the server on another port and give it CI's env:
   ```
   export PAYHERE_MERCHANT_ID=qa-merchant PAYHERE_SECRET=qa-secret \
     POLAR_WEBHOOK_SECRET=qa-polar-secret POLAR_PRODUCT_PRO_MONTHLY=prod_qa_pro_monthly \
     CRON_SECRET=qa-cron-secret RATE_LIMIT_MAX=5000 RATE_LIMIT_WRITE_MAX=1000 \
     NODE_ENV=test APP_URL=http://localhost:3100 PORT=3100
-  npx tsx server.ts &
-  QA_API_URL=http://localhost:3100 npx tsx qa.ts
+  npx tsx server/index.ts &
+  QA_API_URL=http://localhost:3100 npx tsx tests/qa.ts
   ```
   Without those variables the billing checks fail with 500/401; that is the env, not a regression.
 - Required variables for QA: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `INTERNAL_SECRET`, `HASH_SALT`. If a cloud sandbox has none, rely on CI and say so in the PR.
 - Kill the test server afterwards. A leftover server on the port makes the next run hit stale code.
-- `qa.ts` creates users `qa-*@test.dynamicqr.local`, sweeps ones older than 1 hour at start, and deletes its own at the end and on a crash.
+- `tests/qa.ts` creates users `qa-*@test.dynamicqr.local`, sweeps ones older than 1 hour at start, and deletes its own at the end and on a crash.
 
 ### Environment and secrets
 
@@ -125,7 +125,7 @@ When a phase needs a migration, the session **stops before merging**, prints the
 ### Code conventions (match the surrounding code)
 
 - **Ponytail style** (the `ponytail:plugin` skill): the shortest working diff; reuse an existing helper before writing a new one; prefer stdlib, native browser features and DB constraints; no abstraction for a single use; mark a deliberate corner with a `ponytail:` comment naming the ceiling and the upgrade path. Never be lazy about input validation, security, or data-loss paths.
-- Server runs as **Node ESM on Vercel**: relative imports in the server graph (`api/index.ts` → `server.ts` → `src/lib/*`) must end in `.js`. Files shared with the browser must read env as `typeof import.meta.env !== 'undefined' && import.meta.env.VITE_X` (a full static access, or Vite won't inline it).
+- Server runs as **Node ESM on Vercel**: relative imports in the server graph (`api/index.ts` → `server/index.ts` → `src/lib/*`) must end in `.js`. Files shared with the browser must read env as `typeof import.meta.env !== 'undefined' && import.meta.env.VITE_X` (a full static access, or Vite won't inline it).
 - All plan limits live in `src/lib/plans.ts`. All prices live in `PRICES`. Nothing hard-codes a limit elsewhere.
 - Supabase: the service role bypasses RLS; new tables enable RLS **with no policies** (deny-all for the public anon key).
 - Every dynamic-code edit calls `purgeEdge(slug)`; every grant of paid state goes through `applyPayment()`.
@@ -145,7 +145,7 @@ Use agents to parallelize **independent** work, not to split one file between tw
 | `caveman:cavecrew-reviewer` / `/code-review` | Review of the diff before opening the PR | Fix findings, don't skip them. |
 | `claude-code-guide` | Questions about Claude Code itself | – |
 
-Rules for parallel slices: (a) split by **file ownership**, never two agents on `server.ts`'s same region; (b) shared files (`plans.ts`, `qa.ts`, `server.ts`, `worker.js`, docs) are edited by the main session or serialized; (c) every slice ends with its own self-check passing; (d) the main session runs the full local checks once at the end.
+Rules for parallel slices: (a) split by **file ownership**, never two agents on `server/index.ts`'s same region; (b) shared files (`plans.ts`, `tests/qa.ts`, `server/index.ts`, `worker.js`, docs) are edited by the main session or serialized; (c) every slice ends with its own self-check passing; (d) the main session runs the full local checks once at the end.
 
 Skills available in the user's setup (a cloud session only has the ones committed to the repo or installed there; check `/skills` first):
 - `ponytail:ponytail` — build style (above). Level `full`.
@@ -159,9 +159,9 @@ If a skill is missing in the cloud session, follow its rules from this document 
 ### Definition of done (per phase)
 
 - [ ] Branch created from fresh `main`; one PR; squash merged; branch deleted locally and remotely.
-- [ ] Tests: new `qa.ts` section(s) and any `src/lib` self-checks; all green locally or in CI.
+- [ ] Tests: new `tests/qa.ts` section(s) and any `src/lib` self-checks; all green locally or in CI.
 - [ ] Docs: the matching `docs/*.md`, `CHANGELOG.md`, README links; findings updated.
-- [ ] Migration file added, mirrored in `supabase_schema.sql`, **run by the user before merge**.
+- [ ] Migration file added, mirrored in `db/schema.sql`, **run by the user before merge**.
 - [ ] CI green (QA + Vercel preview).
 - [ ] Production smoke test passed after deploy; Worker redeployed if it changed.
 - [ ] This checklist below updated.
@@ -189,10 +189,10 @@ If a skill is missing in the cloud session, follow its rules from this document 
 For each phase:
 1. Create a branch from `main`.
 2. Make the changes as small commits, each ending with the attribution line from the session's system reminder.
-3. Add `migrations/00N_*.sql`, idempotent, and mirror it into `supabase_schema.sql`. **The user runs it in the Supabase SQL editor before merge**, because CI runs QA against the real DB.
-4. Add a numbered `section()` in `qa.ts` for every new behavior. Worker behavior goes into section 15b (in-process Worker with fake KV).
+3. Add `db/migrations/00N_*.sql`, idempotent, and mirror it into `db/schema.sql`. **The user runs it in the Supabase SQL editor before merge**, because CI runs QA against the real DB.
+4. Add a numbered `section()` in `tests/qa.ts` for every new behavior. Worker behavior goes into section 15b (in-process Worker with fake KV).
 5. Update the docs: `docs/01–11`, `docs/CHANGELOG.md`, and `docs/README.md`.
-6. Run locally: `npm run lint`, `node scripts/check-server-imports.mjs`, and `qa.ts` with CI's dummy env.
+6. Run locally: `npm run lint`, `node scripts/check-server-imports.mjs`, and `tests/qa.ts` with CI's dummy env.
 7. Push, open the PR (ending with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`), run `gh pr checks --watch`, then `gh pr merge --squash --delete-branch`, then `git checkout main && git pull && git branch -D`.
 8. After any phase that changes `worker/worker.js`, the Worker must be deployed (`cd worker && npx wrangler deploy`; the user does this unless the session has a Cloudflare login). Then smoke-test a live slug.
 
@@ -229,7 +229,7 @@ Annual is 10× monthly, as today. LKR prices use the same ratio as today: 2,290 
   - Add the `POLAR_PRODUCT_BUSINESS_*` env vars.
   - Migration `005_plans_v2.sql` widens any `plan` check constraint.
 - A single helper replaces the `custom_domain` / `api_access` boolean checks:
-  - `countLimit(uid, field, filter)` in `server.ts`.
+  - `countLimit(uid, field, filter)` in `server/index.ts`.
   - It reuses the existing count query in `POST /api/qr`, now keyed by `kind` / `qr_type`.
   - It returns 403 with codes `LIMIT_SHORT_LINKS`, `LIMIT_PAGES` and `LIMIT_FORMS`.
 - Pricing page ([Pricing.tsx](src/pages/Pricing.tsx), [Billing.tsx](src/pages/Billing.tsx), Landing):
@@ -391,10 +391,10 @@ Annual is 10× monthly, as today. LKR prices use the same ratio as today: 2,290 
 - **Multiple workspaces (Business, up to 10).**
   - Migration 011 adds `workspaces(id, owner_uid, name)` and `qr_codes.workspace_id` (nullable; null = the owner's default workspace, so existing rows need no backfill). `workspace_members` gains `workspace_id`.
   - The client sends an `X-Workspace` header, set by a workspace switcher in the header.
-  - `authenticate` resolves the effective `{owner, workspace}` in **the existing `workspaceOwner` choke point** ([server.ts:153](server.ts#L153)). Routes then filter by `workspace_id` with one `.match()` added in `GET/POST /api/qr`, bulk and account analytics.
+  - `authenticate` resolves the effective `{owner, workspace}` in **the existing `workspaceOwner` choke point** ([server/index.ts:153](server/index.ts#L153)). Routes then filter by `workspace_id` with one `.match()` added in `GET/POST /api/qr`, bulk and account analytics.
   - Caps stay account-wide.
 - **Multiple custom domains.**
-  - Drop the "1 per account" check ([server.ts:1462](server.ts#L1462)) and count against `limits.custom_domains`.
+  - Drop the "1 per account" check ([server/index.ts:1462](server/index.ts#L1462)) and count against `limits.custom_domains`.
   - `activeDomain(uid)` returns a list, and the code editor picks which domain a code prints with (`qr_codes.domain`). `qrContent` builds from it.
   - The Worker already serves any host.
 - **Seats.** Team 10 and Business 25 come from the Phase 5 limits; no code change beyond the cap.
@@ -429,10 +429,10 @@ Annual is 10× monthly, as today. LKR prices use the same ratio as today: 2,290 
 - `src/lib/qrContent.ts`: `buildDestination`, `RESERVED_SLUGS`, frames
 - `src/lib/guestPage.ts`: blocks, forms, events
 - new `src/lib/routing.ts` and `src/lib/pageTemplates.ts`
-- `server.ts`: `countLimit`, `/api/files`, `/api/qr/bulk`, `/internal/form`, `/internal/gs1`, webhooks, workspace scoping in `workspaceOwner`
+- `server/index.ts`: `countLimit`, `/api/files`, `/api/qr/bulk`, `/internal/form`, `/internal/gs1`, webhooks, workspace scoping in `workspaceOwner`
 - `worker/worker.js`: GS1 path, `/l/<i>` clicks, `/geo`, form POST, UTM append, `pickRoute`, wider slug regex
 - `src/pages/CreateQR.tsx`, `Dashboard.tsx`, `Pricing.tsx`, `Analytics.tsx`; new `PageEditor.tsx`, `FormEditor.tsx` (or one shared editor), `Tools*.tsx`
-- `migrations/005…011`, `supabase_schema.sql`, `qa.ts`, `docs/*`
+- `db/migrations/005…011`, `db/schema.sql`, `tests/qa.ts`, `docs/*`
 
 ## Reuse (don't rebuild)
 
@@ -448,7 +448,7 @@ Annual is 10× monthly, as today. LKR prices use the same ratio as today: 2,290 
 ## Verification (every phase)
 
 1. `npm run lint` is clean; `node scripts/check-server-imports.mjs` passes. Run the self-checks: `npx tsx src/lib/{qrContent,guestPage,routing,csv,digest}.ts`.
-2. Run `qa.ts` locally against a `PORT=3100` server with CI's dummy env (PayHere, Polar, Cron, rate-limit values). It must be all green, and CI must be green.
+2. Run `tests/qa.ts` locally against a `PORT=3100` server with CI's dummy env (PayHere, Polar, Cron, rate-limit values). It must be all green, and CI must be green.
 3. After a Worker change is deployed, live smoke tests:
    - `curl -sI https://scnr.tharkak.com/<slug>` returns 302
    - the new path (`/01/<gtin>`, `/l/0`, a form POST) behaves

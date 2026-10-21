@@ -206,7 +206,7 @@ create index if not exists form_submissions_slug_created_idx on public.form_subm
 alter table public.form_submissions enable row level security;
 -- No policies: RLS denies anon/authenticated. The API uses the service-role key, which bypasses RLS.
 
--- record_scan: see migrations 003 and 010 (the 13-argument version records city, language, referrer domain and the event id).
+-- record_scan: see db/migrations 003 and 010 (the 13-argument version records city, language, referrer domain and the event id).
 
 -- ──────────────────────────────────────────────────────────────
 -- BUSINESS (migration 011): webhooks, workspaces. qr_codes.workspace_id / workspace_members.workspace_id

@@ -73,7 +73,7 @@ jobs:
 
       # Includes the Worker gate engine (section 15b), run in-process with a fake KV.
       - name: Run QA suite
-        run: npx tsx qa.ts
+        run: npx tsx tests/qa.ts
         env:
           QA_API_URL: http://localhost:3000
 

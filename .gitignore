@@ -13,3 +13,8 @@ docs/QR Code Platform Competitor Research.md
 docs/Scnr Path to Revenue*
 .vercel
 .wrangler/
+
+# Local scratch files and logs
+scratch/
+logs/
+.claude/settings.local.json

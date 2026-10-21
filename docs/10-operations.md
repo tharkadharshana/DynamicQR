@@ -6,7 +6,7 @@ Prerequisites: Node 20+, a `.env` at the repo root (copy [.env.example](../.env.
 
 ```powershell
 npm install
-npm run dev        # tsx server.ts → http://localhost:3000 (Express + Vite middleware, HMR)
+npm run dev        # tsx server/index.ts → http://localhost:3000 (Express + Vite middleware, HMR)
 ```
 
 `npm run dev` already mounts Vite as middleware, so one process serves both the API and the SPA on port 3000. The two-terminal setup (`npx vite` on 5173, which proxies `/api` to 3000) also works and gives faster HMR.
@@ -27,7 +27,7 @@ QR codes made while the dashboard runs on localhost encode `http://localhost…/
 
 | Script | Does |
 |---|---|
-| `dev` / `start` | `tsx server.ts` |
+| `dev` / `start` | `tsx server/index.ts` |
 | `build` | `vite build` → `dist/` |
 | `preview` | `vite preview` |
 | `lint` | `tsc --noEmit` (the only static check; it passes as of PR #6) |
@@ -97,7 +97,7 @@ Check what the live Worker has with `npx wrangler secret list` (names only). An 
 The four parts deploy separately.
 
 1. **Supabase**
-   1. New project: run [supabase_schema.sql](../supabase_schema.sql), which is the end state. Existing project: run each file in [migrations/](../migrations) in order (`001_phase0.sql`, …) that has not been applied yet. Every file is idempotent. **Run a phase's migration before merging its PR**, because CI runs QA against the real database.
+   1. New project: run [db/schema.sql](../db/schema.sql), which is the end state. Existing project: run each file in [db/migrations/](../db/migrations) in order (`001_phase0.sql`, …) that has not been applied yet. Every file is idempotent. **Run a phase's migration before merging its PR**, because CI runs QA against the real database.
    2. Enable the Google provider.
    3. Set the Site URL and Redirect URLs to the production domain.
 2. **Vercel**
@@ -137,16 +137,16 @@ The workflow runs on push and PR to `main` and `development`:
    - `public/sitemap.xml` lists a page that isn't public.
 4. `npm run dev &`
 5. wait for `/api/health`
-6. `npx tsx qa.ts`. This includes the Worker gate engine, run in-process (section 15b).
+6. `npx tsx tests/qa.ts`. This includes the Worker gate engine, run in-process (section 15b).
 7. upload `logs/` on failure
 
 Required repository secrets: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `INTERNAL_SECRET`, `HASH_SALT`. Keep them in sync with `.env` whenever the Supabase project changes.
 
-The workflow also sets dummy `PAYHERE_MERCHANT_ID=qa-merchant` and `PAYHERE_SECRET=qa-secret`. The billing QA signs notify payloads with the same secret the server checks, so no real merchant is needed. Locally, export the same two variables before `npm run dev` and `qa.ts` if your `.env` has none.
+The workflow also sets dummy `PAYHERE_MERCHANT_ID=qa-merchant` and `PAYHERE_SECRET=qa-secret`. The billing QA signs notify payloads with the same secret the server checks, so no real merchant is needed. Locally, export the same two variables before `npm run dev` and `tests/qa.ts` if your `.env` has none.
 
-**CI runs against the real Supabase project.** qa.ts creates a throwaway user (`qa-<ts>@test.dynamicqr.local`) and deletes it at the end. A crashed run deletes its own users on the way out. Each run also starts by deleting `@test.dynamicqr.local` users older than one hour, so leftovers from a killed run are gone by the next run, and a parallel CI run is never touched. Deleting the auth user cascades to all of its rows.
+**CI runs against the real Supabase project.** tests/qa.ts creates a throwaway user (`qa-<ts>@test.dynamicqr.local`) and deletes it at the end. A crashed run deletes its own users on the way out. Each run also starts by deleting `@test.dynamicqr.local` users older than one hour, so leftovers from a killed run are gone by the next run, and a parallel CI run is never touched. Deleting the auth user cascades to all of its rows.
 
-## QA suite — [qa.ts](../qa.ts)
+## QA suite — [tests/qa.ts](../tests/qa.ts)
 
 An end-to-end HTTP suite of about 730 lines with 20 sections. It covers auth setup, health, plan bootstrap, auth guards, validation, QR CRUD, empty analytics shapes, account analytics, the internal scan and stats increment, the internal slug lookup, profile, billing validation, gate config storage, type redirects, UA, referrer and country parsing, token revocation, plan limits, deactivate-all and export, the redirect engine, and cleanup.
 
@@ -178,7 +178,7 @@ Phase 0 added these sections:
 
 Not covered yet: the frontend (no browser tests) and real Cloudflare KV behaviour (eventual consistency, TTLs).
 
-## Logging — [logger.ts](../logger.ts)
+## Logging — [server/logger.ts](../server/logger.ts)
 
 - **Production:** JSON lines on the console, with a `severity` field in Google Cloud style (a leftover). Vercel captures them.
 - **Development:** coloured console output plus `logs/combined.log` and `logs/error.log`.

@@ -1,6 +1,6 @@
 /**
  * DynamicQR — Full API QA Test Suite
- * Run with: npx tsx qa.ts
+ * Run with: npx tsx tests/qa.ts
  *
  * Creates a disposable test user, exercises every endpoint, then deletes the user.
  * The backend must be running on localhost:3000 (npm run dev).
@@ -60,13 +60,13 @@
 import 'dotenv/config';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
-import worker from './worker/worker.js';
-import { waLink } from './src/lib/site.ts';
-import { getQRContent, setShortDomain, buildDestination, gtinValid, withUtm, isReservedSlug } from './src/lib/qrContent.ts';
-import { csvToObjects, toCsv } from './src/lib/csv.ts';
-import { PAGE_TEMPLATES } from './src/lib/pageTemplates.ts';
-import { pickRoute, routeCtx } from './src/lib/routing.ts';
-import { verifyStandardWebhook } from './src/lib/webhooks.ts';
+import worker from '../worker/worker.js';
+import { waLink } from '../src/lib/site.ts';
+import { getQRContent, setShortDomain, buildDestination, gtinValid, withUtm, isReservedSlug } from '../src/lib/qrContent.ts';
+import { csvToObjects, toCsv } from '../src/lib/csv.ts';
+import { PAGE_TEMPLATES } from '../src/lib/pageTemplates.ts';
+import { pickRoute, routeCtx } from '../src/lib/routing.ts';
+import { verifyStandardWebhook } from '../src/lib/webhooks.ts';
 import http from 'http';
 
 // ─── config ──────────────────────────────────────────────────────────────────
