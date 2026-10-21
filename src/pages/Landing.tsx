@@ -4,7 +4,7 @@ import { loginWithGoogle } from '../supabase';
 import QRCode from 'qrcode';
 import { formatPrice, planFeatures, PAID_PLANS, PLANS, Currency, PaidPlan } from '../lib/plans';
 import FooterHub from '../components/FooterHub';
-import { SHORT_DOMAIN, SHORT_HOST } from '../lib/qrContent';
+import { SHORT_DOMAIN, SHORT_HOST, getQRContent } from '../lib/qrContent';
 import { SITE, waLink } from '../lib/site';
 import './Landing.css';
 
@@ -12,8 +12,19 @@ const defaultCurrency = (): Currency => {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone === 'Asia/Colombo' ? 'LKR' : 'USD'; } catch { return 'LKR'; }
 };
 
+// The hero card's type tabs: [content_data key, label, placeholder] per field. URL uses cardUrl.
+const CARD_FIELDS = {
+  url: [['url', 'Destination URL', 'https://yourcafe.lk/menu']],
+  vcard: [['first_name', 'Name', 'Nimal Perera'], ['phone', 'Phone', '+94 77 123 4567'], ['email', 'Email', 'nimal@yourcafe.lk']],
+  wifi: [['ssid', 'Network name', 'Lagoon-Guest'], ['password', 'Password', 'kottu2026']],
+  text: [['text', 'Text', 'Any message you want to share']],
+} as const;
+type CardTab = keyof typeof CARD_FIELDS;
+
 export default function Landing() {
   const [cardUrl, setCardUrl] = useState('https://yourcafe.lk/menu');
+  const [tab, setTab] = useState<CardTab>('url');
+  const [cd, setCd] = useState<Record<string, string>>({});
   const [currency, setCurrency] = useState<Currency>(defaultCurrency);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginLoading, setLoginLoading] = useState(false);
@@ -47,11 +58,13 @@ export default function Landing() {
   }, []);
 
   // Live preview of a real (static) QR for whatever URL the visitor types.
+  // What the preview QR encodes: the URL as typed, or a static vCard / Wi-Fi / text code.
+  const payload = tab === 'url' ? cardUrl : getQRContent({ qr_type: tab, is_dynamic: false, content_data: cd });
   useEffect(() => {
     if (!canvasRef.current) return;
-    QRCode.toCanvas(canvasRef.current, cardUrl || SHORT_DOMAIN, { width: 120, margin: 1, color: { dark: '#1A1916', light: '#FFFFFF' } })
+    QRCode.toCanvas(canvasRef.current, payload || SHORT_DOMAIN, { width: 120, margin: 1, color: { dark: '#1A1916', light: '#FFFFFF' } })
       .catch(console.error);
-  }, [cardUrl]);
+  }, [payload]);
 
   // A real dynamic code owned by Scnr, so visitors can test a scan end to end.
   useEffect(() => {
@@ -60,6 +73,7 @@ export default function Landing() {
       .catch(console.error);
   }, []);
 
+  const shown = tab === 'url' ? cardUrl.replace(/^https?:\/\/(www\.)?/, '') : cd[CARD_FIELDS[tab][0][0]] || '…';
   const downloadQR = () => {
     if (!canvasRef.current) return;
     const a = document.createElement('a');
@@ -139,10 +153,9 @@ export default function Landing() {
 
         <div className="hero-card">
           <div className="card-tabs">
-            <button className="tab active">URL</button>
-            <button className="tab">vCard</button>
-            <button className="tab">Wi-Fi</button>
-            <button className="tab">Text</button>
+            {([['url', 'URL'], ['vcard', 'vCard'], ['wifi', 'Wi-Fi'], ['text', 'Text']] as const).map(([k, label]) => (
+              <button key={k} className={`tab${tab === k ? ' active' : ''}`} aria-pressed={tab === k} onClick={() => setTab(k)}>{label}</button>
+            ))}
           </div>
 
           <div className="qr-live-wrap">
@@ -151,9 +164,9 @@ export default function Landing() {
             </div>
             <div className="qr-live-meta">
               <div className="meta-label">Preview</div>
-              <div className="meta-slug">Static QR for your link</div>
+              <div className="meta-slug">Static QR for your {tab === 'url' ? 'link' : tab === 'vcard' ? 'contact' : tab === 'wifi' ? 'Wi-Fi' : 'text'}</div>
               <div className="meta-dest">
-                → {cardUrl.replace(/^https?:\/\/(www\.)?/, '').slice(0, 28)}{cardUrl.replace(/^https?:\/\/(www\.)?/, '').length > 28 ? '…' : ''}
+                → {shown.slice(0, 28)}{shown.length > 28 ? '…' : ''}
               </div>
               <div className="meta-badges">
                 <span className="badge badge-type">Sign in for a dynamic {SHORT_HOST} link</span>
@@ -161,10 +174,13 @@ export default function Landing() {
             </div>
           </div>
 
-          <div className="card-input-group">
-            <label className="input-label">Destination URL</label>
-            <input type="url" className="card-input" placeholder="https://yourcafe.lk/menu" value={cardUrl} onChange={e => setCardUrl(e.target.value)} />
-          </div>
+          {CARD_FIELDS[tab].map(([k, label, ph]) => (
+            <div className="card-input-group" key={`${tab}-${k}`}>
+              <label className="input-label" htmlFor={`card-${k}`}>{label}</label>
+              <input id={`card-${k}`} type={k === 'url' ? 'url' : 'text'} className="card-input" placeholder={ph}
+                value={k === 'url' ? cardUrl : cd[k] || ''} onChange={e => k === 'url' ? setCardUrl(e.target.value) : setCd({ ...cd, [k]: e.target.value })} />
+            </div>
+          ))}
 
           <div className="card-downloads">
             <button className="btn-dl" onClick={downloadQR}>↓ PNG</button>
