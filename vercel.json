@@ -25,7 +25,7 @@
       "destination": "/api/index.ts"
     },
     {
-      "source": "/((?!api|internal|assets|\\.well-known).*)",
+      "source": "/((?!api/|internal/|assets/|\\.well-known).*)",
       "destination": "/index.html"
     }
   ],
