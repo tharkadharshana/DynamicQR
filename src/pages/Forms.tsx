@@ -35,7 +35,7 @@ export default function Forms() {
       </div>
     ) : (
       <div className="card qr-table-wrap">
-        <table className="qr-table">
+        <table className="qr-table stack">
           <thead><tr><th>Title</th><th>Short link</th><th></th></tr></thead>
           <tbody>
             {forms.map(q => (
@@ -124,7 +124,7 @@ export function FormResponses() {
       <div className="card" style={{ textAlign: 'center', color: 'var(--text3)', fontSize: '13px' }}>No responses yet. Print the QR or share the short link to start collecting them.</div>
     ) : (
       <div className="card qr-table-wrap">
-        <table className="qr-table">
+        <table className="qr-table stack">
           <thead><tr><th>Date</th>{fields.map(f => <th key={f.id}>{f.label}</th>)}{hasOther && <th>Other</th>}<th></th></tr></thead>
           <tbody>
             {rows.map(r => (

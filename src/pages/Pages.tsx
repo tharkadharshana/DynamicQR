@@ -32,7 +32,7 @@ export default function Pages() {
           </div>
         ) : (
           <div className="card qr-table-wrap">
-            <table className="qr-table">
+            <table className="qr-table stack">
               <thead><tr><th>Title</th><th>Short link</th><th></th></tr></thead>
               <tbody>
                 {pages.map(q => (

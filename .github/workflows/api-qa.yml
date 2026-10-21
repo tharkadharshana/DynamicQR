@@ -51,6 +51,10 @@ jobs:
       - name: Server imports resolve on Vercel
         run: node scripts/check-server-imports.mjs
 
+      # Page routes (like /api-docs) must reach the SPA, API and /internal routes the function.
+      - name: Vercel routes
+        run: node scripts/check-vercel-routes.mjs
+
       # Landing entry chunk stays under budget; llms.txt and sitemap.xml keep the shape Lighthouse checks.
       - name: Frontend build checks
         run: npm run build && node scripts/check-bundle.mjs

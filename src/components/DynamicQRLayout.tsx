@@ -62,7 +62,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
     ) },
     { name: 'Billing', path: '/billing', icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M2 6h12"/><path d="M5 10h2"/></svg>
-    ), badge: <span className={`nav-badge ${currentPlan === 'free' ? '' : 'amber'}`}>{isTrial ? 'Trial' : planLabel}</span> },
+    ), badge: planData ? <span className={`nav-badge ${currentPlan === 'free' ? '' : 'amber'}`}>{isTrial ? 'Trial' : planLabel}</span> : null },
   ];
 
   if (planData?.limits?.bulk_create) navItems.push({ name: 'Bulk create', path: '/bulk', icon: (
@@ -159,6 +159,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
           <button 
             className="btn btn-icon btn-sm md:hidden" 
             style={{ marginLeft: 'auto', border: 'none' }}
+            aria-label="Close menu"
             onClick={() => setMobileMenuOpen(false)}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
@@ -213,7 +214,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
               <div className="user-av">{userInitials}</div>
               <div className="user-info">
                 <div className="user-name">{userName}</div>
-                <div className="user-plan"><span className={`plan-badge ${currentPlan === 'free' ? '' : 'amber'}`}>{isTrial ? 'Trial' : planLabel}</span></div>
+                <div className="user-plan">{planData && <span className={`plan-badge ${currentPlan === 'free' ? '' : 'amber'}`}>{isTrial ? 'Trial' : planLabel}</span>}</div>
               </div>
             </div>
           </Link>
@@ -228,11 +229,12 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
             <button 
               className="btn btn-icon btn-sm md:hidden" 
               style={{ marginRight: '8px' }}
+              aria-label="Open menu"
               onClick={() => setMobileMenuOpen(true)}
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
             </button>
-            <span className="page-title" id="page-title">{title}</span>
+            <h1 className="page-title" id="page-title">{title}</h1>
             <span className="page-sub hidden sm:inline" id="page-sub" style={{ marginLeft: '12px' }}>{sub}</span>
           </div>
           <div className="topbar-right">
@@ -240,6 +242,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
             <button
               className="btn btn-icon btn-sm"
               onClick={toggleTheme}
+              aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             >
               {theme === 'dark' ? (
@@ -256,7 +259,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
                 </svg>
               )}
             </button>
-            <button className="btn btn-primary btn-sm" onClick={() => navigate('/create')}>
+            <button className="btn btn-primary btn-sm" onClick={() => navigate('/create')} aria-label="New QR">
               <span className="hidden sm:inline">+ New QR</span>
               <span className="sm:hidden">+</span>
             </button>

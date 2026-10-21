@@ -261,19 +261,19 @@ function Editor({ slug, template }: { slug?: string; template: string | null }) 
               <div className="grid-2">
                 {(['accent', 'bg', 'text'] as const).map(k => (
                   <div key={k} className="form-section" style={{ marginBottom: '10px' }}>
-                    <label className="form-label">{{ accent: 'Accent colour', bg: 'Background', text: 'Text colour' }[k]}</label>
-                    <input type="color" className="form-input" style={{ height: '40px', padding: '4px' }} value={theme[k]} onChange={e => setTheme({ ...theme, [k]: e.target.value })} />
+                    <label className="form-label" htmlFor="f-k">{{ accent: 'Accent colour', bg: 'Background', text: 'Text colour' }[k]}</label>
+                    <input id="f-k" type="color" className="form-input" style={{ height: '40px', padding: '4px' }} value={theme[k]} onChange={e => setTheme({ ...theme, [k]: e.target.value })} />
                   </div>
                 ))}
                 <div className="form-section" style={{ marginBottom: '10px' }}>
-                  <label className="form-label">Button style</label>
-                  <select className="form-input" value={theme.button} onChange={e => setTheme({ ...theme, button: e.target.value })}>
+                  <label className="form-label" htmlFor="f-button-style">Button style</label>
+                  <select id="f-button-style" className="form-input" value={theme.button} onChange={e => setTheme({ ...theme, button: e.target.value })}>
                     <option value="rounded">Rounded</option><option value="pill">Pill</option><option value="square">Square</option>
                   </select>
                 </div>
                 <div className="form-section" style={{ marginBottom: '10px' }}>
-                  <label className="form-label">Font</label>
-                  <select className="form-input" value={theme.font} onChange={e => setTheme({ ...theme, font: e.target.value })}>
+                  <label className="form-label" htmlFor="f-font">Font</label>
+                  <select id="f-font" className="form-input" value={theme.font} onChange={e => setTheme({ ...theme, font: e.target.value })}>
                     <option value="system">Clean</option><option value="serif">Serif</option><option value="mono">Monospace</option>
                   </select>
                 </div>

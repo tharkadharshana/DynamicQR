@@ -2200,7 +2200,7 @@ async function startServer() {
     const { slug } = req.params;
     
     // Ignore static assets and API routes
-    if (slug.startsWith('api') || slug.startsWith('assets') || slug.includes('.')) {
+    if (slug === 'api' || slug.startsWith('assets') || slug.includes('.')) {
       return next();
     }
 

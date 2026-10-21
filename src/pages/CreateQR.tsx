@@ -390,8 +390,8 @@ export default function CreateQR() {
           <div>
               {/* QR Name field */}
               <div className="form-section">
-                <label className="form-label">QR Name *</label>
-                <input 
+                <label className="form-label" htmlFor="f-qr-name">QR Name *</label>
+                <input id="f-qr-name" 
                   type="text" 
                   className="form-input" 
                   placeholder="e.g. Restaurant Menu QR" 
@@ -466,8 +466,8 @@ export default function CreateQR() {
                       </>
                     )}
                     <div className="form-section">
-                      <label className="form-label">{qrType === 'app' ? 'Link for other devices *' : qrType === 'gs1' ? 'Product page URL *' : 'Destination URL *'}</label>
-                      <input
+                      <label className="form-label" htmlFor="f-field">{qrType === 'app' ? 'Link for other devices *' : qrType === 'gs1' ? 'Product page URL *' : 'Destination URL *'}</label>
+                      <input id="f-field"
                         type="url"
                         className={`form-input ${urlError ? 'error' : ''}`}
                         placeholder="https://yourwebsite.com"
@@ -577,29 +577,29 @@ export default function CreateQR() {
                   <div id="fields-vcard">
                     <div className="grid-2 mb16">
                       <div className="form-section" style={{ marginBottom: 0 }}>
-                        <label className="form-label">First name</label>
-                        <input type="text" className="form-input" placeholder="Ashan" value={formData.content_data?.first_name || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, first_name: e.target.value}})} />
+                        <label className="form-label" htmlFor="f-first-name">First name</label>
+                        <input id="f-first-name" type="text" className="form-input" placeholder="Ashan" value={formData.content_data?.first_name || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, first_name: e.target.value}})} />
                       </div>
                       <div className="form-section" style={{ marginBottom: 0 }}>
-                        <label className="form-label">Last name</label>
-                        <input type="text" className="form-input" placeholder="Kumar" value={formData.content_data?.last_name || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, last_name: e.target.value}})} />
+                        <label className="form-label" htmlFor="f-last-name">Last name</label>
+                        <input id="f-last-name" type="text" className="form-input" placeholder="Kumar" value={formData.content_data?.last_name || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, last_name: e.target.value}})} />
                       </div>
                     </div>
-                    <div className="form-section"><label className="form-label">Phone</label><input type="tel" className="form-input" placeholder="+94 77 123 4567" value={formData.content_data?.phone || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, phone: e.target.value}})} /></div>
-                    <div className="form-section"><label className="form-label">Email</label><input type="email" className="form-input" placeholder="ashan@email.com" value={formData.content_data?.email || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, email: e.target.value}})} /></div>
-                    <div className="form-section"><label className="form-label">Company</label><input type="text" className="form-input" placeholder="Company name" value={formData.content_data?.company || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, company: e.target.value}})} /></div>
-                    <div className="form-section"><label className="form-label">Website</label><input type="url" className="form-input" placeholder="https://yoursite.com" value={formData.content_data?.website || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, website: e.target.value}})} /></div>
+                    <div className="form-section"><label className="form-label" htmlFor="f-phone">Phone</label><input id="f-phone" type="tel" className="form-input" placeholder="+94 77 123 4567" value={formData.content_data?.phone || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, phone: e.target.value}})} /></div>
+                    <div className="form-section"><label className="form-label" htmlFor="f-email">Email</label><input id="f-email" type="email" className="form-input" placeholder="ashan@email.com" value={formData.content_data?.email || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, email: e.target.value}})} /></div>
+                    <div className="form-section"><label className="form-label" htmlFor="f-company">Company</label><input id="f-company" type="text" className="form-input" placeholder="Company name" value={formData.content_data?.company || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, company: e.target.value}})} /></div>
+                    <div className="form-section"><label className="form-label" htmlFor="f-website">Website</label><input id="f-website" type="url" className="form-input" placeholder="https://yoursite.com" value={formData.content_data?.website || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, website: e.target.value}})} /></div>
                   </div>
                 )}
 
                 {/* WiFi fields */}
                 {qrType === 'wifi' && (
                   <div id="fields-wifi">
-                    <div className="form-section"><label className="form-label">Network name (SSID)</label><input type="text" className="form-input" placeholder="MyHomeWiFi" value={formData.content_data?.ssid || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, ssid: e.target.value}})} /></div>
-                    <div className="form-section"><label className="form-label">Password</label><input type="text" className="form-input" placeholder="password123" value={formData.content_data?.password || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, password: e.target.value}})} /></div>
+                    <div className="form-section"><label className="form-label" htmlFor="f-network-name-ssid">Network name (SSID)</label><input id="f-network-name-ssid" type="text" className="form-input" placeholder="MyHomeWiFi" value={formData.content_data?.ssid || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, ssid: e.target.value}})} /></div>
+                    <div className="form-section"><label className="form-label" htmlFor="f-password">Password</label><input id="f-password" type="text" className="form-input" placeholder="password123" value={formData.content_data?.password || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, password: e.target.value}})} /></div>
                     <div className="form-section">
-                      <label className="form-label">Security type</label>
-                      <select className="form-input" value={formData.content_data?.encryption || 'WPA'} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, encryption: e.target.value}})}>
+                      <label className="form-label" htmlFor="f-security-type">Security type</label>
+                      <select id="f-security-type" className="form-input" value={formData.content_data?.encryption || 'WPA'} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, encryption: e.target.value}})}>
                         <option value="WPA">WPA/WPA2</option>
                         <option value="WEP">WEP</option>
                         <option value="">None (open)</option>
@@ -612,8 +612,8 @@ export default function CreateQR() {
                 {qrType === 'text' && (
                   <div id="fields-text">
                     <div className="form-section">
-                      <label className="form-label">Text content</label>
-                      <textarea className="form-input" placeholder="Enter any text, message, or note..." rows={4} value={formData.content_data?.text || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, text: e.target.value}})}></textarea>
+                      <label className="form-label" htmlFor="f-text-content">Text content</label>
+                      <textarea id="f-text-content" className="form-input" placeholder="Enter any text, message, or note..." rows={4} value={formData.content_data?.text || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, text: e.target.value}})}></textarea>
                     </div>
                   </div>
                 )}
@@ -621,9 +621,9 @@ export default function CreateQR() {
                 {/* Email fields */}
                 {qrType === 'email' && (
                   <div id="fields-email">
-                    <div className="form-section"><label className="form-label">Recipient email</label><input type="email" className="form-input" placeholder="hello@example.com" value={formData.content_data?.email || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, email: e.target.value}})} /></div>
-                    <div className="form-section"><label className="form-label">Subject</label><input type="text" className="form-input" placeholder="Subject line" value={formData.content_data?.subject || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, subject: e.target.value}})} /></div>
-                    <div className="form-section"><label className="form-label">Body (optional)</label><textarea className="form-input" placeholder="Message body..." rows={3} value={formData.content_data?.body || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, body: e.target.value}})}></textarea></div>
+                    <div className="form-section"><label className="form-label" htmlFor="f-recipient-email">Recipient email</label><input id="f-recipient-email" type="email" className="form-input" placeholder="hello@example.com" value={formData.content_data?.email || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, email: e.target.value}})} /></div>
+                    <div className="form-section"><label className="form-label" htmlFor="f-subject">Subject</label><input id="f-subject" type="text" className="form-input" placeholder="Subject line" value={formData.content_data?.subject || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, subject: e.target.value}})} /></div>
+                    <div className="form-section"><label className="form-label" htmlFor="f-body-optional">Body (optional)</label><textarea id="f-body-optional" className="form-input" placeholder="Message body..." rows={3} value={formData.content_data?.body || ''} onChange={(e) => setFormData({...formData, content_data: {...formData.content_data, body: e.target.value}})}></textarea></div>
                   </div>
                 )}
               </div>
@@ -653,12 +653,15 @@ export default function CreateQR() {
                 <label className="form-label">Foreground color</label>
                 <div className="color-row">
                   {['#1A1916', '#E85D3A', '#4D9EFF', '#3DCC7E', '#9B7FFF'].map(color => (
-                    <div 
+                    <button 
+                      type="button"
                       key={color}
+                      aria-label={`Foreground colour ${color}`}
+                      aria-pressed={formData.style.dot_color === color}
                       className={`color-swatch ${formData.style.dot_color === color ? 'selected' : ''}`} 
                       style={{ background: color }} 
                       onClick={() => setFormData({...formData, style: {...formData.style, dot_color: color}})}
-                    ></div>
+                    ></button>
                   ))}
                   <div className="color-input-wrap">
                     <div className="color-preview" style={{ background: formData.style.dot_color }}></div>
@@ -666,6 +669,7 @@ export default function CreateQR() {
                       type="color" 
                       className="form-input" 
                       value={formData.style.dot_color} 
+                      aria-label="Foreground colour"
                       style={{ height: '36px', padding: '4px', cursor: 'pointer' }} 
                       onChange={(e) => setFormData({...formData, style: {...formData.style, dot_color: e.target.value}})}
                     />
@@ -677,12 +681,15 @@ export default function CreateQR() {
                 <label className="form-label">Background color</label>
                 <div className="color-row">
                   {['#FFFFFF', '#F4F3EF', '#FBE9E4', '#E8F5EC', '#EEF0FF'].map(color => (
-                    <div 
+                    <button 
+                      type="button"
                       key={color}
+                      aria-label={`Background colour ${color}`}
+                      aria-pressed={formData.style.bg_color === color}
                       className={`color-swatch ${formData.style.bg_color === color ? 'selected' : ''}`} 
                       style={{ background: color, border: color === '#FFFFFF' ? '1px solid var(--border)' : 'none' }} 
                       onClick={() => setFormData({...formData, style: {...formData.style, bg_color: color}})}
-                    ></div>
+                    ></button>
                   ))}
                   <div className="color-input-wrap">
                     <div className="color-preview" style={{ background: formData.style.bg_color, border: '1px solid var(--border2)' }}></div>
@@ -690,6 +697,7 @@ export default function CreateQR() {
                       type="color" 
                       className="form-input" 
                       value={formData.style.bg_color} 
+                      aria-label="Background colour"
                       style={{ height: '36px', padding: '4px', cursor: 'pointer' }} 
                       onChange={(e) => setFormData({...formData, style: {...formData.style, bg_color: e.target.value}})}
                     />
@@ -808,8 +816,8 @@ export default function CreateQR() {
 
               <div style={{ display: 'flex', gap: '16px' }}>
                 <div className="form-section" style={{ flex: 1 }}>
-                  <label className="form-label">Error correction</label>
-                  <select 
+                  <label className="form-label" htmlFor="f-error-correction">Error correction</label>
+                  <select id="f-error-correction" 
                     className="form-input" 
                     value={formData.style.error_correction}
                     onChange={(e) => setFormData({...formData, style: {...formData.style, error_correction: e.target.value}})}
@@ -821,8 +829,8 @@ export default function CreateQR() {
                   </select>
                 </div>
                 <div className="form-section" style={{ flex: 1 }}>
-                  <label className="form-label">Output size</label>
-                  <select 
+                  <label className="form-label" htmlFor="f-output-size">Output size</label>
+                  <select id="f-output-size" 
                     className="form-input" 
                     value={formData.style.output_size}
                     onChange={(e) => setFormData({...formData, style: {...formData.style, output_size: parseInt(e.target.value)}})}
@@ -848,7 +856,7 @@ export default function CreateQR() {
                   <div style={{ fontSize: '13px', color: 'var(--text3)' }}>Editable destination + scan analytics</div>
                 </div>
                 <button 
-                  className={`toggle ${isDynamic ? 'on' : ''}`} 
+                  role="switch" aria-checked={!!isDynamic} aria-label="Dynamic QR" className={`toggle ${isDynamic ? 'on' : ''}`} 
                   onClick={() => !DYNAMIC_ONLY.includes(qrType) && setIsDynamic(!isDynamic)}
                 ></button>
               </div>
@@ -903,7 +911,7 @@ export default function CreateQR() {
                     </div>
                     <div style={{ fontSize: '13px', color: 'var(--text3)' }}>Scanners are asked once for their approximate location and can say no. Their scans show on your map.</div>
                   </div>
-                  <button aria-label="GPS tracking" className={`toggle ${cd.gps ? 'on' : ''}`}
+                  <button role="switch" aria-checked={!!cd.gps} aria-label="GPS tracking" className={`toggle ${cd.gps ? 'on' : ''}`}
                     onClick={() => locked('gps_tracking') && !cd.gps ? navigate('/billing') : setCd({ gps: !cd.gps || undefined })}></button>
                 </div>
               )}
@@ -917,7 +925,7 @@ export default function CreateQR() {
                   <div style={{ fontSize: '13px', color: 'var(--text3)' }}>Require a PIN before redirecting</div>
                 </div>
                 <button 
-                  className={`toggle ${formData.options.password_protect ? 'on' : ''}`} 
+                  role="switch" aria-checked={!!formData.options.password_protect} aria-label="Password protection" className={`toggle ${formData.options.password_protect ? 'on' : ''}`} 
                   onClick={() => {
                     if (locked('password_protect')) return navigate('/billing');
                     setFormData({...formData, options: {...formData.options, password_protect: !formData.options.password_protect}});
@@ -939,7 +947,7 @@ export default function CreateQR() {
                   <div style={{ fontSize: '13px', color: 'var(--text3)' }}>QR deactivates automatically after this date</div>
                 </div>
                 <button 
-                  className={`toggle ${formData.options.expiry_date_enabled ? 'on' : ''}`} 
+                  role="switch" aria-checked={!!formData.options.expiry_date_enabled} aria-label="Expiry date" className={`toggle ${formData.options.expiry_date_enabled ? 'on' : ''}`} 
                   onClick={() => {
                     if (locked('expiry_gate')) return navigate('/billing');
                     setFormData({...formData, options: {...formData.options, expiry_date_enabled: !formData.options.expiry_date_enabled}});
@@ -961,7 +969,7 @@ export default function CreateQR() {
                   <div style={{ fontSize: '13px', color: 'var(--text3)' }}>Deactivate after N total scans</div>
                 </div>
                 <button 
-                  className={`toggle ${formData.options.scan_limit_enabled ? 'on' : ''}`} 
+                  role="switch" aria-checked={!!formData.options.scan_limit_enabled} aria-label="Scan limit" className={`toggle ${formData.options.scan_limit_enabled ? 'on' : ''}`} 
                   onClick={() => {
                     if (locked('scan_limit_gate')) return navigate('/billing');
                     setFormData({...formData, options: {...formData.options, scan_limit_enabled: !formData.options.scan_limit_enabled}});
@@ -1051,8 +1059,8 @@ export default function CreateQR() {
                   </div>
                   
                   <div className="form-section">
-                    <label className="form-label" style={{ fontSize: '11px', textTransform: 'uppercase' }}>Time window</label>
-                    <select 
+                    <label className="form-label" htmlFor="f-time-window" style={{ fontSize: '11px', textTransform: 'uppercase' }}>Time window</label>
+                    <select id="f-time-window" 
                        className="form-input" 
                        disabled={locked('visitor_guard_gate')}
                        value={locked('visitor_guard_gate') ? 3600 : formData.options.visitor_rate_period}

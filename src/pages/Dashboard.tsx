@@ -384,6 +384,7 @@ export default function Dashboard() {
               <span className="card-title">Scans over time</span>
               <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                 <select 
+                  aria-label="Date range type"
                   className="btn btn-ghost btn-sm" 
                   value={rangeMode} 
                   onChange={(e) => setRangeMode(e.target.value as any)}
@@ -395,6 +396,7 @@ export default function Dashboard() {
 
                 {rangeMode === 'days' ? (
                   <select 
+                    aria-label="Number of days"
                     className="btn btn-ghost btn-sm" 
                     value={days} 
                     onChange={(e) => setDays(Number(e.target.value))}
@@ -408,6 +410,7 @@ export default function Dashboard() {
                 ) : (
                   <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                     <input 
+                      aria-label="Start date"
                       type="date" 
                       className="btn btn-ghost btn-sm" 
                       value={startDate} 
@@ -416,6 +419,7 @@ export default function Dashboard() {
                     />
                     <span style={{ fontSize: '10px', color: 'var(--text3)' }}>-</span>
                     <input 
+                      aria-label="End date"
                       type="date" 
                       className="btn btn-ghost btn-sm" 
                       value={endDate} 
@@ -565,7 +569,7 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="qr-table-wrap">
-                <table className="qr-table">
+                <table className="qr-table stack">
                   <thead>
                     <tr>
                       {selected && <th></th>}
@@ -622,7 +626,7 @@ export default function Dashboard() {
                               </div>
                             </div>
                           </td>
-                          <td>
+                          <td data-label="Scans">
                             <div style={{ fontWeight: 600 }}>{(qrStats.total_scans || 0).toLocaleString()}</div>
                             {qrStats.failed_scans > 0 && (
                               <div style={{ fontSize: '11px', color: 'var(--coral)', marginTop: '2px' }}>

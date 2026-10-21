@@ -152,6 +152,15 @@ SaaS-specific [Terms](../src/pages/TermsConditions.tsx), [Privacy](../src/pages/
 - They read business details from `SITE`.
 - **Have a lawyer review them before launch.**
 
+## Styling and accessibility rules
+
+- **Two styling systems share the app.** The dashboard uses the hand-written classes in `src/dynamicqr.css` (design tokens are the CSS variables at the top: `--text`, `--text3`, `--coral`, ...). `Pricing.tsx` uses Tailwind utilities. Tailwind v4 puts its utilities in a cascade layer, so any *unlayered* rule beats them: the global `* { margin: 0; padding: 0 }` reset is therefore wrapped in `@layer base`. Do not add unlayered resets.
+- **Use the tokens, not Tailwind's fixed colours** (`text-white`, `text-zinc-500`). A fixed colour is invisible in the other theme. Use `text-[var(--text)]`, `text-[var(--text3)]`, `border-[var(--border)]` and so on.
+- **Contrast.** Text must reach 4.5:1 against its background in both themes. `--text3` (secondary text) was 2.6:1 dark and 3.3:1 light; it is now 5.3:1 in both. The light-theme coral and green were darkened for the same reason.
+- **Controls need names.** Every input has a `<label htmlFor>` or an `aria-label`; icon-only buttons have an `aria-label`; toggles are `role="switch"` with `aria-checked`; colour swatches are buttons. The page title in the top bar is the page's single `<h1>`.
+- **Tables on phones.** Give a `qr-table` the class `stack` and its rows become stacked cards below 640 px. Add `data-label="..."` to a cell whose value needs a caption (the dashboard's Scans).
+- **Focus.** There is a global `:focus-visible` ring and a `prefers-reduced-motion` rule.
+
 ## QR content and the short domain
 
 Every QR image is built with `getQRContent()` and `stylingOptions()`. Dynamic codes encode `${activeDomain}/${slug}`: the account's **verified custom domain** (Team) when `/api/user/plan` returns one (`setShortDomain()` in App.tsx), otherwise `VITE_SHORT_DOMAIN`. Never `window.location.origin`. In-app slug labels use `shortHost()`; Landing uses the public `SHORT_HOST`. Codes printed earlier keep whatever domain they were printed with, and both domains keep resolving. `VITE_SHORT_DOMAIN` must never change after codes are printed.

@@ -68,6 +68,18 @@ One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-r
 - **Logo on Free** was already allowed; QA now proves it.
 - QA section 28; `src/lib/plans.ts` self-check.
 
+## UI polish (branch `feat/ui-polish`)
+
+Found by loading every signed-in screen at 1440 px and 390 px, in both themes, with a headless browser, and by checking contrast, names and overflow on each page.
+
+- **`/api-docs` returned 404 on a direct load in production.** The SPA rewrite in `vercel.json` excluded everything that starts with `api`. It now excludes only `api/`, `internal/` and `assets/`. The same prefix match broke the dev proxy (`vite.config.ts`) and the dev redirect route. New CI guard: `scripts/check-vercel-routes.mjs`.
+- **Pricing page had no spacing.** An unlayered `* { margin: 0; padding: 0 }` in `dynamicqr.css` overrode Tailwind's utilities (Tailwind v4 layers them), so cards, toggles and the FAQ were cramped. The reset is now in `@layer base`.
+- **Pricing was unreadable in the light theme** (fixed `text-white` and `text-zinc-*` colours). It now uses the theme tokens.
+- **Contrast.** Secondary text (`--text3`) went from 2.6:1 to 5.3:1 (dark) and 3.3:1 to 5.2:1 (light). Light-theme coral and green were darkened to pass 4.5:1.
+- **Accessibility:** the top-bar title is an `<h1>`; icon-only buttons have names; toggles are `role="switch"`; colour swatches are keyboard-reachable buttons; 30+ inputs gained labels; a global focus ring; reduced-motion support.
+- **Phones:** tables on Dashboard, Pages, Forms and Analytics become stacked cards; stat cards sit two across; the plan-comparison table scrolls inside its card; the billing header and analytics chart header wrap instead of overflowing.
+- The sidebar plan badge no longer shows "Free" for a moment before the plan loads.
+
 ## Repository structure (branch `chore/repo-structure`)
 
 - The root now holds only config and folders. Moves: `server.ts` → `server/index.ts`, `logger.ts` → `server/logger.ts`, `qa.ts` → `tests/qa.ts`, `migrations/` → `db/migrations/`, `supabase_schema.sql` → `db/schema.sql`, `migrations/queries.sql` → `db/queries.sql`.

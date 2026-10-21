@@ -72,8 +72,8 @@ export default function FormEditor() {
     <div className="form-section" style={{ marginBottom: '10px' }}>
       <label className="form-label">{label}</label>
       {type === 'textarea'
-        ? <textarea className="form-input" rows={3} value={v || ''} placeholder={ph} onChange={e => on(e.target.value)} />
-        : <input className="form-input" type={type} value={v || ''} placeholder={ph} onChange={e => on(e.target.value)} />}
+        ? <textarea aria-label={label} className="form-input" rows={3} value={v || ''} placeholder={ph} onChange={e => on(e.target.value)} />
+        : <input aria-label={label} className="form-input" type={type} value={v || ''} placeholder={ph} onChange={e => on(e.target.value)} />}
     </div>
   );
   const m = (key: string, label: string, type = 'text', ph = '') => input(label, meta[key], v => setMeta({ ...meta, [key]: v }), type, ph);
@@ -109,8 +109,8 @@ export default function FormEditor() {
                 {input('Question', f.label, v => upd(i, { label: v }))}
                 {f.type === 'select' && (
                   <div className="form-section" style={{ marginBottom: '10px' }}>
-                    <label className="form-label">Options (one per line)</label>
-                    <textarea className="form-input" rows={4} value={(f.options || []).join('\n')} onChange={e => upd(i, { options: e.target.value.split('\n') })} />
+                    <label className="form-label" htmlFor="f-options-one-per-line">Options (one per line)</label>
+                    <textarea id="f-options-one-per-line" className="form-input" rows={4} value={(f.options || []).join('\n')} onChange={e => upd(i, { options: e.target.value.split('\n') })} />
                   </div>
                 )}
                 <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '13px' }}>

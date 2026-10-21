@@ -256,24 +256,24 @@ export default function Settings() {
               </div>
               <div className="settings-body">
                 <div className="grid-2 mb16">
-                  <div><label className="form-label">First name</label><input type="text" className="form-input" value={firstName} onChange={e => setFirstName(e.target.value)} /></div>
-                  <div><label className="form-label">Last name</label><input type="text" className="form-input" value={lastName} onChange={e => setLastName(e.target.value)} /></div>
+                  <div><label className="form-label" htmlFor="f-first-name">First name</label><input id="f-first-name" type="text" className="form-input" value={firstName} onChange={e => setFirstName(e.target.value)} /></div>
+                  <div><label className="form-label" htmlFor="f-last-name">Last name</label><input id="f-last-name" type="text" className="form-input" value={lastName} onChange={e => setLastName(e.target.value)} /></div>
                 </div>
                 <div className="form-section mb16">
                   <label className="form-label">Email address</label>
                   <div style={{ position: 'relative' }}>
-                    <input type="email" className="form-input" value={user?.email || ''} readOnly style={{ paddingRight: '90px' }} />
+                    <input aria-label="Email address" type="email" className="form-input" value={user?.email || ''} readOnly style={{ paddingRight: '90px' }} />
                     <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '11px', background: 'var(--green-l)', color: 'var(--green)', padding: '2px 7px', borderRadius: '4px', fontWeight: 600 }}>Verified</span>
                   </div>
                 </div>
                 <div className="grid-2 mb16">
-                  <div><label className="form-label">Company / org</label><input type="text" className="form-input" placeholder="Your business name" value={company} onChange={e => setCompany(e.target.value)} /></div>
-                  <div><label className="form-label">Job title</label><input type="text" className="form-input" placeholder="e.g. Marketing Manager" value={jobTitle} onChange={e => setJobTitle(e.target.value)} /></div>
+                  <div><label className="form-label" htmlFor="f-company-org">Company / org</label><input id="f-company-org" type="text" className="form-input" placeholder="Your business name" value={company} onChange={e => setCompany(e.target.value)} /></div>
+                  <div><label className="form-label" htmlFor="f-job-title">Job title</label><input id="f-job-title" type="text" className="form-input" placeholder="e.g. Marketing Manager" value={jobTitle} onChange={e => setJobTitle(e.target.value)} /></div>
                 </div>
                 <div className="grid-2">
                   <div>
-                    <label className="form-label">Country</label>
-                    <select className="form-input" value={country} onChange={e => setCountry(e.target.value)}>
+                    <label className="form-label" htmlFor="f-country">Country</label>
+                    <select id="f-country" className="form-input" value={country} onChange={e => setCountry(e.target.value)}>
                       <option value="LK">Sri Lanka</option>
                       <option value="US">United States</option>
                       <option value="GB">United Kingdom</option>
@@ -283,8 +283,8 @@ export default function Settings() {
                     </select>
                   </div>
                   <div>
-                    <label className="form-label">Timezone</label>
-                    <select className="form-input" value={timezone} onChange={e => setTimezone(e.target.value)}>
+                    <label className="form-label" htmlFor="f-timezone">Timezone</label>
+                    <select id="f-timezone" className="form-input" value={timezone} onChange={e => setTimezone(e.target.value)}>
                       <option value="Asia/Colombo">Asia/Colombo (UTC+5:30)</option>
                       <option value="America/New_York">America/New_York (UTC-5)</option>
                       <option value="Europe/London">Europe/London (UTC+0)</option>
@@ -330,8 +330,7 @@ export default function Settings() {
                     <div className="setting-desc">Email every Monday: scans, busiest time and top code</div>
                   </div>
                   <button
-                    className={`toggle ${digestOn ? 'on' : ''}`}
-                    aria-pressed={digestOn}
+                    role="switch" aria-checked={!!digestOn} className={`toggle ${digestOn ? 'on' : ''}`}
                     aria-label="Weekly scan digest"
                     onClick={async () => {
                       const next = !digestOn;

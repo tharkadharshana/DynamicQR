@@ -13,7 +13,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': 'http://localhost:3000'
+      '^/api/': 'http://localhost:3000' // a plain '/api' key would also catch the /api-docs page
     }
   },
 });
