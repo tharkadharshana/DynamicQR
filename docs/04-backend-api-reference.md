@@ -1,11 +1,11 @@
 # 04 — Backend API Reference
 
-All routes live in [server.ts](../server.ts). The routes below are the **only** API that exists. The `/api/v1/*` endpoints, API keys and webhooks shown on the in-app API Docs page are **not implemented**.
+All routes live in [server/index.ts](../server/index.ts). The routes below are the **only** API that exists. The `/api/v1/*` endpoints, API keys and webhooks shown on the in-app API Docs page are **not implemented**.
 
 ## Conventions
 
-- **Auth.** `Authorization: Bearer <Supabase access token>`, checked by `authenticate` ([server.ts:293](../server.ts#L293)). Missing or invalid tokens get `401` with a plain-text body.
-- **Ownership.** `requireOwnership` ([server.ts:318](../server.ts#L318)) loads `qr_codes[slug]`. It returns `404` when the code is missing and `403` when `user_uid ≠ req.user.uid`. Account routes compare `:uid` with the token's uid instead.
+- **Auth.** `Authorization: Bearer <Supabase access token>`, checked by `authenticate` ([server/index.ts:293](../server/index.ts#L293)). Missing or invalid tokens get `401` with a plain-text body.
+- **Ownership.** `requireOwnership` ([server/index.ts:318](../server/index.ts#L318)) loads `qr_codes[slug]`. It returns `404` when the code is missing and `403` when `user_uid ≠ req.user.uid`. Account routes compare `:uid` with the token's uid instead.
 - **Internal.** `x-internal-secret: $INTERNAL_SECRET`. Requests with this header also skip the rate limiters.
 - **Errors** are usually `{ "error": "message" }`. Feature gates add `code` (see below).
 - **Body limit:** 100 KB JSON.

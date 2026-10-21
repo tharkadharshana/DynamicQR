@@ -1,6 +1,6 @@
 # 05 — Data Model
 
-Source of truth: [supabase_schema.sql](../supabase_schema.sql) (the end state). Changes after the first version are applied with the incremental files in [migrations/](../migrations), run in order in the Supabase SQL editor. Phase 0 added [001_phase0.sql](../migrations/001_phase0.sql).
+Source of truth: [db/schema.sql](../db/schema.sql) (the end state). Changes after the first version are applied with the incremental files in [db/migrations/](../db/migrations), run in order in the Supabase SQL editor. Phase 0 added [001_phase0.sql](../db/migrations/001_phase0.sql).
 
 [firestore.rules](../firestore.rules) is a leftover from the Firebase era and is not used.
 
@@ -93,7 +93,7 @@ Columns the code **reads but which do not exist**: `referrers`, `regions`, `isps
 
 ### `events`, the activation funnel (migration 002)
 
-`id, uid → profiles, name, slug, created_at`. Names: `qr_created`, `print_opened`, `first_scan`, `offer_changed`, `paid`, `kit_started`. The API writes them (they never fail a request), and RLS denies direct access. Founder queries live in [migrations/queries.sql](../migrations/queries.sql): the per-account funnel, stuck accounts, funnel totals, and revenue by month.
+`id, uid → profiles, name, slug, created_at`. Names: `qr_created`, `print_opened`, `first_scan`, `offer_changed`, `paid`, `kit_started`. The API writes them (they never fail a request), and RLS denies direct access. Founder queries live in [db/queries.sql](../db/migrations/queries.sql): the per-account funnel, stuck accounts, funnel totals, and revenue by month.
 
 ### Team tables (migration 004)
 

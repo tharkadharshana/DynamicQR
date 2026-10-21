@@ -17,8 +17,23 @@ React 19 + Vite SPA · Express API on Vercel · Supabase (Postgres + Google sign
 npm install
 cp .env.example .env     # fill in Supabase keys, INTERNAL_SECRET, HASH_SALT
 npm run dev              # API + SPA on http://localhost:3000
-npx tsx qa.ts            # end-to-end QA (API + in-process Worker), against the running server
+npx tsx tests/qa.ts            # end-to-end QA (API + in-process Worker), against the running server
 ```
+
+## Project structure
+
+```
+api/        Vercel entry point (re-exports the Express app)
+server/     Express API: routes, billing, analytics, webhooks, crons
+src/        React SPA; src/lib holds the pure code shared with the API and the Worker
+worker/     Cloudflare Worker: edge redirect and gate engine
+db/         schema.sql, migrations/ (run in order in Supabase), saved queries
+tests/      end-to-end QA suite
+scripts/    CI guards
+docs/       documentation, roadmap, changelog
+```
+
+Each folder has its own README.
 
 ## Documentation
 

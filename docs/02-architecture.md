@@ -5,11 +5,11 @@
 | Component | Tech | Runs on | Code |
 |---|---|---|---|
 | Edge redirect and gate engine | Cloudflare Worker (JS) and Workers KV (`QR_CACHE`) | Cloudflare, as a route in front of the app domain | [worker/worker.js](../worker/worker.js) |
-| API | Express 4 on Node, `tsx` | Vercel serverless function (`@vercel/node`) | [server.ts](../server.ts), [api/index.ts](../api/index.ts) |
+| API | Express 4 on Node, `tsx` | Vercel serverless function (`@vercel/node`) | [server/index.ts](../server/index.ts), [api/index.ts](../api/index.ts) |
 | Dashboard SPA | React 19, Vite 6, React Router 7, Recharts, qr-code-styling, Tailwind 4 plus hand-written CSS | Vercel static build (`dist/`) | [src/](../src) |
-| Database | Supabase Postgres (6 tables, jsonb counters) | Supabase | [supabase_schema.sql](../supabase_schema.sql) |
+| Database | Supabase Postgres (6 tables, jsonb counters) | Supabase | [db/schema.sql](../db/schema.sql) |
 | Auth | Supabase Auth, Google OAuth provider | Supabase | [src/supabase.ts](../src/supabase.ts) |
-| Payments | PayHere hosted checkout and server notify webhook | PayHere (LK) | `server.ts` billing routes |
+| Payments | PayHere hosted checkout and server notify webhook | PayHere (LK) | `server/index.ts` billing routes |
 
 ## Topology
 
@@ -78,7 +78,7 @@ The SPA calls `POST /api/billing/checkout`. The server returns signed PayHere fo
 
 ## How Express runs in each environment
 
-[server.ts](../server.ts) builds `app` inside `startServer()` and runs it with a top-level `await` when the module loads.
+[server/index.ts](../server/index.ts) builds `app` inside `startServer()` and runs it with a top-level `await` when the module loads.
 
 | Environment | What happens |
 |---|---|
@@ -86,9 +86,22 @@ The SPA calls `POST /api/billing/checkout`. The server returns signed PayHere fo
 | Production, not on Vercel | Serves `dist/` statically, with an SPA fallback, and listens |
 | Vercel | No listen. `api/index.ts` re-exports `app` and Vercel runs it per request. In-memory state (rate limiters) is per instance and resets on cold start. |
 
+## Hosting the web app and the API separately
+
+Today the SPA, the API and the Worker's pass-through all share one origin (`scnr.tharkak.com`) and one Vercel project. They are separate code but not yet separately deployable. Moving the API to another host (or the SPA to a static host) needs:
+
+1. **An API base URL in the SPA.** Every call uses a relative `/api/...` path (`src/lib/api.ts` plus one raw `fetch` in `Analytics.tsx`, and the base shown in `ApiDocs.tsx`). Add a `VITE_API_URL` prefix in one place.
+2. **CORS.** The API already restricts CORS to `APP_URL`; it would be set to the SPA's origin. Calls use bearer tokens, not cookies, so no credentialed-CORS work is needed.
+3. **The Worker with two upstreams.** Today everything that is not a code is passed through to one origin. It would send `/api/*` and `/internal/*` to the API host (`API_URL`) and the rest to the SPA host.
+4. **Webhook and return URLs.** PayHere `notify_url` and the Polar webhook must point at the API host; `APP_URL` stays the SPA origin for return links.
+5. **Crons.** `vercel.json` schedules `/api/cron/*`; another host needs its own scheduler.
+6. **Shared code.** `server/` and `worker/` import pure modules from `src/lib/`. In a split repo these move to a shared package.
+
+Estimated effort: about one day. It was deliberately not done yet; nothing is lost by waiting.
+
 ## Database access
 
-`server.ts` calls supabase-js directly through three small helpers: `row(table, col, val)`, `rows(table, col, val)` and `statsFor(slugs)`. The Firestore-compat shim that used to sit here was removed in Phase 3. It had hidden fake batches, read-modify-write increments, dotted-key updates and 30-item `in` chunking.
+`server/index.ts` calls supabase-js directly through three small helpers: `row(table, col, val)`, `rows(table, col, val)` and `statsFor(slugs)`. The Firestore-compat shim that used to sit here was removed in Phase 3. It had hidden fake batches, read-modify-write increments, dotted-key updates and 30-item `in` chunking.
 
 Writes that must be atomic happen in Postgres: `record_scan()` (migration 003) records one scan in one transaction. Deletes rely on `on delete cascade`: deleting a code removes its stats and events, and deleting the auth user removes everything the account owns.
 

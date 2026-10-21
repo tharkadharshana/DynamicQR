@@ -17,13 +17,13 @@ export const supabase = createClient(supabaseUrl, supabaseKey);
 import crypto from 'crypto';
 import { customAlphabet } from 'nanoid';
 import logger from "./logger.js";
-import { renderGuestPage, pickLang, appTarget, FILE_TYPES, blockTarget, esc as escHtml } from './src/lib/guestPage.js';
-import { gtinValid, isReservedSlug, CUSTOM_SLUG_RE, normTags, withUtm } from './src/lib/qrContent.js';
-import { buildDigest } from './src/lib/digest.js';
-import { formDefError, validateSubmission } from './src/lib/forms.js';
-import { pickRoute, routeCtx, rulesError, primaryLang } from './src/lib/routing.js';
-import { signStandardWebhook, verifyStandardWebhook, newWebhookSecret, WEBHOOK_EVENTS } from './src/lib/webhooks.js';
-import { MAX_WEBHOOKS, PLANS, TRIAL_LIMITS, GRACE_DAYS, DEFAULT_ADDONS, PRICES, PAID_PLANS, PlanId, PaidPlan, PlanLimits, UserAddons, Currency, BillingInterval } from './src/lib/plans.js';
+import { renderGuestPage, pickLang, appTarget, FILE_TYPES, blockTarget, esc as escHtml } from '../src/lib/guestPage.js';
+import { gtinValid, isReservedSlug, CUSTOM_SLUG_RE, normTags, withUtm } from '../src/lib/qrContent.js';
+import { buildDigest } from '../src/lib/digest.js';
+import { formDefError, validateSubmission } from '../src/lib/forms.js';
+import { pickRoute, routeCtx, rulesError, primaryLang } from '../src/lib/routing.js';
+import { signStandardWebhook, verifyStandardWebhook, newWebhookSecret, WEBHOOK_EVENTS } from '../src/lib/webhooks.js';
+import { MAX_WEBHOOKS, PLANS, TRIAL_LIMITS, GRACE_DAYS, DEFAULT_ADDONS, PRICES, PAID_PLANS, PlanId, PaidPlan, PlanLimits, UserAddons, Currency, BillingInterval } from '../src/lib/plans.js';
 
 // Direct table helpers (replaced the Firestore-compat shim in Phase 3).
 async function row(table: string, col: string, val: string): Promise<any | null> {
@@ -292,7 +292,7 @@ async function startServer() {
   }
   const CONTENT_MAX = 20_000;
 
-  // Activation funnel (see migrations/queries.sql). Never blocks or fails the request.
+  // Activation funnel (see db/queries.sql). Never blocks or fails the request.
   const logEvent = (uid: string, name: string, slug: string | null) => {
     supabase.from('events').insert({ uid, name, slug }).then(({ error }) => {
       if (error) logger.warn('Event write failed', { name, code: error.code });

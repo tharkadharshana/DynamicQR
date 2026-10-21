@@ -6,12 +6,12 @@
 |---|---|---|
 | Timestamp | server `now()` (UTC) | `scan_events.scanned_at`, `qr_stats.days[YYYY-MM-DD]`, `monthly_scans[YYYY-MM]` |
 | Country (ISO-2) | Cloudflare `request.cf.country` | `scan_events.country`, `qr_stats.countries` |
-| Device / OS / Browser | regex on the User-Agent ([server.ts:2396](../server.ts#L2396)) | `scan_events`, `qr_stats.devices/os/browsers` |
+| Device / OS / Browser | regex on the User-Agent ([server/index.ts:2396](../server/index.ts#L2396)) | `scan_events`, `qr_stats.devices/os/browsers` |
 | Referer | `Referer` header | `scan_events.referer` only |
 | Daily unique flag | KV `uniq:{slug}:{visitorHash}` set until end of day | `scan_events.is_unique`, `qr_stats.unique_scans` |
 | ASN, colo, TLS, EU flag, Accept-Language, IP, full UA | Worker payload | **discarded** |
 
-Bots are not recorded. The regex is in `isBot()` ([server.ts:2433](../server.ts#L2433)). Note that it also drops link previews from WhatsApp and Telegram, which is intended.
+Bots are not recorded. The regex is in `isBot()` ([server/index.ts:2433](../server/index.ts#L2433)). Note that it also drops link previews from WhatsApp and Telegram, which is intended.
 
 Static QR codes produce **no analytics**. They never reach the platform.
 
@@ -38,7 +38,7 @@ Each scan calls `record_scan()`, which increments one pre-aggregated `qr_stats` 
 
 ## Endpoints
 
-See [doc 04](04-backend-api-reference.md#analytics). One set of views serves both a single code and the account (`loadScope()` plus a `views` map in server.ts), with a single `in` query for the stats rows.
+See [doc 04](04-backend-api-reference.md#analytics). One set of views serves both a single code and the account (`loadScope()` plus a `views` map in server/index.ts), with a single `in` query for the stats rows.
 
 ## Placeholder or broken analytics features
 

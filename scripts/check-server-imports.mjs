@@ -1,4 +1,4 @@
-// Vercel runs api/index.ts → server.ts as Node ESM, which does not resolve extensionless relative
+// Vercel runs api/index.ts → server/index.ts as Node ESM, which does not resolve extensionless relative
 // imports (tsx and Vite do, so local QA cannot catch it). Walk the server import graph and fail on any
 // relative import without an explicit .js extension.
 import { readFileSync, existsSync } from 'node:fs';
