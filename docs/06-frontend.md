@@ -155,6 +155,7 @@ SaaS-specific [Terms](../src/pages/TermsConditions.tsx), [Privacy](../src/pages/
 ## Styling and accessibility rules
 
 - **Two styling systems share the app.** The dashboard uses the hand-written classes in `src/dynamicqr.css` (design tokens are the CSS variables at the top: `--text`, `--text3`, `--coral`, ...). `Pricing.tsx` uses Tailwind utilities. Tailwind v4 puts its utilities in a cascade layer, so any *unlayered* rule beats them: the global `* { margin: 0; padding: 0 }` reset is therefore wrapped in `@layer base`. Do not add unlayered resets.
+- **Tailwind responsive utilities cannot override a custom class's `display`.** `md:hidden` on a `.btn` did nothing (the menu button and its X showed on desktop and the overlay darkened the page). Use `.mobile-only` for phone-only controls.
 - **Use the tokens, not Tailwind's fixed colours** (`text-white`, `text-zinc-500`). A fixed colour is invisible in the other theme. Use `text-[var(--text)]`, `text-[var(--text3)]`, `border-[var(--border)]` and so on.
 - **Contrast.** Text must reach 4.5:1 against its background in both themes. `--text3` (secondary text) was 2.6:1 dark and 3.3:1 light; it is now 5.3:1 in both. The light-theme coral and green were darkened for the same reason.
 - **Controls need names.** Every input has a `<label htmlFor>` or an `aria-label`; icon-only buttons have an `aria-label`; toggles are `role="switch"` with `aria-checked`; colour swatches are buttons. The page title in the top bar is the page's single `<h1>`.

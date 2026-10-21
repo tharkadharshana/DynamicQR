@@ -68,6 +68,11 @@ One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-r
 - **Logo on Free** was already allowed; QA now proves it.
 - QA section 28; `src/lib/plans.ts` self-check.
 
+## Kit validation and desktop menu button (branch `fix/form-validation-feedback`)
+
+- **Restaurant Kit: Continue was disabled with no explanation.** It now stays clickable. A failed click shows a message under each missing or wrong field (red border, `aria-invalid`), focuses the first one, and the message disappears as it is fixed. Checks: business name, at least one link or number, links start with `https://`, numbers have 7+ digits, an extra button needs both label and link.
+- **The menu button (three lines) and its X showed on desktop and darkened the page.** Tailwind's `md:hidden` cannot hide a `.btn` (the unlayered `display` wins). They now use `.mobile-only`, and the overlay is hidden above 768 px.
+
 ## UI polish (branch `feat/ui-polish`)
 
 Found by loading every signed-in screen at 1440 px and 390 px, in both themes, with a headless browser, and by checking contrast, names and overflow on each page.

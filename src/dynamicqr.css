@@ -75,6 +75,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-b);font-size:
   position:relative;z-index:100;
   transition: transform 0.3s ease;
 }
+/* Phone-only controls. Tailwind's md:hidden cannot hide a .btn (the unlayered display below wins), so use these. */
+.btn.mobile-only{display:none}
+@media (max-width: 768px) { .btn.mobile-only{display:inline-flex} }
+@media (min-width: 769px) { .menu-overlay{display:none} }
 @media (max-width: 768px) {
   .sidebar {
     position: fixed;
