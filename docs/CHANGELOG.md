@@ -68,6 +68,10 @@ One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-r
 - **Logo on Free** was already allowed; QA now proves it.
 - QA section 28; `src/lib/plans.ts` self-check.
 
+## Landing demo card tabs (branch `fix/landing-card-tabs`)
+
+- The URL / vCard / Wi-Fi / Text tabs on the landing page's demo card did nothing (they were plain buttons with no state). Each tab now shows its own fields and the preview QR encodes a static vCard, Wi-Fi or text code, using the same `getQRContent` as the app.
+
 ## Kit validation and desktop menu button (branch `fix/form-validation-feedback`)
 
 - **Restaurant Kit: Continue was disabled with no explanation.** It now stays clickable. A failed click shows a message under each missing or wrong field (red border, `aria-invalid`), focuses the first one, and the message disappears as it is fixed. Checks: business name, at least one link or number, links start with `https://`, numbers have 7+ digits, an extra button needs both label and link.
