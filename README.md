@@ -38,3 +38,7 @@ Each folder has its own README.
 ## Documentation
 
 Everything else lives in [docs/](docs/README.md): architecture, the scan flow, the API reference, the data model, billing, security, operations, and the [changelog](docs/CHANGELOG.md).
+
+## License
+
+Copyright (c) 2025-2026 Pothumulla Kankanamalage Tharka Dharshana Karunanayake. All rights reserved. This is proprietary software; see [LICENSE](LICENSE). No use, copying, modification, distribution, or sale is permitted without the Owner's written permission.
