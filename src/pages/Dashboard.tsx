@@ -80,6 +80,7 @@ export default function Dashboard() {
   const [devices, setDevices] = useState<any[]>([]);
   const [countries, setCountries] = useState<any[]>([]);
   const [recentScans, setRecentScans] = useState<any[]>([]);
+  const [scansShown, setScansShown] = useState(5);
   const [loading, setLoading] = useState(true);
   const [planData, setPlanData] = useState<any>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -696,12 +697,15 @@ export default function Dashboard() {
           <div className="section-row">
             <span className="section-title">Recent scans</span>
             <span style={{ fontSize: '11px', color: 'var(--text3)' }}>Updated when you open this page</span>
+            <select aria-label="Scans to show" className="form-input scans-limit" value={scansShown} onChange={e => setScansShown(Number(e.target.value))}>
+              {[5, 10, 20, 50].map(n => <option key={n} value={n}>Show {n}</option>)}
+            </select>
           </div>
           {recentScans.length === 0 ? (
             <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text3)' }}>No recent scans</div>
           ) : (
             <div id="live-feed" style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-              {recentScans.map(scan => (
+              {recentScans.slice(0, scansShown).map(scan => (
                 <div key={scan.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: 'var(--surface2)', borderRadius: '8px', marginBottom: '4px' }}>
                   <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: scan.is_unique ? 'var(--blue)' : 'var(--surface3)' }}></div>
                   <div style={{ flex: 1 }}>
@@ -714,6 +718,9 @@ export default function Dashboard() {
                 </div>
               ))}
             </div>
+          )}
+          {recentScans.length > scansShown && (
+            <button className="btn scans-more" onClick={() => setScansShown(n => n + 5)}>Show more</button>
           )}
         </div>
       </div>

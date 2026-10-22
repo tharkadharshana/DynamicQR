@@ -79,6 +79,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-b);font-size:
 .btn.mobile-only{display:none}
 @media (max-width: 768px) { .btn.mobile-only{display:inline-flex} }
 @media (min-width: 769px) { .menu-overlay{display:none} }
+.scans-more{display:none}.scans-limit{width:auto;margin-left:auto}
+@media (max-width: 768px) { .scans-limit{display:none} .scans-more{display:block;width:100%;margin-top:8px} }
 @media (max-width: 768px) {
   .sidebar {
     position: fixed;
