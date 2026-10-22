@@ -150,6 +150,12 @@ Deletes the `qr_codes` row. `qr_stats` and `scan_events` go with it (on delete c
 
 Body `{type: 'pdf'|'png'|'jpg'|'webp', size: <bytes>}`. Checks `size` against the plan's `file_mb` (403 `LIMIT_FILE_SIZE` with `limit_mb`), then returns `201 {path, token, signedUrl, contentType, publicUrl}`. The browser uploads directly with `supabase.storage.from('files').uploadToSignedUrl(path, token, file)`, so no file bytes go through Vercel. Files live under `files/<uid>/`; deleting the account removes them.
 
+### Page templates (Phase 13)
+
+- `GET /api/page-templates` (user): published templates `{id, name, description, category, tags, content, status, sort, source, pro_only, updated_at}`. Query `category` filters, `q` searches name, description, category and tags. The first call seeds the built-in templates.
+- Admin only (email in `ADMIN_EMAILS`, never an API key; others get 403 `ADMIN_ONLY`): `GET /api/admin/page-templates` (all, with drafts), `POST` (create, starts as `draft`), `PUT /:id` (partial update), `POST /:id/duplicate`, `DELETE /:id`. `content` must be a Pages-builder preset (1 to 40 blocks of known kinds, under 20 KB). `source` is `manual` or `ai`.
+- `GET /api/user/plan` also returns `is_admin`.
+
 ### `POST /api/events` (user)
 
 Body `{ name: 'print_opened' | 'kit_started', slug? }`. Records a client-side funnel event. An unknown name returns 400. Server-side events (`qr_created`, `first_scan`, `offer_changed`, `paid`) are written automatically.

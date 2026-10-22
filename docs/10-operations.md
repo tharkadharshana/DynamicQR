@@ -67,6 +67,7 @@ QR codes made while the dashboard runs on localhost encode `http://localhost…/
 | `CRON_SECRET` | ✅ for crons | Vercel sends it as `Authorization: Bearer …` to `/api/cron/*`. Set it in Vercel env; CI uses a dummy. |
 | `RESEND_API_KEY`, `DIGEST_FROM` | for the weekly digest and form notifications | Resend API key and sender (e.g. `Scnr <digest@yourdomain>`, on a domain verified in Resend). Without the key the digest cron skips. |
 | `CF_API_TOKEN`, `CF_ZONE_ID`, `CF_CNAME_TARGET` | for custom domains (Team) | A Cloudflare API token with SSL and Certificates edit plus custom hostnames on the zone, the zone id, and the fallback hostname customers CNAME to. Without them, adding a domain returns 503. |
+| `ADMIN_EMAILS` | for template admins | Comma-separated emails allowed to manage page templates (`/api/admin/page-templates`). Not an API-key right. CI sets `qa-templates-admin@test.dynamicqr.local`. |
 | `RATE_LIMIT_MAX`, `RATE_LIMIT_WRITE_MAX` | QA only | Override the per-IP limits (default 300 / 60 per 15 min). CI raises them because QA runs every call from one IP. |
 | `VERCEL` | auto | Set by Vercel. Skips `listen()` and static serving. |
 
