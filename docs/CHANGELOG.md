@@ -2,6 +2,10 @@
 
 One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-review-findings.md](11-review-findings.md).
 
+## Dashboard: recent scans paging (branch `feat/recent-scans-paging`)
+
+- Recent scans shows 5 by default. Desktop gets a "Show 5 / 10 / 20 / 50" dropdown; phones get a "Show more" button that adds 5 each click. The account feed now returns the latest 50 (was 20).
+
 ## Repository renamed to Scnr (branch `docs/rename-repo-scnr`)
 
 - GitHub repo `DynamicQR` is now `Scnr` (old URLs redirect). Docs and file headers updated. The Worker name `dynamic-qr-worker`, the `@test.dynamicqr.local` QA domain and internal identifiers are unchanged on purpose.

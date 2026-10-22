@@ -1639,7 +1639,7 @@ async function startServer() {
       if (!slugs.length) return [];
       const { data, error } = await supabase.from('scan_events')
         .select('id, slug, scanned_at, country, city, device, os, browser, referer, is_unique')
-        .in('slug', slugs).order('scanned_at', { ascending: false }).limit(20);
+        .in('slug', slugs).order('scanned_at', { ascending: false }).limit(50);
       if (error) throw error;
       return (data || []).map(e => ({
         id: e.id, slug: e.slug, scanned_at: e.scanned_at,

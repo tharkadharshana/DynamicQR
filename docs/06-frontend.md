@@ -78,7 +78,7 @@ Accessibility: content between `<nav>` and `<footer>` sits in `<main>`. All text
 
 **Phase 8:** tabs for QR codes, Pages and Short links; a "Paste a link" box that shortens a URL (with an optional custom back-half on Pro and up) or starts a QR code; folder and tag filters (a folder's "Folder analytics" link is Bitly's Campaigns: `AccountAnalytics` with `?slugs=`); sort and search over the loaded list; and Select mode with move to folder, add tag, activate, deactivate, delete and a ZIP of SVGs (built in the browser with `fflate`, the one new dependency). CreateQR has the folder picker, a tag input, the back-half field and UTM tags.
 
-A "Today's offer" card with one input per guest page ("Make live" PUTs `content_data`, so the change is live on the next scan), or a Restaurant Kit prompt when there is none. Then stat cards, a time series, the code table (thumbnail, status, View / Stats / Edit / Delete), device split, top countries, recent scans. There are no fake deltas or "live" labels: data loads when the page opens.
+A "Today's offer" card with one input per guest page ("Make live" PUTs `content_data`, so the change is live on the next scan), or a Restaurant Kit prompt when there is none. Then stat cards, a time series, the code table (thumbnail, status, View / Stats / Edit / Delete), device split, top countries, recent scans (5 by default; a "Show N" dropdown of 5, 10, 20 or 50 on desktop, a "Show more" button adding 5 at a time on phones; the account feed returns the latest 50). There are no fake deltas or "live" labels: data loads when the page opens.
 
 ### CreateQR — [CreateQR.tsx](../src/pages/CreateQR.tsx)
 
