@@ -12,6 +12,7 @@ One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-r
 - `/pages` is now the template gallery (hero, filter chips, rows per category, right rail). 18 built-in templates with descriptions and tags; the old picker in the editor is gone and `/pages/new` redirects to the gallery. Your pages moved to `/pages/mine`.
 - Page themes gain `bg2` (gradient), `card`, `line` and `header: 'plain'`, and the header block gains `emoji`, so dark and coloured templates render without images. Admin edits to a built-in template are kept; untouched built-ins follow the code.
 - The Dashboard list reads the top-bar search from `?q=`.
+- **Template admin** at `/admin/templates` (admins only): list with status and source filters, publish and unpublish, duplicate, delete. Editing opens the page editor in template mode (name, description, category, tags, status, sort, theme colours, blocks, live preview), and "Save as template" on a page turns it into a draft template.
 
 ## Phase 13a: Page templates as data (branch `feat/page-templates-db`)
 

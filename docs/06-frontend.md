@@ -103,6 +103,10 @@ Form cards (name and type, style, options, Visitor Guard) plus a live preview.
 - The search box sets `?q=` on `/pages` (templates) and `/` (Dashboard list); elsewhere Enter jumps to the Dashboard with the query. The bell shows a dot on the Free plan and opens Billing or Settings; it is not a notification feed yet.
 - Admins (`is_admin` from `/api/user/plan`) see "Template admin" and "AI costs" in the Account group.
 
+### Template admin — [AdminTemplates.tsx](../src/pages/AdminTemplates.tsx)
+
+`/admin/templates` (needs `is_admin`; others are sent to the Dashboard) lists every `page_templates` row. Edit and New open `TemplateEditor` (in [PageEditor.tsx](../src/pages/PageEditor.tsx)), which is the page editor with extra template fields and a save to `/api/admin/page-templates`.
+
 ### Pages — [Pages.tsx](../src/pages/Pages.tsx) and [PageEditor.tsx](../src/pages/PageEditor.tsx) (Phase 7)
 
 - `/pages` is the **template gallery** ([Templates.tsx](../src/pages/Templates.tsx), styles in [gallery.css](../src/gallery.css)): a hero, category chips, a row of cards per category (live, sandboxed iframe thumbnails, rendered only when scrolled into view) and a right rail (quick search, popular tags, custom-template request, summary). Templates come from `GET /api/page-templates`; the top-bar search and the rail search both set `?q=`. `/pages/mine` is the list of your own page codes (short URL, Show QR, Analytics, Edit). `/pages/new?template=<id>` opens the editor with that template; `?template=blank` starts empty; `/pages/new` alone redirects to `/pages`.
