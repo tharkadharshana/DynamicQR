@@ -1,0 +1,86 @@
+/* Shell v2: sidebar, top bar and light palette. Loaded after dynamicqr.css, so these rules win.
+   Sizes follow the design at a 1536px-wide window. */
+:root.light {
+  --bg:       #FAFBFC;
+  --surface:  #FFFFFF;
+  --surface2: #F5F7FA;
+  --surface3: #E9EDF3;
+  --border:   #ECF1F6;
+  --border2:  #E1E7EF;
+  --border3:  #D3DBE6;
+  --text:     #111A2E;
+  --text2:    #4A5568;
+  --text3:    #6B7688;
+  --coral:    #DF4C1F;
+  --coral-d:  #C93F15;
+  --coral-l:  #FEF2E5;
+  --coral-ll: #FFF8F2;
+}
+:root { --sidebar: 238px; }
+
+/* ── Sidebar ── */
+.sidebar{padding:0;background:var(--surface);border-right:1px solid var(--border)}
+.sidebar-logo{height:74px;padding:0 24px;margin:0 0 14px;gap:12px;border-bottom:1px solid var(--border)}
+.logo-mark{width:38px;height:38px;border-radius:10px;background:linear-gradient(145deg,#F2711C,#DF4C1F)}
+.logo-mark svg{width:22px;height:22px}
+.logo-text{font-size:28px;letter-spacing:-0.5px}
+.nav-section{padding:0 14px;margin-bottom:0}
+.nav-label{font-size:12px;font-weight:600;letter-spacing:.12em;color:var(--text3);padding:14px 12px 10px;margin:0}
+.nav-item{width:100%;height:44px;padding:0 14px;gap:14px;border-radius:10px;font-size:15px;font-weight:500;margin-bottom:2px;color:var(--text2);background:none;border:0;font-family:inherit;text-align:left}
+.nav-item:hover{background:var(--surface2)}
+.nav-item.active{background:var(--coral-l);color:var(--coral)}
+.nav-icon{width:20px;height:20px;opacity:.85}
+.nav-badge{background:var(--coral);color:#fff;font-size:12px;padding:3px 10px;border-radius:999px;font-weight:600}
+.nav-badge.amber{background:var(--amber-l);color:var(--amber)}
+.nav-account-toggle,.nav-chevron,.upgrade-card,.user-chevron{display:none}
+.sidebar-footer{padding:18px 16px;border-top:1px solid var(--border)}
+.user-chip{padding:0 6px;gap:12px}
+.user-av{width:44px;height:44px;font-family:var(--font-b);font-size:16px;font-weight:600;background:#FAD5C3;border:0;color:var(--coral)}
+.user-name{font-size:14px;font-weight:600}
+.plan-badge{font-size:11px;font-weight:600;letter-spacing:0;text-transform:none;background:#FEF2E5;color:#E9972A;padding:2px 8px;border-radius:6px}
+
+/* ── Top bar ── */
+.topbar{height:72px;padding:0 24px 0 28px;background:var(--surface);border-bottom:1px solid var(--border);gap:16px}
+.topbar-left{flex:1;min-width:0;gap:16px}
+.topbar-right{gap:14px}
+.top-search{display:flex;align-items:center;gap:10px;width:min(472px,100%);height:40px;padding:0 16px;border-radius:999px;background:var(--surface2);border:1px solid var(--border);color:var(--text3);cursor:text}
+.top-search input{flex:1;min-width:0;border:0;background:none;outline:none;font:inherit;font-size:14px;color:var(--text)}
+.top-search input::placeholder{color:var(--text3)}
+.top-search input::-webkit-search-cancel-button{display:none}
+.top-search kbd{font:inherit;font-size:12px;color:var(--text3)}
+.btn-icon{width:40px;height:40px;border-radius:50%;background:var(--surface);position:relative}
+.bell-dot{position:absolute;top:8px;right:9px;width:8px;height:8px;border-radius:50%;background:#F04438;border:2px solid var(--surface);box-sizing:content-box;margin:-2px -2px 0 0}
+.new-qr-btn{height:40px;padding:0 22px;border-radius:12px;font-size:15px;font-weight:500;background:#DF4C1F;gap:8px;box-shadow:0 6px 14px -6px rgba(223,76,31,.55)}
+.new-qr-btn:hover{background:#C93F15;transform:none}
+:root:not(.light) .new-qr-btn{background:var(--coral)}
+.main{background:var(--bg)}
+
+/* ── Compact sidebar on the Pages gallery (its design has no section labels, a collapsible Account and an Upgrade card) ── */
+.shell-gallery{--sidebar:265px}
+.shell-gallery .sidebar-logo{height:80px;margin-bottom:12px}
+.shell-gallery .nav-section{padding:0 30px 0 30px}
+.shell-gallery .nav-label{display:none}
+.shell-gallery .nav-item{height:42px;padding:0 12px;font-size:14px;gap:12px}
+.shell-gallery .nav-icon{width:22px;height:22px}
+.shell-gallery .nav-account-toggle{display:flex;margin-top:6px}
+.shell-gallery .nav-chevron{display:block;margin-left:auto}
+.shell-gallery .nav-sub{padding-left:14px;height:36px;font-size:13px}
+.shell-gallery .nav-sub .nav-icon{width:18px;height:18px}
+.shell-gallery .nav-badge{font-size:10px;padding:2px 8px;background:#FEF2E5;color:#E9972A}
+.shell-gallery .upgrade-card{display:block;margin:auto 30px 22px;padding:20px;border-radius:14px;background:linear-gradient(160deg,#FFF3E8,#FDE3D4);box-shadow:0 8px 22px -14px rgba(223,76,31,.4)}
+.shell-gallery .upgrade-crown{width:30px;height:30px;border-radius:50%;background:#FBBF4D;display:flex;align-items:center;justify-content:center;color:#fff;margin-bottom:14px}
+.shell-gallery .upgrade-title{font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px}
+.shell-gallery .upgrade-card p{font-size:12px;line-height:1.5;color:var(--text2);margin-bottom:16px}
+.shell-gallery .upgrade-btn{display:block;text-align:center;padding:10px;border-radius:8px;background:#E8532A;color:#fff;font-size:13px;font-weight:600;text-decoration:none}
+.shell-gallery .sidebar-footer{margin-top:0;padding:16px 24px;border-top:1px solid var(--border)}
+.shell-gallery .user-av{width:40px;height:40px;font-size:14px;background:#EF5A3C;color:#fff}
+.shell-gallery .user-chevron{display:block;color:var(--text3)}
+.shell-gallery .plan-badge{background:none;color:#E9972A;padding:0;font-size:10px}
+.shell-gallery .topbar{height:80px}
+.shell-gallery .top-search{width:min(432px,100%);height:42px}
+
+@media (max-width: 768px) {
+  .topbar{padding:0 14px;height:60px}
+  .top-search{display:none}
+  .shell-gallery{--sidebar:265px}
+}
