@@ -19,7 +19,7 @@ import { customAlphabet } from 'nanoid';
 import logger from "./logger.js";
 import { renderGuestPage, pickLang, appTarget, FILE_TYPES, blockTarget, esc as escHtml } from '../src/lib/guestPage.js';
 import { gtinValid, isReservedSlug, CUSTOM_SLUG_RE, normTags, withUtm } from '../src/lib/qrContent.js';
-import { PAGE_TEMPLATES, templateContentError } from '../src/lib/pageTemplates.js';
+import { PAGE_TEMPLATES, REMOVED_TEMPLATE_IDS, templateContentError } from '../src/lib/pageTemplates.js';
 import { buildDigest } from '../src/lib/digest.js';
 import { formDefError, validateSubmission } from '../src/lib/forms.js';
 import { pickRoute, routeCtx, rulesError, primaryLang } from '../src/lib/routing.js';
@@ -667,17 +667,23 @@ async function startServer() {
 
   // ── Page templates (Phase 13): data, managed by admins ────────────────────
   const TEMPLATE_COLS = 'id, name, description, category, tags, content, status, sort, source, pro_only, updated_at';
-  // First use seeds the built-in templates (published). Existing rows are never overwritten.
+  // Built-ins are added when missing and brought up to date while an admin has not edited them
+  // (an edit moves updated_at away from created_at). Edited built-ins are never overwritten.
   let templatesSeeded = false;
   const seedTemplates = async () => {
     if (templatesSeeded) return;
-    const { count } = await supabase.from('page_templates').select('id', { count: 'exact', head: true });
-    if (!count) {
-      const { error } = await supabase.from('page_templates').upsert(PAGE_TEMPLATES.map((t, i) => ({
+    const { data: have, error: e1 } = await supabase.from('page_templates').select('id, created_at, updated_at').in('id', [...PAGE_TEMPLATES.map(t => t.id), ...REMOVED_TEMPLATE_IDS]);
+    if (e1) throw e1;
+    const state = new Map((have || []).map(r => [r.id, r.created_at === r.updated_at]));
+    const stale = PAGE_TEMPLATES.map((t, i) => ({ t, i })).filter(({ t }) => state.get(t.id) !== false);
+    if (stale.length) {
+      const { error } = await supabase.from('page_templates').upsert(stale.map(({ t, i }) => ({
         id: t.id, name: t.name, description: t.description || '', category: t.group, tags: t.tags || [], content: t.content, status: 'published', sort: i,
-      })), { onConflict: 'id', ignoreDuplicates: true });
+      })), { onConflict: 'id' });
       if (error) throw error;
     }
+    const gone = REMOVED_TEMPLATE_IDS.filter(id => state.get(id));
+    if (gone.length) await supabase.from('page_templates').delete().in('id', gone);
     templatesSeeded = true;
   };
   const templateInput = (b: any, partial = false): { o?: any; err?: string } => {

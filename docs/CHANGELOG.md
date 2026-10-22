@@ -6,6 +6,13 @@ One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-r
 
 - Added `LICENSE`: all rights reserved, no use, copying, modification, distribution or sale without the owner's written permission. `package.json` now says `UNLICENSED`; README links the license.
 
+## Phase 13b: Pages gallery and shell v2 (branch `feat/shell-v2`)
+
+- New shell: sidebar with MAIN and ACCOUNT groups, top bar with search (⌘K), theme toggle, bell and New QR, light palette by default. Admins get Template admin and AI costs links.
+- `/pages` is now the template gallery (hero, filter chips, rows per category, right rail). 18 built-in templates with descriptions and tags; the old picker in the editor is gone and `/pages/new` redirects to the gallery. Your pages moved to `/pages/mine`.
+- Page themes gain `bg2` (gradient), `card`, `line` and `header: 'plain'`, and the header block gains `emoji`, so dark and coloured templates render without images. Admin edits to a built-in template are kept; untouched built-ins follow the code.
+- The Dashboard list reads the top-bar search from `?q=`.
+
 ## Phase 13a: Page templates as data (branch `feat/page-templates-db`)
 
 - Page templates now live in the `page_templates` table (migration `012_page_templates.sql`) instead of only in code. The API seeds the 12 built-in templates as published on first use.
