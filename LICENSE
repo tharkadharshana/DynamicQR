@@ -1,0 +1,98 @@
+SCNR PROPRIETARY SOFTWARE LICENSE AND NOTICE OF OWNERSHIP
+
+Copyright (c) 2025-2026 Pothumulla Kankanamalage Tharka Dharshana Karunanayake.
+ALL RIGHTS RESERVED.
+
+1. OWNERSHIP
+
+   "Scnr" (also known as "DynamicQR"), including without limitation all
+   source code, object code, build output, database schemas and migrations,
+   Cloudflare Worker code, server code, user interface, design, text, logos,
+   names, trademarks, documentation, tests, scripts, configuration, data
+   models, business logic, and all derivative works of any of them
+   (together, the "Software"), is the sole and exclusive property of
+   Pothumulla Kankanamalage Tharka Dharshana Karunanayake (the "Owner").
+   The Owner holds all right, title and interest in the Software, including
+   all copyright and other intellectual property rights, in Sri Lanka and
+   worldwide.
+
+2. NO LICENSE GRANTED
+
+   No license, express or implied, by estoppel or otherwise, is granted to
+   any person under any right of the Owner. Access to, viewing of, or
+   possession of a copy of the Software (including through a public
+   repository, a hosting service, a backup, a leak, or any other means)
+   does not grant any right. This is not an open source or source-available
+   license.
+
+3. PROHIBITED ACTIONS
+
+   Without the prior written permission of the Owner, signed by the Owner,
+   no person or entity may do any of the following, in whole or in part:
+
+   (a) use, run, execute, deploy, host, or operate the Software;
+   (b) copy, reproduce, mirror, fork, clone, or archive the Software;
+   (c) modify, adapt, translate, alter, or create derivative works of the
+       Software;
+   (d) distribute, publish, sublicense, lease, lend, rent, transfer, or
+       otherwise make the Software available to any third party;
+   (e) sell, resell, offer for sale, or otherwise commercially exploit the
+       Software or any service built from it;
+   (f) reverse engineer, decompile, disassemble, or attempt to derive the
+       source code, algorithms, or structure of any non-public part of the
+       Software, except to the extent applicable law forbids this
+       restriction;
+   (g) remove, obscure, or alter any copyright, ownership, or proprietary
+       notice;
+   (h) use the Software, its code, or its data to train, fine-tune, or
+       evaluate any machine learning or artificial intelligence model, or
+       to build a competing product or service;
+   (i) use the names "Scnr" or "DynamicQR", or any related logo or
+       branding, in any way that suggests affiliation with or endorsement
+       by the Owner; or
+   (j) permit or assist any other person to do any of the above.
+
+4. CONTRIBUTIONS
+
+   Any contribution, suggestion, or work product submitted to the Software
+   by any person is, to the fullest extent permitted by law, assigned to
+   the Owner on creation. No contributor retains any right in it. The Owner
+   accepts no contribution unless the Owner agrees in writing.
+
+5. THIRD-PARTY COMPONENTS
+
+   The Software depends on third-party open source packages (for example
+   those listed in package.json). Those packages remain the property of
+   their authors and are governed by their own licenses. This License does
+   not apply to them and does not change them. The Owner claims no
+   ownership of third-party components.
+
+6. TERMINATION AND REMEDIES
+
+   Any breach of this License is an unauthorized use and an infringement of
+   the Owner's rights. The Owner may seek all remedies available at law and
+   in equity, including injunctive relief, damages, an account of profits,
+   and recovery of legal costs. Rights under this License that are by
+   nature meant to survive do survive any termination.
+
+7. NO WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED, INCLUDING THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+   PARTICULAR PURPOSE, AND NON-INFRINGEMENT. TO THE FULLEST EXTENT PERMITTED
+   BY LAW, THE OWNER IS NOT LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+   LIABILITY ARISING FROM OR IN CONNECTION WITH THE SOFTWARE OR ITS USE.
+
+8. GENERAL
+
+   If any provision of this License is held unenforceable, the remaining
+   provisions stay in full force. A failure to enforce a right is not a
+   waiver of it. Only a written document signed by the Owner can waive or
+   change any term. This License is governed by the laws of the Democratic
+   Socialist Republic of Sri Lanka, and the courts of Sri Lanka have
+   exclusive jurisdiction, without limiting the Owner's right to seek relief
+   in any other jurisdiction.
+
+9. CONTACT
+
+   For permission requests: tharkadharshana@gmail.com
