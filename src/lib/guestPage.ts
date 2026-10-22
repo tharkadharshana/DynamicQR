@@ -56,7 +56,7 @@ const shell = (title: string, lang: Lang, inner: string, accent = '#2B4A3A', css
   .langs a{color:#fff;text-decoration:none;font-size:12px;font-weight:700;padding:4px 9px;border-radius:999px;background:rgba(255,255,255,.15)}
   .langs a.on{background:#fff;color:${accent}}
   main{padding:16px;display:grid;gap:10px;max-width:480px;margin:0 auto}
-  .offer{background:#F6D9B8;border-radius:14px;padding:14px 16px}
+  .offer{background:#F6D9B8;color:#24180F;border-radius:14px;padding:14px 16px}
   .offer small{font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.7} .offer b{display:block;font-size:16px;margin-top:2px}
   a.btn{display:flex;justify-content:space-between;align-items:center;background:#fff;border:1px solid #EADFD3;border-radius:12px;padding:15px 16px;font-weight:600;color:#24180F;text-decoration:none}
   a.btn span{color:#B9A592;font-size:18px}
@@ -162,7 +162,7 @@ function renderBlocks(config: any, d: any, lang: Lang, t: Record<string, string>
       case 'header': {
         const av = https(b.avatar), l = langs;
         langs = '';
-        return `<div class="top hdr">${l}${av ? `<img class="av" src="${esc(av)}" alt="">` : ''}<h1>${esc(b.name)}</h1>${b.tagline ? `<p>${esc(b.tagline)}</p>` : ''}</div>`;
+        return `<div class="top hdr">${l}${av ? `<img class="av" src="${esc(av)}" alt="">` : b.emoji ? `<div class="emo">${esc(String(b.emoji).slice(0, 4))}</div>` : ''}<h1>${esc(b.name)}</h1>${b.tagline ? `<p>${esc(b.tagline)}</p>` : ''}</div>`;
       }
       case 'socials': {
         const items = (Array.isArray(b.items) ? b.items : []).map((it: any, j: number) => {
@@ -267,9 +267,13 @@ export function renderGuestPage(config: any, lang: Lang, url: string, formState:
           if (vcf) return { kind: 'vcard', body: vcf, filename: 'contact.vcf' };
         }
         const th = d.theme || {}, accent = hex(th.accent, '#2B4A3A'), bg = hex(th.bg, '#FFF8F2'), fg = hex(th.text, '#24180F');
+        // Optional look: a second background colour (gradient), card and line colours (dark pages), a plain header on the page background.
+        const bg2 = hex(th.bg2, ''), card = hex(th.card, '#FFFFFF'), line = hex(th.line, '#EADFD3');
         const radius = ({ square: '4px', pill: '999px' } as Record<string, string>)[th.button] || '12px';
-        const css = `body{background:${bg};color:${fg};font-family:${FONTS[th.font] || FONTS.system}}
-  a.btn{border-radius:${radius};color:${fg}} .hdr{text-align:center} .av{width:84px;height:84px;border-radius:50%;object-fit:cover;border:3px solid #fff}
+        const css = `body{background:${bg2 ? `linear-gradient(165deg,${bg},${bg2}) fixed` : bg};color:${fg};font-family:${FONTS[th.font] || FONTS.system}}
+  a.btn,.box,.prod{background:${card};border-color:${line}} a.btn{border-radius:${radius};color:${fg}} hr{border-top-color:${line}!important}
+  ${th.header === 'plain' ? `.top{background:transparent;color:${fg}}` : ''} .emo{width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-size:30px;margin:0 auto 10px}
+  .hdr{text-align:center} .av{width:84px;height:84px;border-radius:50%;object-fit:cover;border:3px solid #fff}
   h2{font-size:15px;margin:8px 0 0} hr{border:0;border-top:1px solid #EADFD3;width:100%}
   .socs{display:flex;flex-wrap:wrap;gap:8px;justify-content:center} .soc{padding:8px 12px;border-radius:999px;background:${accent};color:#fff;text-decoration:none;font-size:13px;font-weight:600;text-transform:capitalize}
   .img{width:100%;border-radius:12px;display:block} .vid{position:relative;padding-top:56.25%} .vid iframe{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:12px}
@@ -353,6 +357,9 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('guestPage.ts'
   assert(html.includes('href="/abcdefg/l/8-0"') && !html.includes('/l/8-1') && !html.includes('/l/5'), 'products tracked; unsafe links dropped');
   assert(html.includes('youtube-nocookie.com/embed/dQw4w9WgXcQ') && html.includes('?vcf=1') && html.includes('<hr>'), 'video, contact, divider');
   assert(html.includes('#ff0000') && !html.includes('red;}') && html.includes('999px'), 'theme: valid colours only');
+  const dark = (renderGuestPage({ ...pg, content_data: { blocks: [{ kind: 'header', name: 'N', emoji: '🍜' }], theme: { bg: '#101020', bg2: '#302060', card: '#1B1D33', line: '#33355A', header: 'plain', bg2x: 'x' } } }, 'en', 'https://s.lk/abcdefg') as any).body as string;
+  assert(dark.includes('linear-gradient(165deg,#101020,#302060)') && dark.includes('#1B1D33') && dark.includes('<div class="emo">🍜</div>'), 'theme: gradient, dark cards, emoji header');
+  assert(!(renderGuestPage({ ...pg, content_data: { blocks: [{ kind: 'text', text: 'x' }], theme: { bg2: 'red;}' } } }, 'en', 'https://s.lk/abcdefg') as any).body.includes('red;}'), 'theme: bg2 must be a hex colour');
   assert(blockTarget(pg.content_data, '2')?.url === 'https://ok.lk/b' && blockTarget(pg.content_data, '3') === null && blockTarget(pg.content_data, '99') === null && blockTarget(pg.content_data, '../x') === null, 'blockTarget');
   assert(blockTarget(pg.content_data, '1-0')?.url === 'https://www.instagram.com/cafe', 'blockTarget social');
   const vc = renderGuestPage(pg, 'en', 'https://s.lk/abcdefg?vcf=1') as any;

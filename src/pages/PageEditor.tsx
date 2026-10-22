@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { apiFetch } from '../lib/api';
 import { supabase } from '../supabase';
 import { useUI } from '../shared/UIContext';
 import { renderGuestPage, BLOCK_KINDS, type Lang } from '../lib/guestPage';
-import { PAGE_TEMPLATES, TEMPLATE_GROUPS } from '../lib/pageTemplates';
+import { PAGE_TEMPLATES } from '../lib/pageTemplates';
 import { SOCIALS } from '../lib/qrContent';
 
 // Pages builder: a list of blocks (content_data.blocks) rendered by the same renderGuestPage the Worker uses.
@@ -46,52 +46,31 @@ function kitToBlocks(d: any) {
   return withIds(blocks);
 }
 
-function TemplatePicker() {
-  const navigate = useNavigate();
-  const card = (key: string, name: string, onClick: () => void, preview: React.ReactNode) => (
-    <button key={key} className="card" onClick={onClick} style={{ padding: '10px', cursor: 'pointer', textAlign: 'left', display: 'grid', gap: '8px' }}>
-      <div style={{ width: '150px', height: '267px', overflow: 'hidden', borderRadius: '8px', background: 'var(--surface2)', margin: '0 auto' }}>{preview}</div>
-      <span style={{ fontSize: '13px', fontWeight: 600 }}>{name}</span>
-    </button>
-  );
-  const frame = (content: any, name: string) => (
-    <iframe title={name} srcDoc={previewHtml(name, content)} sandbox="" tabIndex={-1}
-      style={{ width: '375px', height: '667px', border: 0, transform: 'scale(0.4)', transformOrigin: '0 0', pointerEvents: 'none' }} />
-  );
-  const grid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '12px', marginBottom: '24px' };
-  return (
-    <div className="content" style={{ padding: '28px', overflow: 'auto', height: '100%' }}>
-      <div className="page active">
-        <div className="section-row"><span className="section-title">Pick a starting point</span><Link className="btn btn-ghost btn-sm" to="/pages">Back to pages</Link></div>
-        <div style={grid}>
-          {card('blank', 'Start from scratch', () => navigate('/pages/new?template=blank'), frame(BLANK, 'Start from scratch'))}
-          {card('kit', 'Restaurant Kit wizard', () => navigate('/kit'),
-            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px', fontSize: '12px', color: 'var(--text3)', textAlign: 'center' }}>Menu, reviews, WhatsApp, Wi-Fi and today's offer in three steps</div>)}
-        </div>
-        {TEMPLATE_GROUPS.map(g => (
-          <div key={g}>
-            <div className="card-title">{g}</div>
-            <div style={grid}>{PAGE_TEMPLATES.filter(t => t.group === g).map(t => card(t.id, t.name, () => navigate(`/pages/new?template=${t.id}`), frame(t.content, t.name)))}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+/** The gallery lives at /pages; this loads the chosen template (admin-managed rows, built-ins as the fallback) and opens the editor. */
+function TemplateLoader({ template }: { template: string }) {
+  const [tpl, setTpl] = useState<{ name: string; content: any } | null | undefined>(undefined);
+  useEffect(() => {
+    apiFetch('/api/page-templates').then((l: any[]) => setTpl(l.find(t => t.id === template) || PAGE_TEMPLATES.find(t => t.id === template) || null))
+      .catch(() => setTpl(PAGE_TEMPLATES.find(t => t.id === template) || null));
+  }, [template]);
+  if (tpl === undefined) return <div className="content" style={{ padding: '28px' }}>Loading…</div>;
+  return <Editor key={template} template={template} tpl={tpl} />;
 }
 
 export default function PageEditor() {
   const { slug } = useParams();
   const [params] = useSearchParams();
   const template = params.get('template');
-  if (!slug && !template) return <TemplatePicker />;
-  return <Editor key={slug || template!} slug={slug} template={template} />;
+  if (!slug && !template) return <Navigate to="/pages" replace />;
+  if (!slug && template !== 'blank') return <TemplateLoader template={template!} />;
+  return <Editor key={slug || template!} slug={slug} template={template} tpl={null} />;
 }
 
-function Editor({ slug, template }: { slug?: string; template: string | null }) {
+function Editor({ slug, template, tpl }: { slug?: string; template: string | null; tpl: { name: string; content: any } | null }) {
   const navigate = useNavigate();
   const { showToast } = useUI();
-  const [start] = useState(() => (!slug ? structuredClone(PAGE_TEMPLATES.find(t => t.id === template)?.content || BLANK) : null));
-  const [title, setTitle] = useState(start ? PAGE_TEMPLATES.find(t => t.id === template)?.name || 'My page' : '');
+  const [start] = useState(() => (!slug ? structuredClone(tpl?.content || BLANK) : null));
+  const [title, setTitle] = useState(start ? tpl?.name || 'My page' : '');
   const [theme, setTheme] = useState<any>(start ? { ...DEFAULT_THEME, ...start.theme } : DEFAULT_THEME);
   const [blocks, setBlocks] = useState<any[]>(start ? fromContent(start) : []);
   const [legacy, setLegacy] = useState<any>(null); // a Kit page with no blocks yet
