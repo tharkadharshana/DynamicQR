@@ -1,5 +1,5 @@
 -- ============================================================
--- DynamicQR Supabase Schema
+-- Scnr Supabase Schema
 -- Run this in the Supabase SQL Editor before deploying.
 -- ============================================================
 

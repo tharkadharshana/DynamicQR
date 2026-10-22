@@ -100,4 +100,4 @@ No plan is "unlimited", and caps are "in total", not per month. Yearly = 10× mo
 
 ## Names and domains
 
-The product is **Scnr**. The permanent short domain is `VITE_SHORT_DOMAIN` (`https://scnr.tharkak.com`); it must never change after codes are printed. Business identity (legal name, address, support email and WhatsApp, status page, demo code) comes from `VITE_*` variables read by [src/lib/site.ts](../src/lib/site.ts). The old names (DynamicQR, qik.app, MLQR, dynamicqr.app, scnr.app) were removed in Phase 1, except the repository name.
+The product is **Scnr**. The permanent short domain is `VITE_SHORT_DOMAIN` (`https://scnr.tharkak.com`); it must never change after codes are printed. Business identity (legal name, address, support email and WhatsApp, status page, demo code) comes from `VITE_*` variables read by [src/lib/site.ts](../src/lib/site.ts). The old names (DynamicQR, qik.app, MLQR, dynamicqr.app, scnr.app) were removed in Phase 1.

@@ -1,5 +1,5 @@
 /**
- * DynamicQR — Full API QA Test Suite
+ * Scnr — Full API QA Test Suite
  * Run with: npx tsx tests/qa.ts
  *
  * Creates a disposable test user, exercises every endpoint, then deletes the user.
@@ -139,7 +139,7 @@ async function rawGet(path: string, opts: RequestInit = {}): Promise<{ status: n
 
 // ─── main ────────────────────────────────────────────────────────────────────
 async function run() {
-  console.log('\n🔬 DynamicQR API QA Suite');
+  console.log('\n🔬 Scnr API QA Suite');
   console.log(`   Server : ${API}`);
   console.log(`   User   : ${TEST_EMAIL}`);
 

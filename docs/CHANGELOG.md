@@ -2,6 +2,10 @@
 
 One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-review-findings.md](11-review-findings.md).
 
+## Repository renamed to Scnr (branch `docs/rename-repo-scnr`)
+
+- GitHub repo `DynamicQR` is now `Scnr` (old URLs redirect). Docs and file headers updated. The Worker name `dynamic-qr-worker`, the `@test.dynamicqr.local` QA domain and internal identifiers are unchanged on purpose.
+
 ## Dashboard: stats first (branch `fix/dashboard-stats-first`)
 
 - The Dashboard now opens with the four stat cards, then "Paste a link" and the Restaurant Kit card. On a phone, the numbers used to sit below two action cards. No logic change.

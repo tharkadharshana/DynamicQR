@@ -1,8 +1,8 @@
-# Scnr (DynamicQR) — Technical Documentation
+# Scnr — Technical Documentation
 
 This folder documents the whole application end to end: what it does, how every part works, and what the full code review on 2026-10-10 found.
 
-The repository is called **DynamicQR**. The product ships as **Scnr** (`scnr.tharkak.com`). Older names still appear in the code: qik.app, MLQR, dynamicqr.app and scnr.app. Doc 01 has the full list.
+The repository is called **Scnr** (renamed from DynamicQR in 2026-10). The product ships as **Scnr** (`scnr.tharkak.com`). Older names still appear in the code: qik.app, MLQR, dynamicqr.app and scnr.app. Doc 01 has the full list.
 
 > **Important:** the root [README.md](../README.md) is out of date. It describes a Firebase / Firestore / Cloud Run stack, plus features that were never built (device routing, SMS QR, UTM tags, REST API keys, webhooks). These docs describe the code as it actually is.
 
