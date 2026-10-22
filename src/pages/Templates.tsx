@@ -23,11 +23,14 @@ const SUBTITLES: Record<string, string> = {
   'Promotions & Events': 'Drive engagement with offers, events and special campaigns.',
   'Real Estate': 'Listings, viewings and agency pages for property.',
 };
+// The design crops each row's thumbnails to a different height (the page is cropped from the top).
+const THUMB_H: Record<string, number> = { 'Business & Services': 243, 'Restaurant & Food': 180, 'Promotions & Events': 105, 'Real Estate': 180 };
 const TAGS = ['link in bio', 'business', 'restaurant', 'promo', 'event', 'real estate', 'minimal', 'dark mode'];
 const tagLabel = (t: string) => ({ promo: 'Promo', 'link in bio': 'Link in Bio', 'real estate': 'Real Estate', 'dark mode': 'Dark Mode' } as Record<string, string>)[t] || t.charAt(0).toUpperCase() + t.slice(1);
 
 // A card thumbnail is the real page rendered in a small sandboxed frame, so an edited template updates its own preview.
 function Thumb({ tpl }: { tpl: Tpl }) {
+  const h = THUMB_H[tpl.category] || 265;
   const ref = useRef<HTMLDivElement>(null);
   const [on, setOn] = useState(false);
   useEffect(() => {
@@ -37,7 +40,7 @@ function Thumb({ tpl }: { tpl: Tpl }) {
   }, []);
   const html = useMemo(() => (on ? (renderGuestPage({ qr_type: 'page', title: tpl.name, content_data: tpl.content }, 'en', 'https://preview.local/p') as any)?.body || '' : ''), [on, tpl]);
   return (
-    <div className="tg-thumb" ref={ref}>
+    <div className="tg-thumb" ref={ref} style={{ height: h }}>
       {on && <iframe title={tpl.name} srcDoc={html} sandbox="" tabIndex={-1} loading="lazy" />}
     </div>
   );
@@ -95,7 +98,6 @@ function RightRail({ tpls, q, setQ, tag, setTag }: { tpls: Tpl[]; q: string; set
         <h4>Need a custom template?</h4>
         <p>Tell us what you need and we'll create it for you.</p>
         <a className="tg-reqbtn" href={SITE.whatsapp ? waLink(SITE.whatsapp, 'Hi, I would like a custom page template.') : `mailto:${SITE.email}?subject=Custom%20page%20template`} target="_blank" rel="noreferrer">Request Custom</a>
-        <Link className="tg-scratch" to="/pages/new?template=blank">Start from scratch</Link>
       </div>
       <div className="tg-rcard">
         <h3>Templates summary</h3>
@@ -175,7 +177,7 @@ export default function Templates() {
             </section>
           ))}
         </div>
-        <p className="tg-mine">Looking for pages you already made? <Link to="/pages/mine">Your pages →</Link></p>
+        <p className="tg-mine">Looking for pages you already made? <Link to="/pages/mine">Your pages →</Link> Or <Link to="/pages/new?template=blank">start from a blank page →</Link></p>
       </div>
       <RightRail tpls={tpls || []} q={q} setQ={setQ} tag={tag} setTag={setTag} />
     </div>
