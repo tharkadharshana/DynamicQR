@@ -2,6 +2,10 @@
 
 One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-review-findings.md](11-review-findings.md).
 
+## Dashboard: stats first (branch `fix/dashboard-stats-first`)
+
+- The Dashboard now opens with the four stat cards, then "Paste a link" and the Restaurant Kit card. On a phone, the numbers used to sit below two action cards. No logic change.
+
 ## Phase 12: Public tools, help and What's new (branch `feat/public-tools`)
 
 - **Free tools** at `/tools/*`, no sign-in: QR scanner (`BarcodeDetector`, `jsqr` fallback, the one new dependency), UTM builder, Google review link, WhatsApp link, and a static QR generator. Each reuses the shared builders (`buildDestination`, `withUtm`, `stylingOptions`), so what a visitor copies is exactly what the app and the Worker produce.

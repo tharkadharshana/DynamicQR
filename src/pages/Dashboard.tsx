@@ -301,42 +301,6 @@ export default function Dashboard() {
   return (
     <div className="content" style={{ padding: '28px', overflow: 'auto', height: '100%' }}>
       <div className="page active">
-        {/* Paste a link: shorten it here, or open the editor with it filled in */}
-        <div className="card mb16">
-          <div className="card-title">Paste a link</div>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-            <input type="url" aria-label="Link to shorten" className="form-input" style={{ flex: '3 1 260px' }} placeholder="https://example.com/a-long-link"
-              value={pasteUrl} onChange={e => setPasteUrl(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') shorten(); }} />
-            <input aria-label="Custom back-half" className={`form-input ${slugProblem(backHalf) ? 'error' : ''}`} style={{ flex: '1 1 150px' }} maxLength={40}
-              placeholder={noCustomSlug ? 'Back-half (Pro)' : 'Back-half (optional)'} disabled={noCustomSlug}
-              value={backHalf} onChange={e => setBackHalf(e.target.value.trim())} />
-            <button className="btn btn-primary btn-sm" disabled={busy} onClick={shorten}>Shorten</button>
-            <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/create?url=${encodeURIComponent(pasteUrl.trim())}`)}>Make QR code</button>
-          </div>
-          {slugProblem(backHalf) ? <div className="error-msg">{slugProblem(backHalf)}</div>
-            : noCustomSlug && <div style={{ fontSize: '12px', color: 'var(--text3)', marginTop: '6px' }}>Pick your own back-half ({shortHost()}/your-name) on <Link to="/billing" style={{ color: 'var(--coral)' }}>Pro</Link>.</div>}
-        </div>
-
-        {/* Today's offer on guest pages (Restaurant Kit) */}
-        {qrCodes.some(q => q.qr_type === 'page') ? (
-          <div className="card mb16">
-            <div className="card-title">Today's offer</div>
-            <div style={{ display: 'grid', gap: '10px' }}>
-              {qrCodes.filter(q => q.qr_type === 'page').map(q => (
-                <OfferSwap key={q.slug} qr={q} onSaved={u => setQrCodes(prev => prev.map(p => p.slug === u.slug ? u : p))} />
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="card mb16" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <div>
-              <div className="card-title" style={{ marginBottom: '4px' }}>Restaurant Kit</div>
-              <div style={{ fontSize: '13px', color: 'var(--text3)' }}>One table QR for your menu, reviews, WhatsApp, Wi-Fi and today's offer — in English, Sinhala and Tamil.</div>
-            </div>
-            <button className="btn btn-primary btn-sm" onClick={() => navigate('/kit')}>Set up the kit →</button>
-          </div>
-        )}
-
         {/* Stats */}
         <div className="stats-row">
           <div className="stat-card">
@@ -376,6 +340,42 @@ export default function Dashboard() {
             </span>
           </div>
         </div>
+
+        {/* Paste a link: shorten it here, or open the editor with it filled in */}
+        <div className="card mb16">
+          <div className="card-title">Paste a link</div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <input type="url" aria-label="Link to shorten" className="form-input" style={{ flex: '3 1 260px' }} placeholder="https://example.com/a-long-link"
+              value={pasteUrl} onChange={e => setPasteUrl(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') shorten(); }} />
+            <input aria-label="Custom back-half" className={`form-input ${slugProblem(backHalf) ? 'error' : ''}`} style={{ flex: '1 1 150px' }} maxLength={40}
+              placeholder={noCustomSlug ? 'Back-half (Pro)' : 'Back-half (optional)'} disabled={noCustomSlug}
+              value={backHalf} onChange={e => setBackHalf(e.target.value.trim())} />
+            <button className="btn btn-primary btn-sm" disabled={busy} onClick={shorten}>Shorten</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/create?url=${encodeURIComponent(pasteUrl.trim())}`)}>Make QR code</button>
+          </div>
+          {slugProblem(backHalf) ? <div className="error-msg">{slugProblem(backHalf)}</div>
+            : noCustomSlug && <div style={{ fontSize: '12px', color: 'var(--text3)', marginTop: '6px' }}>Pick your own back-half ({shortHost()}/your-name) on <Link to="/billing" style={{ color: 'var(--coral)' }}>Pro</Link>.</div>}
+        </div>
+
+        {/* Today's offer on guest pages (Restaurant Kit) */}
+        {qrCodes.some(q => q.qr_type === 'page') ? (
+          <div className="card mb16">
+            <div className="card-title">Today's offer</div>
+            <div style={{ display: 'grid', gap: '10px' }}>
+              {qrCodes.filter(q => q.qr_type === 'page').map(q => (
+                <OfferSwap key={q.slug} qr={q} onSaved={u => setQrCodes(prev => prev.map(p => p.slug === u.slug ? u : p))} />
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="card mb16" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <div>
+              <div className="card-title" style={{ marginBottom: '4px' }}>Restaurant Kit</div>
+              <div style={{ fontSize: '13px', color: 'var(--text3)' }}>One table QR for your menu, reviews, WhatsApp, Wi-Fi and today's offer — in English, Sinhala and Tamil.</div>
+            </div>
+            <button className="btn btn-primary btn-sm" onClick={() => navigate('/kit')}>Set up the kit →</button>
+          </div>
+        )}
 
         {/* Chart + Device Split */}
         <div className="grid-21 mb24">
