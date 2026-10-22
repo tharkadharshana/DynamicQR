@@ -109,6 +109,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
       case '/analytics': return { title: 'Analytics', sub: 'Detailed scan insights' };
       case '/create': return { title: 'Create QR', sub: 'Generate a new QR code' };
       case '/pages': return { title: 'Pages', sub: 'Mobile landing pages behind one QR' };
+      case '/admin/templates': return { title: 'Template admin', sub: 'Manage the page templates' };
       case '/pages/mine': return { title: 'Your pages', sub: 'Pages you have created' };
       case '/pages/new': return { title: 'New page', sub: 'Start from a template or a blank page' };
       case '/forms': return { title: 'Forms', sub: 'Collect answers from a QR scan' };
@@ -122,7 +123,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
       case '/legal/privacy-policy': return { title: 'Privacy Policy', sub: 'Legal documentation' };
       case '/legal/terms-and-conditions': return { title: 'Terms & Conditions', sub: 'Legal documentation' };
       case '/legal/refund-policy': return { title: 'Refund Policy', sub: 'Legal documentation' };
-      default: return { title: 'Scnr QR Codes', sub: 'with Real-Time Analytics' };
+      default: return location.pathname.startsWith('/admin/templates') ? { title: 'Template admin', sub: 'Edit a template' } : { title: 'Scnr QR Codes', sub: 'with Real-Time Analytics' };
     }
   };
 
