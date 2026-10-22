@@ -1,4 +1,4 @@
-# Scnr (DynamicQR): instructions for Claude Code sessions
+# Scnr: instructions for Claude Code sessions
 
 Dynamic QR SaaS for Sri Lankan businesses. React 19 + Vite SPA, Express (`server/index.ts`) as a Vercel serverless function, Supabase (Postgres + Google OAuth), a Cloudflare Worker with KV (`worker/worker.js`), PayHere (LKR) and Polar (USD). Production: https://scnr.tharkak.com.
 

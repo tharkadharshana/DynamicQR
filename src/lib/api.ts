@@ -1,5 +1,5 @@
 /**
- * Centralized API helper for the DynamicQR frontend.
+ * Centralized API helper for the Scnr frontend.
  *
  * - Automatically fetches fresh Supabase access tokens before every call
  * - Provides consistent error handling
