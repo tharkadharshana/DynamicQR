@@ -56,7 +56,7 @@ const shell = (title: string, lang: Lang, inner: string, accent = '#2B4A3A', css
   .langs a{color:#fff;text-decoration:none;font-size:12px;font-weight:700;padding:4px 9px;border-radius:999px;background:rgba(255,255,255,.15)}
   .langs a.on{background:#fff;color:${accent}}
   main{padding:16px;display:grid;gap:10px;max-width:480px;margin:0 auto}
-  .offer{background:#F6D9B8;color:#24180F;border-radius:14px;padding:14px 16px}
+  .offer{background:#F6D9B8;border-radius:14px;padding:14px 16px}
   .offer small{font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.7} .offer b{display:block;font-size:16px;margin-top:2px}
   a.btn{display:flex;justify-content:space-between;align-items:center;background:#fff;border:1px solid #EADFD3;border-radius:12px;padding:15px 16px;font-weight:600;color:#24180F;text-decoration:none}
   a.btn span{color:#B9A592;font-size:18px}
@@ -273,7 +273,7 @@ export function renderGuestPage(config: any, lang: Lang, url: string, formState:
         const css = `body{background:${bg2 ? `linear-gradient(165deg,${bg},${bg2}) fixed` : bg};color:${fg};font-family:${FONTS[th.font] || FONTS.system}}
   a.btn,.box,.prod{background:${card};border-color:${line}} a.btn{border-radius:${radius};color:${fg}} hr{border-top-color:${line}!important}
   ${th.header === 'plain' ? `.top{background:transparent;color:${fg}}` : ''} .emo{width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-size:30px;margin:0 auto 10px}
-  .hdr{text-align:center} .av{width:84px;height:84px;border-radius:50%;object-fit:cover;border:3px solid #fff}
+  .offer{color:#24180F} .hdr{text-align:center} .av{width:84px;height:84px;border-radius:50%;object-fit:cover;border:3px solid #fff}
   h2{font-size:15px;margin:8px 0 0} hr{border:0;border-top:1px solid #EADFD3;width:100%}
   .socs{display:flex;flex-wrap:wrap;gap:8px;justify-content:center} .soc{padding:8px 12px;border-radius:999px;background:${accent};color:#fff;text-decoration:none;font-size:13px;font-weight:600;text-transform:capitalize}
   .img{width:100%;border-radius:12px;display:block} .vid{position:relative;padding-top:56.25%} .vid iframe{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:12px}
