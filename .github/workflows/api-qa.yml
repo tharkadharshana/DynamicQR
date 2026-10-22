@@ -27,6 +27,8 @@ jobs:
       CRON_SECRET: qa-cron-secret
       RATE_LIMIT_MAX: '5000'
       RATE_LIMIT_WRITE_MAX: '1000'
+      # The QA signs in as this user to test the template admin routes.
+      ADMIN_EMAILS: qa-templates-admin@test.dynamicqr.local
       NODE_ENV: test
       APP_URL: http://localhost:3000
       PORT: 3000

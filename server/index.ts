@@ -19,6 +19,7 @@ import { customAlphabet } from 'nanoid';
 import logger from "./logger.js";
 import { renderGuestPage, pickLang, appTarget, FILE_TYPES, blockTarget, esc as escHtml } from '../src/lib/guestPage.js';
 import { gtinValid, isReservedSlug, CUSTOM_SLUG_RE, normTags, withUtm } from '../src/lib/qrContent.js';
+import { PAGE_TEMPLATES, templateContentError } from '../src/lib/pageTemplates.js';
 import { buildDigest } from '../src/lib/digest.js';
 import { formDefError, validateSubmission } from '../src/lib/forms.js';
 import { pickRoute, routeCtx, rulesError, primaryLang } from '../src/lib/routing.js';
@@ -237,6 +238,11 @@ async function startServer() {
     if (u?.isMember) return res.status(403).json({ error: 'Only the account owner can do this', code: 'OWNER_ONLY' });
     next();
   };
+
+  // Template admins: ADMIN_EMAILS (comma separated). Never through an API key.
+  const isAdminUser = (u: any) => !u?.viaApiKey && !!u?.email && (process.env.ADMIN_EMAILS || '').toLowerCase().split(',').map(x => x.trim()).filter(Boolean).includes(String(u.email).toLowerCase());
+  const requireAdmin = (req: express.Request, res: express.Response, next: express.NextFunction) =>
+    isAdminUser((req as any).user) ? next() : res.status(403).json({ error: 'Admins only', code: 'ADMIN_ONLY' });
 
   const requireOwnership = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const { slug } = req.params;
@@ -500,6 +506,7 @@ async function startServer() {
           brand_style: userDoc?.brand_style || null,
         },
         is_member: !!(req as any).user.isMember,
+        is_admin: isAdminUser((req as any).user),
         custom_domain: await activeDomain(uid),
         custom_domains: await activeDomains(uid),
         active_dynamic: activeDynamic,
@@ -655,6 +662,125 @@ async function startServer() {
     } catch (error: any) {
       logger.error('Upload URL error:', { message: error?.message });
       res.status(500).json({ error: 'Could not start the upload' });
+    }
+  });
+
+  // ── Page templates (Phase 13): data, managed by admins ────────────────────
+  const TEMPLATE_COLS = 'id, name, description, category, tags, content, status, sort, source, pro_only, updated_at';
+  // First use seeds the built-in templates (published). Existing rows are never overwritten.
+  let templatesSeeded = false;
+  const seedTemplates = async () => {
+    if (templatesSeeded) return;
+    const { count } = await supabase.from('page_templates').select('id', { count: 'exact', head: true });
+    if (!count) {
+      const { error } = await supabase.from('page_templates').upsert(PAGE_TEMPLATES.map((t, i) => ({
+        id: t.id, name: t.name, description: t.description || '', category: t.group, tags: t.tags || [], content: t.content, status: 'published', sort: i,
+      })), { onConflict: 'id', ignoreDuplicates: true });
+      if (error) throw error;
+    }
+    templatesSeeded = true;
+  };
+  const templateInput = (b: any, partial = false): { o?: any; err?: string } => {
+    const o: any = {};
+    const str = (k: string, max: number, required = false) => {
+      if (b[k] === undefined && partial) return '';
+      if (b[k] === undefined && !required) return '';
+      if (typeof b[k] !== 'string' || (required && !b[k].trim()) || b[k].length > max) return `${k} must be text up to ${max} characters`;
+      o[k] = b[k].trim(); return '';
+    };
+    const err = str('name', 80, !partial) || str('description', 200) || str('category', 40, !partial);
+    if (err) return { err };
+    if (b.tags !== undefined) {
+      if (!Array.isArray(b.tags) || b.tags.length > 12 || b.tags.some((t: any) => typeof t !== 'string' || t.length > 30)) return { err: 'tags must be up to 12 short texts' };
+      o.tags = b.tags.map((t: string) => t.trim()).filter(Boolean);
+    }
+    if (b.content !== undefined || !partial) { const e = templateContentError(b.content, CONTENT_MAX); if (e) return { err: e }; o.content = b.content; }
+    if (b.status !== undefined) { if (!['draft', 'published'].includes(b.status)) return { err: 'status must be draft or published' }; o.status = b.status; }
+    if (b.sort !== undefined) { if (!Number.isInteger(b.sort) || Math.abs(b.sort) > 100000) return { err: 'sort must be an integer' }; o.sort = b.sort; }
+    if (b.pro_only !== undefined) { if (typeof b.pro_only !== 'boolean') return { err: 'pro_only must be true or false' }; o.pro_only = b.pro_only; }
+    if (b.source !== undefined) { if (!['manual', 'ai'].includes(b.source)) return { err: 'source must be manual or ai' }; o.source = b.source; }
+    return { o };
+  };
+  const slugId = (n: string) => n.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'template';
+
+  app.get('/api/page-templates', authenticate, async (req, res) => {
+    try {
+      await seedTemplates();
+      let q = supabase.from('page_templates').select(TEMPLATE_COLS).eq('status', 'published').order('sort').order('name');
+      if (typeof req.query.category === 'string' && req.query.category) q = q.eq('category', req.query.category);
+      const { data, error } = await q;
+      if (error) throw error;
+      const term = typeof req.query.q === 'string' ? req.query.q.trim().toLowerCase() : '';
+      res.json(term ? (data || []).filter(t => `${t.name} ${t.description} ${t.category} ${(t.tags || []).join(' ')}`.toLowerCase().includes(term)) : data);
+    } catch (error: any) {
+      logger.error('Templates list error:', { message: error?.message });
+      res.status(500).json({ error: 'Could not load templates' });
+    }
+  });
+
+  app.get('/api/admin/page-templates', authenticate, requireAdmin, async (_req, res) => {
+    try {
+      await seedTemplates();
+      const { data, error } = await supabase.from('page_templates').select(TEMPLATE_COLS).order('category').order('sort').order('name');
+      if (error) throw error;
+      res.json(data);
+    } catch (error: any) {
+      logger.error('Admin templates list error:', { message: error?.message });
+      res.status(500).json({ error: 'Could not load templates' });
+    }
+  });
+
+  app.post('/api/admin/page-templates', writeLimiter, authenticate, requireAdmin, async (req, res) => {
+    try {
+      const { o, err } = templateInput(req.body || {});
+      if (err) return res.status(400).json({ error: err });
+      const id = typeof req.body.id === 'string' && /^[a-z0-9-]{2,40}$/.test(req.body.id) ? req.body.id : `${slugId(o.name)}-${crypto.randomBytes(2).toString('hex')}`;
+      const { data, error } = await supabase.from('page_templates').insert({ status: 'draft', ...o, id, created_by: (req as any).user.realUid }).select(TEMPLATE_COLS).single();
+      if (error) return res.status(error.code === '23505' ? 409 : 500).json({ error: error.code === '23505' ? 'A template with this id exists' : 'Could not create the template' });
+      res.status(201).json(data);
+    } catch (error: any) {
+      logger.error('Template create error:', { message: error?.message });
+      res.status(500).json({ error: 'Could not create the template' });
+    }
+  });
+
+  app.put('/api/admin/page-templates/:id', writeLimiter, authenticate, requireAdmin, async (req, res) => {
+    try {
+      const { o, err } = templateInput(req.body || {}, true);
+      if (err) return res.status(400).json({ error: err });
+      const { data, error } = await supabase.from('page_templates').update({ ...o, updated_at: nowIso() }).eq('id', req.params.id).select(TEMPLATE_COLS).maybeSingle();
+      if (error) throw error;
+      if (!data) return res.status(404).json({ error: 'Template not found' });
+      res.json(data);
+    } catch (error: any) {
+      logger.error('Template update error:', { message: error?.message });
+      res.status(500).json({ error: 'Could not update the template' });
+    }
+  });
+
+  app.post('/api/admin/page-templates/:id/duplicate', writeLimiter, authenticate, requireAdmin, async (req, res) => {
+    try {
+      const { data: t } = await supabase.from('page_templates').select(TEMPLATE_COLS).eq('id', req.params.id).maybeSingle();
+      if (!t) return res.status(404).json({ error: 'Template not found' });
+      const id = `${t.id.slice(0, 30)}-${crypto.randomBytes(2).toString('hex')}`;
+      const { data, error } = await supabase.from('page_templates').insert({ ...t, id, name: `${t.name} (copy)`.slice(0, 80), status: 'draft', created_by: (req as any).user.realUid, updated_at: nowIso() }).select(TEMPLATE_COLS).single();
+      if (error) throw error;
+      res.status(201).json(data);
+    } catch (error: any) {
+      logger.error('Template duplicate error:', { message: error?.message });
+      res.status(500).json({ error: 'Could not duplicate the template' });
+    }
+  });
+
+  app.delete('/api/admin/page-templates/:id', writeLimiter, authenticate, requireAdmin, async (req, res) => {
+    try {
+      const { data, error } = await supabase.from('page_templates').delete().eq('id', req.params.id).select('id');
+      if (error) throw error;
+      if (!data?.length) return res.status(404).json({ error: 'Template not found' });
+      res.json({ ok: true });
+    } catch (error: any) {
+      logger.error('Template delete error:', { message: error?.message });
+      res.status(500).json({ error: 'Could not delete the template' });
     }
   });
 

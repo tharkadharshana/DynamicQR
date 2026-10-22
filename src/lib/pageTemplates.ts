@@ -1,8 +1,8 @@
 // Page templates: plain content_data presets for the Pages builder, grouped by use case like Bitly's picker.
 // Plain colour blocks, no stock photos: the owner adds their own images. Rendered by renderGuestPage.
-import { renderGuestPage } from './guestPage';
+import { renderGuestPage, BLOCK_KINDS } from './guestPage.js';
 
-export interface PageTemplate { id: string; name: string; group: string; content: any }
+export interface PageTemplate { id: string; name: string; group: string; content: any; description?: string; tags?: string[] }
 
 const theme = (accent: string, bg = '#FFF8F2', text = '#24180F', button = 'rounded', font = 'system') => ({ accent, bg, text, button, font });
 const header = (name: string, tagline: string) => ({ kind: 'header', name, tagline });
@@ -49,6 +49,16 @@ export const PAGE_TEMPLATES: PageTemplate[] = [
 
 export const TEMPLATE_GROUPS = [...new Set(PAGE_TEMPLATES.map(t => t.group))];
 
+/** Template content must be a Pages-builder preset. Returns an error message, or '' when valid. Used by the admin API and the AI generator. */
+export function templateContentError(c: any, max = 20_000): string {
+  if (!c || typeof c !== 'object' || Array.isArray(c)) return 'content must be an object';
+  if (!Array.isArray(c.blocks) || !c.blocks.length || c.blocks.length > 40) return 'content.blocks must be 1 to 40 blocks';
+  for (const b of c.blocks) if (!b || !(BLOCK_KINDS as readonly string[]).includes(b.kind)) return `unknown block kind: ${b?.kind}`;
+  if (c.theme !== undefined && (typeof c.theme !== 'object' || c.theme === null || Array.isArray(c.theme))) return 'content.theme must be an object';
+  if (JSON.stringify(c).length > max) return 'content is too large';
+  return '';
+}
+
 /** Self-check: npx tsx src/lib/pageTemplates.ts */
 if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('pageTemplates.ts')) {
   const assert = (c: unknown, m: string) => { if (!c) { console.error('FAIL', m); process.exit(1); } };
@@ -58,6 +68,9 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('pageTemplates
     const r = renderGuestPage({ qr_type: 'page', content_data: t.content }, 'en', 'https://s.lk/preview') as any;
     assert(r?.kind === 'html' && r.body.includes(`<h1>${t.content.blocks[0].name.replace('&', '&amp;')}</h1>`), `${t.id} renders its header`);
     assert(JSON.stringify(t.content).length < 20000, `${t.id} fits content_data's 20 KB cap`);
+    assert(!templateContentError(t.content), `${t.id} passes templateContentError`);
   }
+  assert(templateContentError({ blocks: [{ kind: 'nope' }] }), 'unknown kind rejected');
+  assert(templateContentError({ blocks: [] }) && templateContentError('x') && templateContentError({ blocks: [{ kind: 'text' }], theme: 5 }), 'bad shapes rejected');
   console.log('pageTemplates self-check ok');
 }

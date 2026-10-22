@@ -6,6 +6,12 @@ One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-r
 
 - Added `LICENSE`: all rights reserved, no use, copying, modification, distribution or sale without the owner's written permission. `package.json` now says `UNLICENSED`; README links the license.
 
+## Phase 13a: Page templates as data (branch `feat/page-templates-db`)
+
+- Page templates now live in the `page_templates` table (migration `012_page_templates.sql`) instead of only in code. The API seeds the 12 built-in templates as published on first use.
+- `GET /api/page-templates` lists published templates (`?category=`, `?q=`). Admins (emails in `ADMIN_EMAILS`) get `GET/POST/PUT/DELETE /api/admin/page-templates` and `POST .../:id/duplicate`. New templates start as drafts and every content object passes `templateContentError` first, so a future AI generator can insert drafts through the same checks.
+- `/api/user/plan` returns `is_admin`.
+
 ## Dashboard: recent scans paging (branch `feat/recent-scans-paging`)
 
 - Recent scans shows 5 by default. Desktop gets a "Show 5 / 10 / 20 / 50" dropdown; phones get a "Show more" button that adds 5 each click. The account feed now returns the latest 50 (was 20).

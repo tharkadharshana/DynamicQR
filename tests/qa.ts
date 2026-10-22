@@ -1829,6 +1829,53 @@ async function run() {
     check('Worker: /tools/* passes through to the app, not a code lookup', toolsEdge.status === 200 && toolsEdge.body === 'APP' && passed.length === 1 && passed[0].endsWith('/tools/qr-scanner'), `status=${toolsEdge.status} passed=${passed}`)
   }
 
+  // ── 35b. Page templates — data, published list, admin CRUD, validation ───────
+  section('35b. Page templates — published list, admin-only CRUD, validation');
+  {
+    const ADMIN_MAIL = 'qa-templates-admin@test.dynamicqr.local'; // the server's ADMIN_EMAILS carries it (CI workflow, QA command)
+    const { data: old } = await admin.auth.admin.listUsers({ perPage: 1000 });
+    for (const u of (old?.users || []).filter(u => u.email === ADMIN_MAIL)) await admin.auth.admin.deleteUser(u.id);
+    const { data: au } = await admin.auth.admin.createUser({ email: ADMIN_MAIL, password: TEST_PASS, email_confirm: true });
+    if (au?.user?.id) createdUids.push(au.user.id);
+    const ac = createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false } });
+    const aToken = (await ac.auth.signInWithPassword({ email: ADMIN_MAIL, password: TEST_PASS })).data.session?.access_token || '';
+    const goodContent = { theme: { accent: '#7C3AED' }, blocks: [{ kind: 'header', name: 'QA tpl <b>x</b>', tagline: 'hi' }, { kind: 'button', label: 'Go', url: 'https://example.com' }] };
+
+    const list = await api('/api/page-templates', { token });
+    check('GET /api/page-templates lists the seeded published templates', list.status === 200 && Array.isArray(list.body) && list.body.length >= PAGE_TEMPLATES.length && list.body.every((t: any) => t.status === 'published'), `got ${list.status} n=${list.body?.length}`);
+    check('Template list has no auth → 401', (await api('/api/page-templates')).status === 401);
+    const search = await api('/api/page-templates?q=restaurant', { token });
+    check('Template search by text', search.status === 200 && search.body.length >= 1 && search.body.every((t: any) => /restaurant/i.test(JSON.stringify(t))), JSON.stringify(search.body?.map((t: any) => t.id)));
+    check('Plan reports is_admin false for a normal user', (await api('/api/user/plan', { token })).body?.is_admin === false);
+
+    const denied = await api('/api/admin/page-templates', { token });
+    check('Non-admin cannot list admin templates → 403 ADMIN_ONLY', denied.status === 403 && denied.body?.code === 'ADMIN_ONLY', `got ${denied.status}`);
+    const deniedPost = await api('/api/admin/page-templates', { method: 'POST', token, body: JSON.stringify({ name: 'x', category: 'y', content: goodContent }) });
+    check('Non-admin cannot create a template → 403', deniedPost.status === 403);
+
+    check('Plan reports is_admin true for an admin', (await api('/api/user/plan', { token: aToken })).body?.is_admin === true);
+    const bad1 = await api('/api/admin/page-templates', { method: 'POST', token: aToken, body: JSON.stringify({ name: 'Bad', category: 'Test', content: { blocks: [{ kind: 'script' }] } }) });
+    const bad2 = await api('/api/admin/page-templates', { method: 'POST', token: aToken, body: JSON.stringify({ name: '', category: 'Test', content: goodContent }) });
+    const bad3 = await api('/api/admin/page-templates', { method: 'POST', token: aToken, body: JSON.stringify({ name: 'Big', category: 'Test', content: { blocks: [{ kind: 'text', text: 'x'.repeat(21000) }] } }) });
+    check('Invalid block kind, empty name, oversized content → 400', bad1.status === 400 && bad2.status === 400 && bad3.status === 400, `${bad1.status}/${bad2.status}/${bad3.status}`);
+
+    const made = await api('/api/admin/page-templates', { method: 'POST', token: aToken, body: JSON.stringify({ name: 'QA template', category: 'QA', tags: ['qa'], content: goodContent }) });
+    const tid = made.body?.id;
+    check('Admin creates a template → 201, draft by default', made.status === 201 && made.body?.status === 'draft' && made.body?.source === 'manual', `got ${made.status} ${JSON.stringify(made.body)}`);
+    check('Draft is hidden from the user list', !(await api('/api/page-templates', { token })).body.some((t: any) => t.id === tid));
+    const pub = await api(`/api/admin/page-templates/${tid}`, { method: 'PUT', token: aToken, body: JSON.stringify({ status: 'published', name: 'QA template 2' }) });
+    check('Admin publishes and renames (partial update)', pub.status === 200 && pub.body?.status === 'published' && pub.body?.name === 'QA template 2' && pub.body?.category === 'QA', JSON.stringify(pub.body));
+    check('Published template shows for users', (await api('/api/page-templates?category=QA', { token })).body.some((t: any) => t.id === tid));
+    const dup = await api(`/api/admin/page-templates/${tid}/duplicate`, { method: 'POST', token: aToken });
+    check('Duplicate → 201 draft copy', dup.status === 201 && dup.body?.status === 'draft' && dup.body?.id !== tid && /copy/.test(dup.body?.name), JSON.stringify(dup.body));
+    check('PUT unknown id → 404', (await api('/api/admin/page-templates/nope-nope', { method: 'PUT', token: aToken, body: JSON.stringify({ name: 'x' }) })).status === 404);
+    const badPut = await api(`/api/admin/page-templates/${tid}`, { method: 'PUT', token: aToken, body: JSON.stringify({ content: { blocks: [] } }) });
+    check('PUT with invalid content → 400', badPut.status === 400);
+    const r1 = await api(`/api/admin/page-templates/${tid}`, { method: 'DELETE', token: aToken });
+    const r2 = await api(`/api/admin/page-templates/${dup.body?.id}`, { method: 'DELETE', token: aToken });
+    check('Admin deletes both → 200, then 404', r1.status === 200 && r2.status === 200 && (await api(`/api/admin/page-templates/${tid}`, { method: 'DELETE', token: aToken })).status === 404);
+  }
+
   // ── 36. Cleanup ──────────────────────────────────────────────────────────────
   section('36. Cleanup');
   {
