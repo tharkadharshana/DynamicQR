@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../supabase';
 import QRCode from 'qrcode';
 import QRCodeStyling from 'qr-code-styling';
@@ -64,7 +64,9 @@ export default function Dashboard() {
   const [folder, setFolder] = useState('');
   const [tag, setTag] = useState('');
   const [sort, setSort] = useState('newest');
-  const [search, setSearch] = useState('');
+  const [searchParams] = useSearchParams();
+  const [search, setSearch] = useState(searchParams.get('q') || '');
+  useEffect(() => { setSearch(searchParams.get('q') || ''); }, [searchParams]); // the top bar search sets ?q=
   const [selected, setSelected] = useState<Set<string> | null>(null); // null = not in select mode
   const [pasteUrl, setPasteUrl] = useState('');
   const [backHalf, setBackHalf] = useState('');

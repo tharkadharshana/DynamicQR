@@ -1843,6 +1843,9 @@ async function run() {
 
     const list = await api('/api/page-templates', { token });
     check('GET /api/page-templates lists the seeded published templates', list.status === 200 && Array.isArray(list.body) && list.body.length >= PAGE_TEMPLATES.length && list.body.every((t: any) => t.status === 'published'), `got ${list.status} n=${list.body?.length}`);
+    const ids = new Set((list.body || []).map((t: any) => t.id));
+    check('Built-ins are current: all 18 present in their rows, retired card-agent gone', PAGE_TEMPLATES.every(t => ids.has(t.id)) && !ids.has('card-agent') && list.body.find((t: any) => t.id === 'bio-foodie')?.category === 'Link in Bio', JSON.stringify([...ids]));
+    check('Every template carries a description and tags for the gallery', (list.body || []).filter((t: any) => PAGE_TEMPLATES.some(b => b.id === t.id)).every((t: any) => t.description && t.tags.length), '');
     check('Template list has no auth → 401', (await api('/api/page-templates')).status === 401);
     const search = await api('/api/page-templates?q=restaurant', { token });
     check('Template search by text', search.status === 200 && search.body.length >= 1 && search.body.every((t: any) => /restaurant/i.test(JSON.stringify(t))), JSON.stringify(search.body?.map((t: any) => t.id)));

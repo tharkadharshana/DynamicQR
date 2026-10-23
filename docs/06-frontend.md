@@ -97,9 +97,19 @@ Form cards (name and type, style, options, Visitor Guard) plus a live preview.
 - `HelpButton` is a floating WhatsApp link shown in the app and on Pricing and the tools; it renders nothing when `SITE.whatsapp` is empty.
 - The Landing footer is a link hub of real pages only (tools, What's new, legal), and Landing has sections for Pages, Forms, Short links and Business whose numbers come from `PLANS`.
 
+### App shell — [DynamicQRLayout.tsx](../src/components/DynamicQRLayout.tsx) and [shell.css](../src/shell.css)
+
+- Sidebar (MAIN and ACCOUNT groups), top bar (search with ⌘K / Ctrl+K, theme toggle, bell, "New QR"), light palette by default (the stored theme still wins). On `/pages` the sidebar uses the compact variant of its design: no group labels, a collapsible Account group and an Upgrade card (Free plan).
+- The search box sets `?q=` on `/pages` (templates) and `/` (Dashboard list); elsewhere Enter jumps to the Dashboard with the query. The bell shows a dot on the Free plan and opens Billing or Settings; it is not a notification feed yet.
+- Admins (`is_admin` from `/api/user/plan`) see "Template admin" and "AI costs" in the Account group.
+
+### Template admin — [AdminTemplates.tsx](../src/pages/AdminTemplates.tsx)
+
+`/admin/templates` (needs `is_admin`; others are sent to the Dashboard) lists every `page_templates` row. Edit and New open `TemplateEditor` (in [PageEditor.tsx](../src/pages/PageEditor.tsx)), which is the page editor with extra template fields and a save to `/api/admin/page-templates`.
+
 ### Pages — [Pages.tsx](../src/pages/Pages.tsx) and [PageEditor.tsx](../src/pages/PageEditor.tsx) (Phase 7)
 
-- `/pages` lists page codes with their short URL; the QR is shown on demand. `/pages/new` is the template picker: "Start from scratch", the 12 templates as live iframe previews, and the Restaurant Kit wizard.
+- `/pages` is the **template gallery** ([Templates.tsx](../src/pages/Templates.tsx), styles in [gallery.css](../src/gallery.css)): a hero, category chips, a row of cards per category (live, sandboxed iframe thumbnails, rendered only when scrolled into view) and a right rail (quick search, popular tags, custom-template request, summary). Templates come from `GET /api/page-templates`; the top-bar search and the rail search both set `?q=`. `/pages/mine` is the list of your own page codes (short URL, Show QR, Analytics, Edit). `/pages/new?template=<id>` opens the editor with that template; `?template=blank` starts empty; `/pages/new` alone redirects to `/pages`.
 - The editor has a block list (add, move up and down, delete; no drag-and-drop library), theme controls, image upload through `POST /api/files`, Sinhala and Tamil text per block, and a live preview: an iframe whose `srcdoc` is `renderGuestPage(...)`, so the preview is exactly what guests see.
 - Analytics shows an **Engagements** card (clicks and CTR per link) for page codes.
 

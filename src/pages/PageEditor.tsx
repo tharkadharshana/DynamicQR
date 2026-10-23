@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router-dom';
 import { apiFetch } from '../lib/api';
 import { supabase } from '../supabase';
 import { useUI } from '../shared/UIContext';
 import { renderGuestPage, BLOCK_KINDS, type Lang } from '../lib/guestPage';
-import { PAGE_TEMPLATES, TEMPLATE_GROUPS } from '../lib/pageTemplates';
+import { PAGE_TEMPLATES } from '../lib/pageTemplates';
 import { SOCIALS } from '../lib/qrContent';
 
 // Pages builder: a list of blocks (content_data.blocks) rendered by the same renderGuestPage the Worker uses.
@@ -46,52 +46,43 @@ function kitToBlocks(d: any) {
   return withIds(blocks);
 }
 
-function TemplatePicker() {
-  const navigate = useNavigate();
-  const card = (key: string, name: string, onClick: () => void, preview: React.ReactNode) => (
-    <button key={key} className="card" onClick={onClick} style={{ padding: '10px', cursor: 'pointer', textAlign: 'left', display: 'grid', gap: '8px' }}>
-      <div style={{ width: '150px', height: '267px', overflow: 'hidden', borderRadius: '8px', background: 'var(--surface2)', margin: '0 auto' }}>{preview}</div>
-      <span style={{ fontSize: '13px', fontWeight: 600 }}>{name}</span>
-    </button>
-  );
-  const frame = (content: any, name: string) => (
-    <iframe title={name} srcDoc={previewHtml(name, content)} sandbox="" tabIndex={-1}
-      style={{ width: '375px', height: '667px', border: 0, transform: 'scale(0.4)', transformOrigin: '0 0', pointerEvents: 'none' }} />
-  );
-  const grid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '12px', marginBottom: '24px' };
-  return (
-    <div className="content" style={{ padding: '28px', overflow: 'auto', height: '100%' }}>
-      <div className="page active">
-        <div className="section-row"><span className="section-title">Pick a starting point</span><Link className="btn btn-ghost btn-sm" to="/pages">Back to pages</Link></div>
-        <div style={grid}>
-          {card('blank', 'Start from scratch', () => navigate('/pages/new?template=blank'), frame(BLANK, 'Start from scratch'))}
-          {card('kit', 'Restaurant Kit wizard', () => navigate('/kit'),
-            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px', fontSize: '12px', color: 'var(--text3)', textAlign: 'center' }}>Menu, reviews, WhatsApp, Wi-Fi and today's offer in three steps</div>)}
-        </div>
-        {TEMPLATE_GROUPS.map(g => (
-          <div key={g}>
-            <div className="card-title">{g}</div>
-            <div style={grid}>{PAGE_TEMPLATES.filter(t => t.group === g).map(t => card(t.id, t.name, () => navigate(`/pages/new?template=${t.id}`), frame(t.content, t.name)))}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+/** The gallery lives at /pages; this loads the chosen template (admin-managed rows, built-ins as the fallback) and opens the editor. */
+function TemplateLoader({ template }: { template: string }) {
+  const [tpl, setTpl] = useState<{ name: string; content: any } | null | undefined>(undefined);
+  useEffect(() => {
+    apiFetch('/api/page-templates').then((l: any[]) => setTpl(l.find(t => t.id === template) || PAGE_TEMPLATES.find(t => t.id === template) || null))
+      .catch(() => setTpl(PAGE_TEMPLATES.find(t => t.id === template) || null));
+  }, [template]);
+  if (tpl === undefined) return <div className="content" style={{ padding: '28px' }}>Loading…</div>;
+  return <Editor key={template} template={template} tpl={tpl} />;
+}
+
+/** /admin/templates/:id/edit (or /new): the same block editor, saving to the template instead of creating a page. */
+export function TemplateEditor() {
+  const { id } = useParams();
+  const [row, setRow] = useState<any | null | undefined>(id ? undefined : null);
+  useEffect(() => {
+    if (id) apiFetch('/api/admin/page-templates').then((l: any[]) => setRow(l.find(t => t.id === id) || null)).catch(() => setRow(null));
+  }, [id]);
+  if (row === undefined) return <div className="content" style={{ padding: '28px' }}>Loading…</div>;
+  if (id && !row) return <Navigate to="/admin/templates" replace />;
+  return <Editor key={id || 'new'} template={null} tpl={row ? { name: row.name, content: row.content } : null} tplEdit={row || {}} />;
 }
 
 export default function PageEditor() {
   const { slug } = useParams();
   const [params] = useSearchParams();
   const template = params.get('template');
-  if (!slug && !template) return <TemplatePicker />;
-  return <Editor key={slug || template!} slug={slug} template={template} />;
+  if (!slug && !template) return <Navigate to="/pages" replace />;
+  if (!slug && template !== 'blank') return <TemplateLoader template={template!} />;
+  return <Editor key={slug || template!} slug={slug} template={template} tpl={null} />;
 }
 
-function Editor({ slug, template }: { slug?: string; template: string | null }) {
+function Editor({ slug, template, tpl, tplEdit }: { slug?: string; template: string | null; tpl: { name: string; content: any } | null; tplEdit?: any }) {
   const navigate = useNavigate();
   const { showToast } = useUI();
-  const [start] = useState(() => (!slug ? structuredClone(PAGE_TEMPLATES.find(t => t.id === template)?.content || BLANK) : null));
-  const [title, setTitle] = useState(start ? PAGE_TEMPLATES.find(t => t.id === template)?.name || 'My page' : '');
+  const [start] = useState(() => (!slug ? structuredClone(tpl?.content || BLANK) : null));
+  const [title, setTitle] = useState(start ? tpl?.name || 'My page' : '');
   const [theme, setTheme] = useState<any>(start ? { ...DEFAULT_THEME, ...start.theme } : DEFAULT_THEME);
   const [blocks, setBlocks] = useState<any[]>(start ? fromContent(start) : []);
   const [legacy, setLegacy] = useState<any>(null); // a Kit page with no blocks yet
@@ -101,6 +92,9 @@ function Editor({ slug, template }: { slug?: string; template: string | null }) 
   const [saving, setSaving] = useState(false);
   const [limitError, setLimitError] = useState('');
   const [uploading, setUploading] = useState('');
+  const isAdmin = !!useOutletContext<{ planData?: any } | null>()?.planData?.is_admin;
+  // Admin template mode: the metadata of the template row being edited (an empty object when creating one).
+  const [meta, setMeta] = useState(() => tplEdit ? { description: tplEdit.description || '', category: tplEdit.category || 'Link in Bio', tags: (tplEdit.tags || []).join(', '), status: tplEdit.status || 'draft', pro_only: !!tplEdit.pro_only, sort: tplEdit.sort ?? 100 } : null);
 
   useEffect(() => {
     if (!slug) return;
@@ -141,6 +135,13 @@ function Editor({ slug, template }: { slug?: string; template: string | null }) 
     setSaving(true);
     setLimitError('');
     try {
+      if (tplEdit && meta) {
+        const body = JSON.stringify({ name: title, description: meta.description, category: meta.category, tags: meta.tags.split(',').map(t => t.trim()).filter(Boolean), status: meta.status, pro_only: meta.pro_only, sort: Number(meta.sort) || 0, content: content_data });
+        await apiFetch(tplEdit.id ? `/api/admin/page-templates/${tplEdit.id}` : '/api/admin/page-templates', { method: tplEdit.id ? 'PUT' : 'POST', body });
+        showToast('success', 'Template saved.');
+        navigate('/admin/templates');
+        return;
+      }
       if (slug) {
         await apiFetch(`/api/qr/${slug}`, { method: 'PUT', body: JSON.stringify({ title, content_data }) });
         showToast('success', 'Page saved. Live on the next scan, no reprint needed.');
@@ -185,7 +186,7 @@ function Editor({ slug, template }: { slug?: string; template: string | null }) 
 
   const blockForm = (b: any, i: number) => {
     switch (b.kind) {
-      case 'header': return <>{f(i, 'name', 'Name')}{f(i, 'tagline', 'Line under the name')}{image(`${i}`, 'Photo or logo', b.avatar, v => upd(i, { avatar: v }))}</>;
+      case 'header': return <>{f(i, 'name', 'Name')}{f(i, 'tagline', 'Line under the name')}{f(i, 'emoji', 'Emoji icon (shown when there is no photo)')}{image(`${i}`, 'Photo or logo', b.avatar, v => upd(i, { avatar: v }))}</>;
       case 'button': return <div className="grid-2">{f(i, 'label', 'Label')}{f(i, 'url', 'Link', 'url', 'https://…')}</div>;
       case 'text': return f(i, 'text', 'Text', 'textarea');
       case 'image': return <>{image(`${i}`, 'Image', b.url, v => upd(i, { url: v }))}<div className="grid-2">{f(i, 'alt', 'Description (for screen readers)')}{f(i, 'link', 'Opens this link (optional)', 'url', 'https://…')}</div></>;
@@ -256,8 +257,34 @@ function Editor({ slug, template }: { slug?: string; template: string | null }) 
         <div className="grid-21" style={{ alignItems: 'start' }}>
           <div>
             <div className="card mb16">
-              <div className="card-title">{slug ? 'Edit page' : 'New page'}</div>
-              {input('Page title (only you see this)', title, setTitle)}
+              <div className="card-title">{tplEdit ? (tplEdit.id ? 'Edit template' : 'New template') : slug ? 'Edit page' : 'New page'}</div>
+              {input(tplEdit ? 'Template name' : 'Page title (only you see this)', title, setTitle)}
+              {tplEdit && meta && (<>
+                {input('Description (shown on the card)', meta.description, v => setMeta({ ...meta, description: v }))}
+                <div className="grid-2">
+                  {input('Category (the row it appears in)', meta.category, v => setMeta({ ...meta, category: v }))}
+                  {input('Tags (comma separated)', meta.tags, v => setMeta({ ...meta, tags: v }))}
+                </div>
+                <div className="grid-2">
+                  <div className="form-section" style={{ marginBottom: '10px' }}>
+                    <label className="form-label" htmlFor="f-status">Status</label>
+                    <select id="f-status" className="form-input" value={meta.status} onChange={e => setMeta({ ...meta, status: e.target.value })}><option value="draft">Draft (hidden)</option><option value="published">Published</option></select>
+                  </div>
+                  {input('Sort (lower first)', String(meta.sort), v => setMeta({ ...meta, sort: v as any }))}
+                </div>
+                <div className="grid-2">
+                  {(['bg2', 'card', 'line'] as const).map(k => (
+                    <div key={k} className="form-section" style={{ marginBottom: '10px' }}>
+                      <label className="form-label" htmlFor={`f-${k}`}>{{ bg2: 'Gradient end colour', card: 'Card colour', line: 'Line colour' }[k]}</label>
+                      <input id={`f-${k}`} type="color" className="form-input" style={{ height: '40px', padding: '4px' }} value={theme[k] || '#FFFFFF'} onChange={e => setTheme({ ...theme, [k]: e.target.value })} />
+                    </div>
+                  ))}
+                  <div className="form-section" style={{ marginBottom: '10px' }}>
+                    <label className="form-label" htmlFor="f-hdr">Header</label>
+                    <select id="f-hdr" className="form-input" value={theme.header || ''} onChange={e => setTheme({ ...theme, header: e.target.value })}><option value="">Coloured band</option><option value="plain">Plain on the background</option></select>
+                  </div>
+                </div>
+              </>)}
               <div className="grid-2">
                 {(['accent', 'bg', 'text'] as const).map(k => (
                   <div key={k} className="form-section" style={{ marginBottom: '10px' }}>
@@ -308,8 +335,16 @@ function Editor({ slug, template }: { slug?: string; template: string | null }) 
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
-              <Link className="btn btn-ghost" to="/pages">Cancel</Link>
-              <button className="btn btn-primary" disabled={saving || !title.trim() || !blocks.length} onClick={save}>{saving ? 'Saving…' : slug ? 'Save changes' : 'Create page'}</button>
+              <Link className="btn btn-ghost" to={tplEdit ? '/admin/templates' : '/pages'}>Cancel</Link>
+              {isAdmin && slug && !tplEdit && (
+                <button className="btn btn-ghost" disabled={saving || !blocks.length} onClick={async () => {
+                  try {
+                    await apiFetch('/api/admin/page-templates', { method: 'POST', body: JSON.stringify({ name: title || 'New template', category: 'Link in Bio', content: content_data }) });
+                    showToast('success', 'Saved as a draft template. Find it in Template admin.');
+                  } catch (e: any) { showToast('error', e?.message || 'Could not save the template'); }
+                }}>Save as template</button>
+              )}
+              <button className="btn btn-primary" disabled={saving || !title.trim() || !blocks.length} onClick={save}>{saving ? 'Saving…' : tplEdit ? 'Save template' : slug ? 'Save changes' : 'Create page'}</button>
             </div>
           </div>
 

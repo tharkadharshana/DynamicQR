@@ -12,6 +12,9 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const CreateQR = lazy(() => import('./pages/CreateQR'));
 const Kit = lazy(() => import('./pages/Kit'));
 const Pages = lazy(() => import('./pages/Pages'));
+const Templates = lazy(() => import('./pages/Templates'));
+const AdminTemplates = lazy(() => import('./pages/AdminTemplates'));
+const TemplateEditor = lazy(() => import('./pages/PageEditor').then(m => ({ default: m.TemplateEditor })));
 const PageEditor = lazy(() => import('./pages/PageEditor'));
 const Forms = lazy(() => import('./pages/Forms'));
 const FormResponses = lazy(() => import('./pages/Forms').then(m => ({ default: m.FormResponses })));
@@ -112,7 +115,11 @@ export default function App() {
                 <Route index element={<Dashboard />} />
                 <Route path="create" element={<CreateQR key="create" />} />
                 <Route path="kit" element={<Kit />} />
-                <Route path="pages" element={<Pages />} />
+                <Route path="pages" element={<Templates />} />
+                <Route path="pages/mine" element={<Pages />} />
+                <Route path="admin/templates" element={<AdminTemplates />} />
+                <Route path="admin/templates/new" element={<TemplateEditor />} />
+                <Route path="admin/templates/:id/edit" element={<TemplateEditor />} />
                 <Route path="pages/new" element={<PageEditor />} />
                 <Route path="pages/:slug/edit" element={<PageEditor />} />
                 <Route path="forms" element={<Forms />} />

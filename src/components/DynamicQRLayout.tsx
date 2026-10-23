@@ -1,5 +1,5 @@
 import React, { Suspense, useState, useEffect } from 'react';
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, logout } from '../supabase';
 import { useUI } from '../shared/UIContext';
 import WorkspaceSwitcher from './WorkspaceSwitcher';
@@ -12,6 +12,13 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
   const [userName, setUserName] = useState('');
   const [userInitials, setUserInitials] = useState('');
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(true);
+  const [params, setParams] = useSearchParams();
+  const searchRef = React.useRef<HTMLInputElement>(null);
+  // The gallery (/pages) uses the compact sidebar of its design: no section labels, collapsible Account, Upgrade card.
+  const gallery = location.pathname === '/pages';
+  // Pages that draw their own heading leave the top bar for search and actions only.
+  const ownHeader = gallery || location.pathname === '/kit';
 
   const currentPlan = planData?.plan || 'free';
   const planLabel = currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1);
@@ -28,7 +35,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
         const name = session.user.user_metadata?.full_name || session.user.user_metadata?.name || email.split('@')[0] || 'User';
         setUserEmail(email);
         setUserName(name);
-        setUserInitials(name.substring(0, 2).toUpperCase());
+        setUserInitials(name.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((w: string) => w[0]).join('').toUpperCase());
       }
     });
   }, []);
@@ -72,6 +79,13 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
     <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M5 4l-3 4 3 4M11 4l3 4-3 4M9 3l-2 10"/></svg>
   ) });
 
+  if (planData?.is_admin) accountItems.push({ name: 'Template admin', path: '/admin/templates', icon: (
+    <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><path d="M11.5 9v5M9 11.5h5"/></svg>
+  ) });
+  if (planData?.is_admin) accountItems.push({ name: 'AI costs', path: '/admin/ai-costs', icon: (
+    <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 1.5v13M11 4.5H6.5a2 2 0 000 4h3a2 2 0 010 4H5"/></svg>
+  ) });
+
   const legalItems: NavItem[] = [
     { name: 'Privacy Policy', path: '/legal/privacy-policy', icon: (
       <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M4 2h8a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V4a2 2 0 012-2z"/><path d="M6 6h4M6 10h4"/></svg>
@@ -95,6 +109,8 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
       case '/analytics': return { title: 'Analytics', sub: 'Detailed scan insights' };
       case '/create': return { title: 'Create QR', sub: 'Generate a new QR code' };
       case '/pages': return { title: 'Pages', sub: 'Mobile landing pages behind one QR' };
+      case '/admin/templates': return { title: 'Template admin', sub: 'Manage the page templates' };
+      case '/pages/mine': return { title: 'Your pages', sub: 'Pages you have created' };
       case '/pages/new': return { title: 'New page', sub: 'Start from a template or a blank page' };
       case '/forms': return { title: 'Forms', sub: 'Collect answers from a QR scan' };
       case '/forms/new': return { title: 'New form', sub: 'Fields, preview and where answers go' };
@@ -107,13 +123,27 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
       case '/legal/privacy-policy': return { title: 'Privacy Policy', sub: 'Legal documentation' };
       case '/legal/terms-and-conditions': return { title: 'Terms & Conditions', sub: 'Legal documentation' };
       case '/legal/refund-policy': return { title: 'Refund Policy', sub: 'Legal documentation' };
-      default: return { title: 'Scnr QR Codes', sub: 'with Real-Time Analytics' };
+      default: return location.pathname.startsWith('/admin/templates') ? { title: 'Template admin', sub: 'Edit a template' } : { title: 'Scnr QR Codes', sub: 'with Real-Time Analytics' };
     }
   };
 
   const { title, sub } = getPageTitle();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { theme, toggleTheme } = useUI();
+
+  // ⌘K / Ctrl+K focuses the search box. Typing sets ?q=, which the Pages gallery and the Dashboard read.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); searchRef.current?.focus(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  const searchQ = params.get('q') || '';
+  const searchUsed = gallery || location.pathname === '/';
+  const onSearch = (v: string) => {
+    if (searchUsed) setParams(v ? { q: v } : {}, { replace: true });
+  };
 
   // Update document title for SEO
   useEffect(() => {
@@ -126,7 +156,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
   }, [location.pathname]);
 
   return (
-    <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
+    <div className={`app-shell${gallery ? ' shell-gallery' : ''}`} style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
       {/* MOBILE OVERLAY */}
       {mobileMenuOpen && (
         <div 
@@ -182,16 +212,21 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
 
         <div className="nav-section">
           <div className="nav-label">Account</div>
-          {accountItems.map(item => (
+          <button type="button" className="nav-item nav-account-toggle" aria-expanded={accountOpen} onClick={() => setAccountOpen(o => !o)}>
+            <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3.314 2.686-6 6-6s6 2.686 6 6"/></svg>
+            Account
+            <svg className="nav-chevron" style={{ transform: accountOpen ? 'none' : 'rotate(180deg)' }} width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 10l4-4 4 4"/></svg>
+          </button>
+          {(accountOpen || !gallery) && accountItems.map(item => (
             <Link key={item.path} to={item.path} style={{ textDecoration: 'none' }}>
-              <div className={`nav-item ${location.pathname === item.path ? 'active' : ''}`}>
+              <div className={`nav-item ${gallery ? 'nav-sub ' : ''}${location.pathname === item.path ? 'active' : ''}`}>
                 {item.icon}
                 {item.name}
                 {item.badge}
               </div>
             </Link>
           ))}
-          <div className="nav-item" onClick={handleLogout}>
+          <div className={`nav-item${gallery ? ' nav-sub' : ''}`} onClick={handleLogout}>
             <svg className="nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M6 14H3a2 2 0 01-2-2V4a2 2 0 012-2h3M11 11l3-3-3-3M14 8H5"/></svg>
             Sign out
           </div>
@@ -209,14 +244,26 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
           ))}
         </div> */}
 
+        {planData && currentPlan === 'free' && (
+          <div className="upgrade-card">
+            <div className="upgrade-crown">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5L3 8z"/></svg>
+            </div>
+            <div className="upgrade-title">Upgrade to Pro</div>
+            <p>Get more templates, advanced analytics and team features.</p>
+            <Link to="/billing" className="upgrade-btn">View plans</Link>
+          </div>
+        )}
+
         <div className="sidebar-footer">
           <Link to="/settings" style={{ textDecoration: 'none' }}>
             <div className="user-chip">
               <div className="user-av">{userInitials}</div>
               <div className="user-info">
                 <div className="user-name">{userName}</div>
-                <div className="user-plan">{planData && <span className={`plan-badge ${currentPlan === 'free' ? '' : 'amber'}`}>{isTrial ? 'Trial' : planLabel}</span>}</div>
+                <div className="user-plan">{planData && <span className={`plan-badge ${currentPlan === 'free' ? '' : 'amber'}`}>{isTrial ? 'Trial' : `${planLabel} Plan`}</span>}</div>
               </div>
+              <svg className="user-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3l5 5-5 5"/></svg>
             </div>
           </Link>
         </div>
@@ -235,8 +282,15 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
             </button>
-            <h1 className="page-title" id="page-title">{title}</h1>
-            <span className="page-sub hidden sm:inline" id="page-sub" style={{ marginLeft: '12px' }}>{sub}</span>
+            {!ownHeader && <h1 className="page-title" id="page-title">{title}</h1>}
+            {!ownHeader && <span className="page-sub hidden sm:inline" id="page-sub" style={{ marginLeft: '12px' }}>{sub}</span>}
+            <label className="top-search">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+              <input ref={searchRef} type="search" value={searchUsed ? searchQ : ''} onChange={e => onSearch(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !searchUsed) navigate(`/?q=${encodeURIComponent((e.target as HTMLInputElement).value)}`); }}
+                placeholder={gallery ? 'Search templates, categories...' : 'Search anything...'} aria-label="Search" />
+              <kbd>⌘ K</kbd>
+            </label>
           </div>
           <div className="topbar-right">
             <WorkspaceSwitcher planData={planData} />
@@ -260,9 +314,14 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
                 </svg>
               )}
             </button>
-            <button className="btn btn-primary btn-sm" onClick={() => navigate('/create')} aria-label="New QR">
-              <span className="hidden sm:inline">+ New QR</span>
-              <span className="sm:hidden">+</span>
+            <button className="btn btn-icon btn-sm bell-btn" aria-label="Notifications" title="Notifications"
+              onClick={() => navigate(showTrialBanner ? '/billing' : '/settings')}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/></svg>
+              {currentPlan === 'free' && <span className="bell-dot" />}
+            </button>
+            <button className="btn btn-primary btn-sm new-qr-btn" onClick={() => navigate('/create')} aria-label="New QR">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              <span className="hidden sm:inline">New QR</span>
             </button>
           </div>
         </div>
