@@ -1588,7 +1588,9 @@ async function run() {
     check('A select field without options → 400 INVALID_FORM', badDef.status === 400 && badDef.body?.code === 'INVALID_FORM', `got ${badDef.status}`);
     const stranger = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'form', title: 'QA relay', content_data: { ...def, notify_email: 'someone-else@example.com' } }) });
     check('notify_email outside the account → 400 (no mail relay)', stranger.status === 400 && stranger.body?.code === 'INVALID_FORM', `got ${stranger.status}`);
-    const f = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'form', title: 'QA form', content_data: { ...def, notify_email: TEST_EMAIL } }) });
+    const badRedir = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'form', title: 'QA redir', content_data: { ...def, redirect_url: 'javascript:alert(1)' } }) });
+    check('A non-https redirect_url → 400 INVALID_FORM', badRedir.status === 400 && badRedir.body?.code === 'INVALID_FORM', `got ${badRedir.status}`);
+    const f = await api('/api/qr', { method: 'POST', token, body: JSON.stringify({ qr_type: 'form', title: 'QA form', content_data: { ...def, notify_email: TEST_EMAIL, redirect_url: 'https://example.com/thanks' } }) });
     const fs = f.body?.slug;
     check('Pro: create a form → 201, dynamic', f.status === 201 && f.body?.is_dynamic === true, `status=${f.status}`);
 
@@ -1597,6 +1599,7 @@ async function run() {
     check('Form renders native inputs and a honeypot', view.status === 200 && view.body.includes('name="name"') && view.body.includes('required') && view.body.includes('name="_hp"'), `status=${view.status}`);
     const ok = await runWorker(`/${fs}`, { kv, ua: 'QA-form', method: 'POST', form: { name: 'Ann', email: 'ann@example.com', stars: '5', sneaky: 'drop me' } });
     check('Valid answer → thank-you page', ok.status === 200 && ok.body.includes('Thanks, QA!'), `status=${ok.status}`);
+    check('Thank-you page continues to the https redirect_url', ok.body.includes('content="3;url=https://example.com/thanks"'), ok.body.slice(0, 160));
     const missing = await runWorker(`/${fs}`, { kv, ua: 'QA-form', method: 'POST', form: { email: 'x@example.com' } });
     check('Missing required field → 400, the form again with the error', missing.status === 400 && missing.body.includes('Name is required') && missing.body.includes('value="x@example.com"'), `status=${missing.status}`);
     const bot = await runWorker(`/${fs}`, { kv, ua: 'QA-form', method: 'POST', form: { name: 'Bot', _hp: 'http://spam' } });

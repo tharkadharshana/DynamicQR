@@ -56,6 +56,8 @@ export default function CreateQR() {
   const [loading, setLoading] = useState(false);
   const { showModal, showToast } = useUI();
   const [qrType, setQrType] = useState('url');
+  const [cqStep, setCqStep] = useState(0);
+  const [previewDevice, setPreviewDevice] = useState<'mobile' | 'desktop'>('mobile');
   const [isDynamic, setIsDynamic] = useState(true);
   const [urlError, setUrlError] = useState(false);
   const [planData, setPlanData] = useState<any>(null);
@@ -383,11 +385,26 @@ export default function CreateQR() {
   };
 
   return (
-    <div className="content">
+    <div className="content cq">
+      <header className="cq-head">
+        <button className="cq-back" onClick={() => navigate(-1)} aria-label="Back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 6l-6 6 6 6" /></svg></button>
+        <div className="cq-head-text">
+          <h1>{id ? 'Edit QR Code' : 'Create QR Code'}</h1>
+          <p>Generate a dynamic QR code with your own content, style it your way and track its performance.</p>
+        </div>
+        <button className="cq-ghost" onClick={() => navigate('/pages')}>▤ Load from template</button>
+      </header>
+      <ol className="cq-steps">
+        {[['cq-content', 'Content'], ['cq-style', 'Style'], ['cq-options', 'Options'], ['cq-review', 'Review']].map(([anchor, label], i) => (
+          <li key={anchor}><button className={cqStep === i ? 'on' : ''} onClick={() => { setCqStep(i); document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}><span>{i + 1}</span>{label}</button></li>
+        ))}
+      </ol>
       <div className="page active">
         <div className="create-layout">
           {/* Left: Form */}
           <div>
+              <div className="card mb16" id="cq-content">
+              <div className="card-title cq-cardhead"><span className="cq-num">1</span><span className="cq-title">QR Content<small>Choose what the QR code will open or do.</small></span></div>
               {/* QR Name field */}
               <div className="form-section">
                 <label className="form-label" htmlFor="f-qr-name">QR Name *</label>
@@ -426,8 +443,8 @@ export default function CreateQR() {
               </div>
 
               {/* QR type selector */}
-              <div className="card mb16">
-                <div className="card-title">QR code type</div>
+              <div className="cq-inner">
+                <div className="cq-label">QR Type</div>
                 <div className="qr-type-tabs">
                   {MAIN_TYPES.map(([t, label]) => (
                     <button key={t} className={`qr-type-tab ${qrType === t ? 'active' : ''}`} onClick={() => pickType(t)}>{label}</button>
@@ -627,13 +644,14 @@ export default function CreateQR() {
                   </div>
                 )}
               </div>
+              </div>
 
             {/* Style */}
-            <div className="card mb16">
-              <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ background: '#E85D3A', color: 'white', width: '24px', height: '24px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'bold' }}>2</span>
-                  <span style={{ textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text3)', fontSize: '13px' }}>STYLE</span>
+            <div className="card mb16" id="cq-style">
+              <div className="card-title cq-cardhead" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span className="cq-num">2</span>
+                  <span className="cq-title">Design &amp; Style<small>Make your QR code match your brand.</small></span>
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button className="btn btn-ghost" style={{ padding: '4px 12px', fontSize: '13px', border: '1px solid var(--border)', borderRadius: '6px' }} onClick={saveBrandStyle}>
@@ -844,10 +862,10 @@ export default function CreateQR() {
             </div>
 
             {/* Options */}
-            <div className="card mb16">
-              <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ background: '#E85D3A', color: 'white', width: '24px', height: '24px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'bold' }}>3</span>
-                <span style={{ textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text3)', fontSize: '13px' }}>OPTIONS</span>
+            <div className="card mb16" id="cq-options">
+              <div className="card-title cq-cardhead" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span className="cq-num">3</span>
+                <span className="cq-title">Advanced Options<small>Configure additional settings for your QR code.</small></span>
               </div>
 
               <div className="toggle-wrap" style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
@@ -1028,9 +1046,9 @@ export default function CreateQR() {
 
             {/* Visitor Guard */}
             <div className="card mb16">
-              <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ background: '#E85D3A', color: 'white', width: '24px', height: '24px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 'bold' }}>4</span>
-                <span style={{ textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text3)', fontSize: '13px' }}>VISITOR GUARD</span>
+              <div className="card-title cq-cardhead" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span className="cq-num">4</span>
+                <span className="cq-title">Visitor Guard<small>Limit who can scan and how often.</small></span>
               </div>
               
               <div style={{ padding: '8px 0 16px 0' }}>
@@ -1089,7 +1107,7 @@ export default function CreateQR() {
             </div>
 
             {/* Submit */}
-            <div style={{ display: 'flex', gap: '10px' }}>
+            <div id="cq-review" style={{ display: 'flex', gap: '10px' }}>
               <button 
                 className="btn btn-primary" 
                 style={{ flex: 1, padding: '12px', fontSize: '15px', justifyContent: 'center' }} 
@@ -1144,9 +1162,14 @@ export default function CreateQR() {
           </div>
 
           {/* Right: Preview */}
+          <div className="cq-side">
           <div className="qr-preview-card">
-            <div className="card-title">Live preview</div>
-            <div className="qr-preview-frame">
+            <div className="card-title">Live Preview</div>
+            <div className="cq-seg">
+              <button className={previewDevice === 'mobile' ? 'on' : ''} onClick={() => setPreviewDevice('mobile')}>▯ Mobile</button>
+              <button className={previewDevice === 'desktop' ? 'on' : ''} onClick={() => setPreviewDevice('desktop')}>▭ Desktop</button>
+            </div>
+            <div className={`qr-preview-frame cq-${previewDevice}`}>
               <div ref={canvasRef} id="preview-canvas"></div>
             </div>
             {/* The frame is added to downloads only; this band previews its text and colour. */}
@@ -1191,6 +1214,16 @@ export default function CreateQR() {
                 </span>
               </div>
             </div>
+          </div>
+          <div className="cq-tips">
+            <h3>💡 Quick Tips</h3>
+            <ul><li>Use a high contrast colour for better scanning.</li><li>Keep your logo simple and clear.</li><li>Test your QR code before publishing.</li><li>For best results, use a clean and minimal design.</li></ul>
+          </div>
+          <div className="cq-help">
+            <h3>Need help?</h3>
+            <p>Explore our free tools or read the guide.</p>
+            <button className="cq-ghost" onClick={() => navigate('/tools')}>View tools →</button>
+          </div>
           </div>
         </div>
       </div>

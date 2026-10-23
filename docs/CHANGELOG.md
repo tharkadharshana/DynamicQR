@@ -6,6 +6,13 @@ One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-r
 
 - Added `LICENSE`: all rights reserved, no use, copying, modification, distribution or sale without the owner's written permission. `package.json` now says `UNLICENSED`; README links the license.
 
+## Editors redesigned (branch `feat/editors-redesign`)
+
+- **Form builder**: new layout with a title card and Build / Settings / Responses tabs, field rows with type tiles, drag to reorder, a row menu (move, duplicate, delete), a Field Settings panel, a desktop and mobile live preview, and Form Actions. New: **Redirect after submit** (`content_data.redirect_url`, https only, checked by `formDefError`); the thank-you page shows a Continue link and moves on after 3 seconds.
+- **Page builder**: cards per block with icon tiles, accent swatches and colour fields, a mobile and desktop live preview with language tabs, Tips and Page features.
+- **Create QR**: page header with back and Load from template, a four-step bar (Content, Style, Options, Review) that scrolls to each section, numbered cards, and a preview column with Quick Tips and help. The dark theme palette is now a navy blue.
+- Editor pages hide the page title in the top bar because they draw their own header.
+
 ## One shell for every page (branch `fix/consistent-shell`)
 
 - The Pages gallery and the Restaurant Kit now use the same sidebar and top bar as the Dashboard (MAIN and ACCOUNT groups, page title and subtitle, search, theme, bell, New QR). The compact sidebar variant with the Upgrade card and the title-less top bar are gone.

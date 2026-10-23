@@ -220,7 +220,10 @@ function renderBlocks(config: any, d: any, lang: Lang, t: Record<string, string>
 
 /** A form code: native inputs (required, type=email, … validate in the browser for free), POST to the same URL. */
 function renderForm(config: any, d: any, t: Record<string, string>, state: FormState): string {
-  if (state.done) return `<main><div class="top"><h1>${esc(d.title || config.title || 'Form')}</h1></div><div class="box"><p>${esc(d.thank_you || t.thanks)}</p></div></main>`;
+  if (state.done) {
+    const go = https(d.redirect_url); // after a few seconds the visitor continues to the owner's own page
+    return `<main><div class="top"><h1>${esc(d.title || config.title || 'Form')}</h1></div><div class="box"><p>${esc(d.thank_you || t.thanks)}</p>${go ? `<meta http-equiv="refresh" content="3;url=${esc(go)}"><a class="btn" href="${esc(go)}" rel="noopener">${esc(t.continue || 'Continue')}<span>›</span></a>` : ''}</div></main>`;
+  }
   const v = (id: string) => esc(state.values?.[id] ?? '');
   const field = (f: any) => {
     const req = f.required ? ' required' : '', id = esc(f.id), label = `<span>${esc(f.label)}${f.required ? ' *' : ''}</span>`;
@@ -396,6 +399,8 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('guestPage.ts'
   const fe = (renderGuestPage(form, 'en', 'https://s.lk/f', { error: 'Email is required', values: { r: '4' } }) as any).body as string;
   assert(fe.includes('role="alert">Email is required') && fe.includes('value="4" checked'), 'form error keeps values');
   assert((renderGuestPage(form, 'si', 'https://s.lk/f', { done: true }) as any).body.includes('ස්තූතියි'), 'thank-you page');
+  const redir = (renderGuestPage({ ...form, content_data: { ...form.content_data, redirect_url: 'https://own.lk/thanks' } }, 'en', 'https://s.lk/f', { done: true }) as any).body as string;
+  assert(redir.includes('content="3;url=https://own.lk/thanks"') && !(renderGuestPage({ ...form, content_data: { ...form.content_data, redirect_url: 'javascript:1' } }, 'en', 'https://s.lk/f', { done: true }) as any).body.includes('refresh'), 'thank-you redirects only to https');
   console.log('guestPage self-check ok');
   });
 }

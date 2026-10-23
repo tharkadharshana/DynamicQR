@@ -26,6 +26,7 @@ export function formDefError(d: any): string | null {
   // Options must be what a browser submits back: trimmed strings with single spaces.
   if (fields.some((f: any) => Array.isArray(f.options) && (f.options.length > 50 || f.options.some((o: unknown) =>
     typeof o !== 'string' || !o || o.length > 100 || o !== o.trim().replace(/\s+/g, ' '))))) return 'Options must be up to 50 trimmed texts of up to 100 characters';
+  if (d.redirect_url && !/^https:\/\/[^\s<>"']{1,500}$/.test(String(d.redirect_url))) return 'redirect_url must be an https link';
   if (d.notify_email && !EMAIL_RE.test(String(d.notify_email))) return 'notify_email is not a valid email address';
   return null;
 }
@@ -73,6 +74,7 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('forms.ts')) {
   assert(formDefError(def) === null, 'valid definition');
   assert(formDefError({ fields: [] }) && formDefError({ fields: [{ id: 'A!', type: 'text', label: 'x' }] }) && formDefError({ fields: [{ id: 'a', type: 'select', label: 'x' }] }), 'bad definitions');
   assert(formDefError({ fields: [{ id: 'a', type: 'text', label: 'x' }, { id: 'a', type: 'text', label: 'y' }] }) === 'Field ids must be unique', 'duplicate ids');
+  assert(formDefError({ fields: [{ id: 'a', type: 'text', label: 'x' }], redirect_url: 'http://x.lk' }) && formDefError({ fields: [{ id: 'a', type: 'text', label: 'x' }], redirect_url: 'javascript:1' }) && !formDefError({ fields: [{ id: 'a', type: 'text', label: 'x' }], redirect_url: 'https://x.lk/thanks' }), 'redirect_url must be https');
   assert(formDefError({ fields: [{ id: '_hp', type: 'text', label: 'x' }] }) && formDefError({ fields: [{ id: 's', type: 'select', label: 'x', options: [1] }] })
     && formDefError({ fields: [{ id: 's', type: 'select', label: 'x', options: ['  A  B '] }] }), 'honeypot id and untrimmed options refused');
   const good = validateSubmission(def, { name: ' Ann ', email: 'a@b.lk', size: 'M', stars: '5', ok: 'on', when: '2026-10-13', n: '3.5', evil: 'x' }) as any;
