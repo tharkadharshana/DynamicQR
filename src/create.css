@@ -8,7 +8,7 @@
 .cq-head p{font-size:13px;color:var(--text3);margin:0}
 .cq-ghost{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 18px;border-radius:11px;border:1px solid var(--border2);background:var(--surface);color:var(--text);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap}
 .cq-ghost:hover{background:var(--surface2)}
-.cq-steps{display:flex;align-items:center;list-style:none;margin:0 0 20px;padding:0 0 0 52px;gap:0}
+.cq-steps{display:flex;align-items:center;list-style:none;margin:0 -24px 20px;padding:12px 24px 12px 76px;gap:0;position:sticky;top:-22px;z-index:20;background:var(--bg);border-bottom:1px solid var(--border)}
 .cq-steps li{display:flex;align-items:center}
 .cq-steps li:not(:last-child)::after{content:"";width:34px;height:1px;background:var(--border2);margin:0 14px}
 .cq-steps button{display:inline-flex;align-items:center;gap:10px;border:0;background:none;font:inherit;font-size:13px;color:var(--text3);cursor:pointer;padding:0}
@@ -50,7 +50,7 @@
 @media (max-width:760px){
   .cq{padding:14px}
   .cq-head{flex-wrap:wrap}
-  .cq-steps{padding-left:0;overflow-x:auto}
+  .cq-steps{margin:0 -14px 20px;padding:10px 14px;top:-14px;overflow-x:auto}
   .cq-steps li:not(:last-child)::after{width:14px;margin:0 8px}
 }
 

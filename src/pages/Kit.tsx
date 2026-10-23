@@ -236,7 +236,9 @@ function KitWizard() {
           <ol className="kit-steps">
             {STEPS.map((s, i) => (
               <li key={s} className={i === step ? 'on' : i < step ? 'done' : ''}>
-                <span>{i < step ? Ic.check : i + 1}</span><em>{s}</em>{i < STEPS.length - 1 && <hr />}
+                <button type="button" disabled={i > step + 1 || !!busy} aria-current={i === step ? 'step' : undefined} onClick={() => i < step ? setStep(i) : i === step + 1 && next()}>
+                  <span>{i < step ? Ic.check : i + 1}</span><em>{s}</em>
+                </button>{i < STEPS.length - 1 && <hr />}
               </li>
             ))}
           </ol>
