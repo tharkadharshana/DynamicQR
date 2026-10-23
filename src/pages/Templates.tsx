@@ -33,6 +33,15 @@ function Thumb({ tpl }: { tpl: Tpl }) {
   const h = THUMB_H[tpl.category] || 265;
   const ref = useRef<HTMLDivElement>(null);
   const [on, setOn] = useState(false);
+  const [scale, setScale] = useState(0.496);
+  // The frame is a 375px phone page scaled to the card's width.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setScale(el.clientWidth / 375));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   useEffect(() => {
     const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setOn(true); io.disconnect(); } }, { rootMargin: '300px' });
     if (ref.current) io.observe(ref.current);
@@ -41,7 +50,7 @@ function Thumb({ tpl }: { tpl: Tpl }) {
   const html = useMemo(() => (on ? (renderGuestPage({ qr_type: 'page', title: tpl.name, content_data: tpl.content }, 'en', 'https://preview.local/p') as any)?.body || '' : ''), [on, tpl]);
   return (
     <div className="tg-thumb" ref={ref} style={{ height: h }}>
-      {on && <iframe title={tpl.name} srcDoc={html} sandbox="" tabIndex={-1} loading="lazy" />}
+      {on && <iframe title={tpl.name} srcDoc={html} sandbox="" tabIndex={-1} loading="lazy" style={{ transform: `scale(${scale})`, height: h / scale }} />}
     </div>
   );
 }

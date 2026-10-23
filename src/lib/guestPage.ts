@@ -3,6 +3,7 @@
 // `.js` extension: Vercel runs the server as Node ESM, which does not resolve extensionless paths.
 import { vcardText, buildDestination, SOCIALS } from './qrContent.js';
 import { formFields, HONEYPOT } from './forms.js';
+import { normalizeMenu } from './menu.js';
 
 export type Lang = 'en' | 'si' | 'ta';
 export type Rendered =
@@ -96,7 +97,7 @@ export function icsText(d: any = {}, uid = 'scnr'): string {
 }
 
 // ── Pages builder (Phase 7): content_data.blocks[] ────────────────────────────
-export const BLOCK_KINDS = ['header', 'socials', 'button', 'text', 'image', 'video', 'products', 'contact', 'offer', 'wifi', 'divider'] as const;
+export const BLOCK_KINDS = ['header', 'socials', 'button', 'text', 'image', 'video', 'products', 'menu', 'contact', 'offer', 'wifi', 'divider'] as const;
 const hex = (c: unknown, d: string) => (/^#[0-9a-f]{6}$/i.test(String(c || '')) ? String(c) : d);
 const https = (u: unknown) => (/^https:\/\//i.test(String(u || '')) ? String(u) : '');
 const FONTS: Record<string, string> = {
@@ -195,6 +196,13 @@ function renderBlocks(config: any, d: any, lang: Lang, t: Record<string, string>
         }).join('');
         return items ? `${b.title ? `<h2>${esc(b.title)}</h2>` : ''}<div class="prods">${items}</div>` : '';
       }
+      case 'menu': {
+        const sections = normalizeMenu(b).sections.map(sec => `<h2>${esc(sec.name)}</h2><div class="menu">${sec.items.map(it => {
+          const img = https(it.image);
+          return `<div class="mi">${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ''}<div class="mt"><b>${esc(it.name)}</b>${it.description ? `<small>${esc(it.description)}</small>` : ''}</div>${it.price ? `<span class="mp">${esc(it.price)}</span>` : ''}</div>`;
+        }).join('')}</div>`).join('');
+        return sections;
+      }
       case 'contact': {
         const row = (label: string, v: unknown, href: string) => v ? `<div class="row"><span>${esc(label)}</span>${href ? `<a href="${esc(href)}">${esc(v)}</a>` : `<b>${esc(v)}</b>`}</div>` : '';
         const phone = String(b.phone || '').replace(/[^\d+]/g, '');
@@ -278,6 +286,7 @@ export function renderGuestPage(config: any, lang: Lang, url: string, formState:
   .socs{display:flex;flex-wrap:wrap;gap:8px;justify-content:center} .soc{padding:8px 12px;border-radius:999px;background:${accent};color:#fff;text-decoration:none;font-size:13px;font-weight:600;text-transform:capitalize}
   .img{width:100%;border-radius:12px;display:block} .vid{position:relative;padding-top:56.25%} .vid iframe{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:12px}
   .prods{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:4px} .prod{flex:0 0 150px;scroll-snap-align:start;background:#fff;border:1px solid #EADFD3;border-radius:12px;padding:8px;color:${fg};text-decoration:none;display:grid;gap:4px}
+  .menu{display:grid;gap:8px} .mi{display:flex;gap:10px;align-items:center;background:${card};border:1px solid ${line};border-radius:12px;padding:10px 12px} .mi img{width:56px;height:56px;border-radius:8px;object-fit:cover;flex-shrink:0} .mt{flex:1;min-width:0;display:grid;gap:2px} .mt small{opacity:.7;font-size:12px;line-height:1.35} .mp{font-weight:700;white-space:nowrap;color:${accent}}
   .prod img,.prod .ph{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;background:${accent}22} .prod small{opacity:.7} .row a{color:${accent}} .save{margin-top:6px}`;
         const header = pageBlocks(d).find((b: any) => b.kind === 'header');
         const hasLangs = !!(d.i18n && (d.i18n.si || d.i18n.ta));
@@ -357,6 +366,8 @@ if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('guestPage.ts'
   assert(html.includes('href="/abcdefg/l/8-0"') && !html.includes('/l/8-1') && !html.includes('/l/5'), 'products tracked; unsafe links dropped');
   assert(html.includes('youtube-nocookie.com/embed/dQw4w9WgXcQ') && html.includes('?vcf=1') && html.includes('<hr>'), 'video, contact, divider');
   assert(html.includes('#ff0000') && !html.includes('red;}') && html.includes('999px'), 'theme: valid colours only');
+  const menuPg = (renderGuestPage({ qr_type: 'page', slug: 'abcdefg', title: 'M', content_data: { blocks: [{ kind: 'menu', sections: [{ name: '<i>Starters</i>', items: [{ name: 'Fish <x>', description: 'Crisp', price: 'LKR 200', image: 'https://img.lk/a.png' }, { name: 'Bad', image: 'javascript:1' }] }] }] } }, 'en', 'https://s.lk/abcdefg') as any).body as string;
+  assert(menuPg.includes('<h2>Starters</h2>') && menuPg.includes('>Fish</b>') && !menuPg.includes('<x>') && menuPg.includes('LKR 200') && menuPg.includes('https://img.lk/a.png') && !menuPg.includes('javascript:'), 'menu block: sections, items, escaped, safe images');
   const dark = (renderGuestPage({ ...pg, content_data: { blocks: [{ kind: 'header', name: 'N', emoji: '🍜' }], theme: { bg: '#101020', bg2: '#302060', card: '#1B1D33', line: '#33355A', header: 'plain', bg2x: 'x' } } }, 'en', 'https://s.lk/abcdefg') as any).body as string;
   assert(dark.includes('linear-gradient(165deg,#101020,#302060)') && dark.includes('#1B1D33') && dark.includes('<div class="emo">🍜</div>'), 'theme: gradient, dark cards, emoji header');
   assert(!(renderGuestPage({ ...pg, content_data: { blocks: [{ kind: 'text', text: 'x' }], theme: { bg2: 'red;}' } } }, 'en', 'https://s.lk/abcdefg') as any).body.includes('red;}'), 'theme: bg2 must be a hex colour');

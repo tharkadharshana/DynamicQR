@@ -13,8 +13,8 @@ Dynamic QR SaaS for Sri Lankan businesses. React 19 + Vite SPA, Express (`server
    - Worker behavior goes in section 15b (the Worker runs in-process with a fake KV).
    - Pure logic gets an assert-based self-check at the bottom of its file (see `src/lib/guestPage.ts`, `csv.ts`, `digest.ts`); run it with `npx tsx <file>`.
 4. **Docs ship with the change.** Update the matching `docs/01–11`, add an entry to `docs/CHANGELOG.md`, update `docs/README.md` for new pages, and tick the ROADMAP checklist.
-5. **Schema change?** Add an idempotent `db/migrations/00N_<name>.sql`, mirror the end state into `db/schema.sql`, then **stop**. The user must paste the file into the Supabase SQL editor. CI runs QA against the real database, so the PR cannot go green before that. Wait for "done".
-6. Before pushing, all green: `npm run lint`, `node scripts/check-server-imports.mjs`, the self-checks you touched, and `tests/qa.ts` (see below).
+5. **Schema change?** Add an idempotent `db/migrations/00N_<name>.sql`, mirror the end state into `db/schema.sql`, run `node scripts/build-db-dump.mjs` (rebuilds `db/full-setup.sql`, the one-paste setup for a new project), then **stop**. The user must paste the file into the Supabase SQL editor. CI runs QA against the real database, so the PR cannot go green before that. Wait for "done".
+6. Before pushing, all green: `npm run lint`, `node scripts/check-server-imports.mjs`, `node scripts/build-db-dump.mjs --check` (fails if `db/schema.sql` lacks anything a migration adds, or `db/full-setup.sql` is stale), the self-checks you touched, and `tests/qa.ts` (see below).
 7. `git push -u origin <branch>`, `gh pr create --base main` (end the body with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`), `gh pr checks <n> --watch`, then `gh pr merge <n> --squash --delete-branch`, then `git checkout main && git pull && git branch -D <branch>`. Never skip hooks or bypass checks.
 8. If `worker/worker.js` changed: ask the user to run `cd worker && npx wrangler deploy` (cloud sessions have no Cloudflare login). Smoke test: `curl -s https://scnr.tharkak.com/api/health` → `status: ok`; a real slug → 302; `/internal/slug/x` → 401.
 9. Finish by reporting what shipped and what the user must do next (migration, Worker deploy, env vars).
@@ -30,7 +30,7 @@ CI (`.github/workflows/api-qa.yml`) runs it against the real Supabase project. T
 ```
 export PAYHERE_MERCHANT_ID=qa-merchant PAYHERE_SECRET=qa-secret \
   POLAR_WEBHOOK_SECRET=qa-polar-secret POLAR_PRODUCT_PRO_MONTHLY=prod_qa_pro_monthly \
-  CRON_SECRET=qa-cron-secret ADMIN_EMAILS=qa-templates-admin@test.dynamicqr.local RATE_LIMIT_MAX=5000 RATE_LIMIT_WRITE_MAX=1000 \
+  CRON_SECRET=qa-cron-secret ADMIN_EMAILS=qa-templates-admin@test.dynamicqr.local OPENAI_API_KEY=qa-openai-key OPENAI_BASE_URL=http://localhost:3101/v1 AI_RATE_MAX=500 RATE_LIMIT_MAX=5000 RATE_LIMIT_WRITE_MAX=1000 \
   NODE_ENV=test APP_URL=http://localhost:3100 PORT=3100
 npx tsx server/index.ts &
 QA_API_URL=http://localhost:3100 npx tsx tests/qa.ts

@@ -42,7 +42,7 @@
 .tg-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px 18px 18px;display:flex;flex-direction:column;box-shadow:0 10px 24px -20px rgba(30,40,80,.35)}
 .tg-thumb-btn{border:0;background:none;padding:0;cursor:pointer;display:block;width:100%}
 .tg-thumb{position:relative;width:100%;height:265px;border-radius:12px;overflow:hidden;background:var(--surface2)}
-.tg-thumb iframe{position:absolute;left:0;top:0;width:375px;height:534px;border:0;transform-origin:0 0;transform:scale(.496);pointer-events:none}
+.tg-thumb iframe{position:absolute;left:0;top:0;width:375px;border:0;transform-origin:0 0;pointer-events:none}
 .tg-card h4{font-size:15px;font-weight:700;color:var(--text);margin:18px 0 6px}
 .tg-card p{font-size:12.5px;line-height:1.55;color:var(--text3);margin:0 0 16px;min-height:38px}
 .tg-use{margin-top:auto;height:38px;border-radius:10px;border:1px solid var(--border2);background:var(--surface);color:var(--text);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}

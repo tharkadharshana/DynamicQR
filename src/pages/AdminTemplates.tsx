@@ -25,6 +25,14 @@ export default function AdminTemplates() {
     type: 'confirm', title: 'Delete template', message: `Delete "${t.name}"? Pages already made from it are not affected.`, confirmText: 'Delete', isDestructive: true,
     onConfirm: () => { act(() => apiFetch(`/api/admin/page-templates/${t.id}`, { method: 'DELETE' }), 'Deleted'); },
   });
+  const generate = () => showModal({
+    type: 'prompt', title: 'Generate a template with AI', message: 'Describe the page, for example: "dark landing page for a yoga studio with class booking and WhatsApp". The result is saved as a draft for you to review.', confirmText: 'Generate',
+    onConfirm: (prompt?: string) => {
+      if (!prompt?.trim()) return;
+      act(() => apiFetch('/api/admin/page-templates/generate', { method: 'POST', body: JSON.stringify({ prompt }) }), 'Draft created. Review it, then publish.');
+    },
+  });
+
   const shown = (rows || []).filter(t => filter === 'all' || (filter === 'ai' ? t.source === 'ai' : t.status === filter));
   const pill = (txt: string, color: string) => <span style={{ fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '999px', background: `${color}22`, color }}>{txt}</span>;
 
@@ -34,6 +42,7 @@ export default function AdminTemplates() {
         <div className="section-row">
           <span className="section-title">Page templates</span>
           <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="btn btn-ghost btn-sm" disabled={busy} onClick={generate}>✨ Generate with AI</button>
             <Link className="btn btn-primary btn-sm" to="/admin/templates/new">+ New template</Link>
           </div>
         </div>

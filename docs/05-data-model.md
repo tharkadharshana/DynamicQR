@@ -109,6 +109,9 @@ Columns the code **reads but which do not exist**: `referrers`, `regions`, `isps
 |---|---|
 | `webhooks` | `uid, url, secret, events text[], created_at, last_status, last_delivery_at`. RLS on, no policies. |
 | `workspaces` | `owner_uid, name`. RLS on, no policies. |
+| `ai_usage` | AI cost ledger (migration 013): `uid`, `kind` (`menu_generate`, `menu_import`, `image`, `template_generate`), `model`, `quality`, `size`, `images`, `input_tokens`, `output_tokens`, `cached_tokens`, `cost_usd`, `unit_prices` (the prices used), `status`, `ref`, `created_at`. RLS on, no policies. |
+| `cost_items` | Hand-entered monthly costs (`month` YYYY-MM, `label`, `amount_usd`). RLS on, no policies. |
+| `profiles.ai_grant_usd` | Extra monthly AI allowance granted by an admin, in USD of provider cost |
 | `page_templates` | Pages-builder presets (Phase 13): `id` (text pk), `name`, `description`, `category`, `tags[]`, `content` (jsonb), `status` (`draft`/`published`), `sort`, `source` (`manual`/`ai`), `pro_only`. RLS on, no policies. |
 | `qr_codes.workspace_id` | → `workspaces(id)` on delete set null; `null` is the owner's default workspace, so existing rows need no backfill |
 | `qr_codes.domain` | the verified custom domain this code prints with; `null` = the account default |

@@ -68,6 +68,10 @@ QR codes made while the dashboard runs on localhost encode `http://localhost…/
 | `RESEND_API_KEY`, `DIGEST_FROM` | for the weekly digest and form notifications | Resend API key and sender (e.g. `Scnr <digest@yourdomain>`, on a domain verified in Resend). Without the key the digest cron skips. |
 | `CF_API_TOKEN`, `CF_ZONE_ID`, `CF_CNAME_TARGET` | for custom domains (Team) | A Cloudflare API token with SSL and Certificates edit plus custom hostnames on the zone, the zone id, and the fallback hostname customers CNAME to. Without them, adding a domain returns 503. |
 | `ADMIN_EMAILS` | for template admins | Comma-separated emails allowed to manage page templates (`/api/admin/page-templates`). Not an API-key right. CI sets `qa-templates-admin@test.dynamicqr.local`. |
+| `OPENAI_API_KEY` | for AI | Server only, never `VITE_*`. Without it every AI route returns 503 `AI_DISABLED` and the Kit shows the AI cards as unavailable. Set it in Vercel (Production and Preview) and in the local `.env`. |
+| `OPENAI_TEXT_MODEL`, `OPENAI_IMAGE_MODEL`, `OPENAI_IMAGE_QUALITY` | optional | Defaults `gpt-6.1-sol`, `gpt-image-2.5-flare`, `medium` (checked against `GET /v1/models` on 2026-10-22). Use `gpt-image-2.5-sunburst` for tighter edit control, `gpt-6-luna` for cheaper menus. If you change a model, add its price to `src/lib/aiPricing.ts`; an unpriced model is billed in the ledger at the top rate. |
+| `OPENAI_BASE_URL` | QA only | Points the server at the in-process mock the QA starts (`http://localhost:3101/v1`), so CI spends nothing. |
+| `AI_RATE_MAX` | optional | AI requests per user per 10 minutes (default 20). |
 | `RATE_LIMIT_MAX`, `RATE_LIMIT_WRITE_MAX` | QA only | Override the per-IP limits (default 300 / 60 per 15 min). CI raises them because QA runs every call from one IP. |
 | `VERCEL` | auto | Set by Vercel. Skips `listen()` and static serving. |
 
@@ -187,3 +191,7 @@ Not covered yet: the frontend (no browser tests) and real Cloudflare KV behaviou
 - Worker logs use `console.error` only. View them with `wrangler tail`.
 
 There is no alerting, error tracking (Sentry or similar) or uptime check. The cheapest useful addition is an external uptime monitor that checks a real slug for a 302, because that is the path customers depend on and it is broken today.
+
+## Setting up a new database
+
+`db/full-setup.sql` is the complete setup: `db/schema.sql` plus every migration in order (tables, RLS, the `files` storage bucket, `record_scan`, `record_click`, `jsonb_inc`). Paste it into the SQL editor of a new Supabase project; it is safe to re-run. It is generated: after adding a migration, mirror it into `db/schema.sql` and run `node scripts/build-db-dump.mjs` (`--check` fails when the file is stale). Not captured by SQL: Auth settings (Google OAuth, redirect URLs), the Vercel and Cloudflare setup (sections above) and the data itself.

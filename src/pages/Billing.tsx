@@ -18,6 +18,8 @@ export default function Billing() {
   const { planData } = useOutletContext<{ planData: any }>();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loadingInvoices, setLoadingInvoices] = useState(true);
+  const [aiUse, setAiUse] = useState<any>(null); // credits used this month (404-safe: stays null when AI is off)
+  useEffect(() => { apiFetch('/api/ai/usage').then(setAiUse).catch(() => {}); }, []);
   const [isAnnual, setIsAnnual] = useState(false);
   const [currency, setCurrency] = useState<Currency>('LKR');
   const [error, setError] = useState<string | null>(null);
@@ -237,6 +239,17 @@ export default function Billing() {
               <div className="progress-fill" style={{ width: isUnlimitedQr ? '0%' : `${qrPct}%`, background: 'var(--blue)' }}></div>
             </div>
           </div>
+          {aiUse?.enabled && aiUse.limit_credits > 0 && (
+            <div className="usage-card">
+              <div className="usage-icon">✨</div>
+              <div className="usage-label">AI credits this month</div>
+              <div className="usage-val">{aiUse.used_credits.toLocaleString()} used</div>
+              <div className="usage-sub">{aiUse.limit_credits.toLocaleString()} included</div>
+              <div className="progress-bar" style={{ marginTop: '8px' }}>
+                <div className="progress-fill" style={{ width: `${Math.min(100, (aiUse.used_credits / aiUse.limit_credits) * 100)}%`, background: aiUse.used_credits >= aiUse.limit_credits ? 'var(--red)' : 'var(--purple)' }}></div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Plan comparison + upgrade */}

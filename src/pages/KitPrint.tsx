@@ -3,6 +3,7 @@ import { useParams, useSearchParams, Link } from 'react-router-dom';
 import QRCodeStyling from 'qr-code-styling';
 import { apiFetch } from '../lib/api';
 import { getQRContent, stylingOptions, shortHost } from '../lib/qrContent';
+import { pageEditPath } from './Pages';
 
 // A6 table tent. Printing uses the browser's own print-to-PDF (no PDF library).
 const PRINT_CSS = `
@@ -40,14 +41,17 @@ export default function KitPrint() {
   }, [slug]);
 
   if (!qr) return <div className="content" style={{ padding: '28px' }}>Loading…</div>;
-  const d = qr.content_data || {};
+  const raw = qr.content_data || {};
+  // A block page (Kit v2) keeps the name, colour and offer in its blocks; an older Kit page keeps them at the top level.
+  const blocks: any[] = Array.isArray(raw.blocks) ? raw.blocks : [];
+  const d = { ...raw, name: raw.name || blocks.find(b => b.kind === 'header')?.name, color: raw.color || raw.theme?.accent, offer: raw.offer || blocks.find(b => b.kind === 'offer') };
 
   return (
     <div className="content" style={{ padding: '28px', overflow: 'auto', height: '100%' }}>
       <style>{PRINT_CSS}</style>
       <div className="no-print" style={{ display: 'flex', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
         <button className="btn btn-primary" onClick={() => window.print()}>Print / save as PDF (A6)</button>
-        <Link className="btn btn-ghost" to={`/kit?edit=${slug}`}>Edit kit</Link>
+        <Link className="btn btn-ghost" to={pageEditPath(qr)}>Edit kit</Link>
         <Link className="btn btn-ghost" to="/">Done</Link>
         <span style={{ fontSize: '12px', color: 'var(--text3)', alignSelf: 'center' }}>Tip: print one, scan it with your phone, then print the rest.</span>
       </div>

@@ -14,7 +14,7 @@ const DEFAULT_THEME = { accent: '#2B4A3A', bg: '#FFF8F2', text: '#24180F', butto
 const BLANK = { theme: DEFAULT_THEME, blocks: [{ kind: 'header', name: 'Your name', tagline: '' }] };
 // The main text fields of each block that get a Sinhala and Tamil version (content_data.i18n[lang].blocks[i]).
 const TR_FIELDS: Record<string, string[]> = { header: ['name', 'tagline'], button: ['label'], text: ['text'], offer: ['title', 'text'] };
-const KIND_LABELS: Record<string, string> = { header: 'Header', socials: 'Social links', button: 'Button', text: 'Text', image: 'Image', video: 'Video', products: 'Products', contact: 'Contact', offer: 'Offer', wifi: 'Wi-Fi', divider: 'Divider' };
+const KIND_LABELS: Record<string, string> = { header: 'Header', socials: 'Social links', button: 'Button', text: 'Text', image: 'Image', video: 'Video', products: 'Products', menu: 'Menu', contact: 'Contact', offer: 'Offer', wifi: 'Wi-Fi', divider: 'Divider' };
 const LANG_LABELS: Record<string, string> = { si: 'Sinhala', ta: 'Tamil' };
 const IMAGE_TYPES: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
 
@@ -80,7 +80,7 @@ export default function PageEditor() {
 
 function Editor({ slug, template, tpl, tplEdit }: { slug?: string; template: string | null; tpl: { name: string; content: any } | null; tplEdit?: any }) {
   const navigate = useNavigate();
-  const { showToast } = useUI();
+  const { showToast, showModal } = useUI();
   const [start] = useState(() => (!slug ? structuredClone(tpl?.content || BLANK) : null));
   const [title, setTitle] = useState(start ? tpl?.name || 'My page' : '');
   const [theme, setTheme] = useState<any>(start ? { ...DEFAULT_THEME, ...start.theme } : DEFAULT_THEME);
@@ -111,7 +111,7 @@ function Editor({ slug, template, tpl, tplEdit }: { slug?: string; template: str
   const upd = (i: number, patch: any) => setBlocks(bs => bs.map((b, j) => (j === i ? { ...b, ...patch } : b)));
   const updItem = (i: number, j: number, patch: any) => setBlocks(bs => bs.map((b, k) => (k === i ? { ...b, items: b.items.map((it: any, m: number) => (m === j ? { ...it, ...patch } : it)) } : b)));
   const move = (i: number, d: number) => setBlocks(bs => { const n = [...bs]; [n[i], n[i + d]] = [n[i + d], n[i]]; return n; });
-  const add = () => setBlocks(bs => [...bs, { id: bid(), kind: addKind, ...(addKind === 'socials' || addKind === 'products' ? { items: [] } : {}), _tr: { si: {}, ta: {} } }]);
+  const add = () => setBlocks(bs => [...bs, { id: bid(), kind: addKind, ...(addKind === 'socials' || addKind === 'products' ? { items: [] } : addKind === 'menu' ? { sections: [{ name: 'Starters', items: [{ name: '' }] }] } : {}), _tr: { si: {}, ta: {} } }]);
 
   // Image goes straight to Storage through a signed upload URL, like the PDF code type.
   const upload = async (id: string, file: File | undefined, done: (url: string) => void) => {
@@ -171,6 +171,17 @@ function Editor({ slug, template, tpl, tplEdit }: { slug?: string; template: str
     </div>
   );
   const f = (i: number, key: string, label: string, type = 'text', ph = '') => input(label, blocks[i][key], v => upd(i, { [key]: v }), type, ph);
+  // Make an image with AI: ask what it should show, then put its URL in the field.
+  const aiImage = (id: string, on: (v: string) => void) => showModal({
+    type: 'prompt', title: 'Make an image with AI', message: 'Describe the image, for example: "a warm cafe interior with soft morning light". It uses AI credits.', confirmText: 'Generate',
+    onConfirm: async (prompt?: string) => {
+      if (!prompt?.trim()) return;
+      setUploading(id);
+      try { on((await apiFetch('/api/ai/image', { method: 'POST', body: JSON.stringify({ prompt, purpose: 'cover' }) })).url); }
+      catch (e: any) { showToast('error', e?.status === 429 ? 'You have used all your AI credits this month.' : e?.message || 'Could not make the image'); }
+      finally { setUploading(''); }
+    },
+  });
   const image = (id: string, label: string, v: any, on: (v: string) => void) => (
     <div className="form-section" style={{ marginBottom: '10px' }}>
       <label className="form-label">{label}</label>
@@ -180,6 +191,7 @@ function Editor({ slug, template, tpl, tplEdit }: { slug?: string; template: str
           {uploading === id ? 'Uploading…' : 'Upload'}
           <input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; upload(id, file, on); }} />
         </label>
+        <button type="button" className="btn btn-ghost btn-sm" style={{ whiteSpace: 'nowrap' }} disabled={uploading === id} onClick={() => aiImage(id, on)}>{uploading === id ? '…' : '✨ AI'}</button>
       </div>
     </div>
   );
@@ -205,6 +217,35 @@ function Editor({ slug, template, tpl, tplEdit }: { slug?: string; template: str
           </div>
         ))}
         <button className="btn btn-ghost btn-sm" onClick={() => upd(i, { items: [...(b.items || []), { network: 'instagram', handle: '' }] })}>+ Social link</button>
+      </>;
+      case 'menu': return <>
+        {(b.sections || []).map((sec: any, si: number) => {
+          const setSec = (patch: any) => upd(i, { sections: b.sections.map((x: any, k: number) => (k === si ? { ...x, ...patch } : x)) });
+          return (
+            <div key={si} style={{ borderTop: '1px solid var(--border)', paddingTop: '10px', marginBottom: '10px' }}>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                <input className="form-input" aria-label="Section name" value={sec.name || ''} placeholder="Section name" onChange={e => setSec({ name: e.target.value })} />
+                <button className="btn btn-ghost btn-sm" onClick={() => upd(i, { sections: b.sections.filter((_: any, k: number) => k !== si) })}>Remove section</button>
+              </div>
+              {(sec.items || []).map((it: any, j: number) => {
+                const setItem = (patch: any) => setSec({ items: sec.items.map((x: any, k: number) => (k === j ? { ...x, ...patch } : x)) });
+                return (
+                  <div key={j} className="grid-2" style={{ marginBottom: '6px', alignItems: 'center' }}>
+                    <input className="form-input" aria-label="Item name" placeholder="Item name" value={it.name || ''} onChange={e => setItem({ name: e.target.value })} />
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <input className="form-input" aria-label="Price" placeholder="LKR 650" value={it.price || ''} onChange={e => setItem({ price: e.target.value })} />
+                      <button className="btn btn-ghost btn-sm" aria-label="Remove item" onClick={() => setSec({ items: sec.items.filter((_: any, k: number) => k !== j) })}>×</button>
+                    </div>
+                    <input className="form-input" style={{ gridColumn: '1 / -1' }} aria-label="Description" placeholder="Short description" value={it.description || ''} onChange={e => setItem({ description: e.target.value })} />
+                    <div style={{ gridColumn: '1 / -1' }}>{image(`m${i}-${si}-${j}`, 'Photo (optional)', it.image, v => setItem({ image: v }))}</div>
+                  </div>
+                );
+              })}
+              <button className="btn btn-ghost btn-sm" onClick={() => setSec({ items: [...(sec.items || []), { name: '' }] })}>+ Item</button>
+            </div>
+          );
+        })}
+        <button className="btn btn-ghost btn-sm" onClick={() => upd(i, { sections: [...(b.sections || []), { name: 'New section', items: [{ name: '' }] }] })}>+ Section</button>
       </>;
       case 'products': return <>
         {f(i, 'title', 'Section heading')}

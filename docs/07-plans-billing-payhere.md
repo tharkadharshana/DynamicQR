@@ -142,3 +142,7 @@ Polar ── POST /api/billing/polar/webhook   (Standard Webhooks signature)
 
 - **PayHere field names for recurring installments** (`payment_id`, `message_type`) must be confirmed against the sandbox before relying on renewals. This is marked `ponytail:` in the code.
 - **Add-ons were removed** (no UI, and the write path was broken). `profiles.addons` is still read by `getLicense` and is harmless.
+
+## AI allowance (Phase 13)
+
+Each plan has `ai_usd` in [plans.ts](../src/lib/plans.ts): the monthly AI spend it covers, in USD of provider cost (Free 0.30, Pro 3, Team 8, Business 25; a trial counts as Pro). Users see it as credits (1 credit = $0.01). An admin can add a per-user grant. The ledger (`ai_usage`) is the single record; the allowance is checked before each call.
