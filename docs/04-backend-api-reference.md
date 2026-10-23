@@ -117,6 +117,8 @@ Returns an array of the user's `qr_codes` rows (`password_hash` removed, `has_pa
 
 ### Forms (Phase 9)
 
+A form's `content_data` may carry `redirect_url` (https only, up to 500 characters; anything else is a 400 `INVALID_FORM`): the thank-you page then shows a Continue link and redirects there after 3 seconds.
+
 - `POST /api/qr` with `qr_type: 'form'` checks the definition with `formDefError()` (400 `INVALID_FORM`), that `notify_email` is the account's or a team member's email (400), and the plan's `forms` cap (403 `LIMIT_FORMS`, also when a PUT changes a code's type).
 - `GET /api/forms/:slug/submissions` (owner): `[{id, data, created_at}]`, newest first, up to 5,000.
 - `DELETE /api/forms/:slug/submissions/:id` (owner, write): `{deleted}`; 404 when it is not there.
