@@ -156,3 +156,18 @@
 .cq-steps{margin-bottom:26px}
 .cq .qr-preview-frame{min-height:480px}
 .cq .qr-preview-frame #preview-canvas canvas,.cq .qr-preview-frame #preview-canvas svg{width:210px!important;height:210px!important}
+
+/* Preview frame: the QR always fits inside it (the first pass forced a fixed 210px and clipped it) */
+.cq .qr-preview-frame #preview-canvas{width:min(100%,210px);box-sizing:border-box}
+.cq .qr-preview-frame #preview-canvas canvas,.cq .qr-preview-frame #preview-canvas svg{width:100%!important;height:auto!important;aspect-ratio:1;display:block}
+.cq .qr-preview-frame.cq-mobile{min-height:0;padding:34px 22px 26px}
+/* Desktop: a browser window with the QR on the left and the text on the right */
+.cq .qr-preview-frame.cq-desktop{flex-direction:row;align-items:center;justify-content:flex-start;gap:16px;min-height:0;padding:44px 16px 18px;border-radius:12px;background:#0E1426}
+.cq .qr-preview-frame.cq-desktop::before{content:"";position:absolute;left:0;right:0;top:0;height:28px;background:radial-gradient(circle at 14px 14px,#FF5F57 4px,transparent 5px),radial-gradient(circle at 28px 14px,#FEBC2E 4px,transparent 5px),radial-gradient(circle at 42px 14px,#28C840 4px,transparent 5px),rgba(255,255,255,.08)}
+.cq .qr-preview-frame.cq-desktop #preview-canvas{width:46%;flex-shrink:0}
+.cq .qr-preview-frame.cq-desktop .cq-scan{text-align:left;min-width:0}
+.cq .qr-preview-frame.cq-desktop .cq-scan i{max-width:100%;margin-top:4px}
+.cq .qr-preview-frame{width:100%;height:auto;margin:0 0 18px}
+.cq .qr-preview-frame.cq-desktop .cq-scan{overflow:hidden;gap:4px}
+.cq .qr-preview-frame.cq-desktop .cq-scan span,.cq .qr-preview-frame.cq-desktop .cq-scan i{white-space:normal;word-break:break-all;overflow:visible;text-overflow:clip}
+.cq .qr-preview-frame.cq-desktop .cq-scan i{font-size:9.5px;padding:6px 10px;border-radius:10px}
