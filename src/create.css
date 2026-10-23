@@ -1,0 +1,55 @@
+/* Create QR (src/pages/CreateQR.tsx): header, stepper, numbered cards, preview column. */
+.cq{padding:22px 24px 40px 24px}
+.cq-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:18px}
+.cq-back{width:38px;height:38px;border:0;background:none;color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:50%;margin-top:2px}
+.cq-back:hover{background:var(--surface2)}
+.cq-head-text{flex:1;min-width:0}
+.cq-head h1{font-family:var(--font-b);font-size:24px;font-weight:700;color:var(--text);margin:0 0 6px;letter-spacing:-.3px}
+.cq-head p{font-size:13px;color:var(--text3);margin:0}
+.cq-ghost{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 18px;border-radius:11px;border:1px solid var(--border2);background:var(--surface);color:var(--text);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+.cq-ghost:hover{background:var(--surface2)}
+.cq-steps{display:flex;align-items:center;list-style:none;margin:0 0 20px;padding:0 0 0 52px;gap:0}
+.cq-steps li{display:flex;align-items:center}
+.cq-steps li:not(:last-child)::after{content:"";width:34px;height:1px;background:var(--border2);margin:0 14px}
+.cq-steps button{display:inline-flex;align-items:center;gap:10px;border:0;background:none;font:inherit;font-size:13px;color:var(--text3);cursor:pointer;padding:0}
+.cq-steps button span{width:30px;height:30px;border-radius:50%;border:1px solid var(--border2);background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:600}
+.cq-steps button.on{color:var(--text);font-weight:600}
+.cq-steps button.on span{background:#E04A1F;border-color:#E04A1F;color:#fff}
+
+.cq .create-layout{grid-template-columns:minmax(0,1fr) 330px;gap:22px}
+.cq .card{border-radius:16px;padding:22px;box-shadow:0 12px 30px -26px rgba(0,0,0,.5)}
+.cq .card-title.cq-cardhead{text-transform:none;letter-spacing:0;display:flex;align-items:center;gap:12px;margin-bottom:18px;font-size:15px;color:var(--text)}
+.cq-num{width:30px;height:30px;border-radius:50%;background:#E04A1F;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0}
+.cq-title{display:grid;gap:3px;font-size:15px;font-weight:700;color:var(--text)}
+.cq-title small{font-size:12px;font-weight:400;color:var(--text3)}
+.cq-label{font-size:12.5px;font-weight:600;color:var(--text);margin:6px 0 10px}
+.cq-inner{margin-top:4px}
+.cq .form-label{font-size:12.5px;font-weight:600;color:var(--text);margin-bottom:8px}
+.cq .form-input,.cq select.form-input{height:44px;border-radius:11px;font-size:13px}
+.cq textarea.form-input{height:auto}
+.cq .qr-type-tabs{display:flex;gap:10px;background:none;padding:0;flex-wrap:wrap}
+.cq .qr-type-tab{height:42px;padding:0 18px;border-radius:11px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);font-size:12.5px;display:inline-flex;align-items:center;gap:8px;box-shadow:none}
+.cq .qr-type-tab.active{background:rgba(224,74,31,.12);border-color:#E04A1F;color:var(--text);box-shadow:none}
+.cq .btn-primary{border-radius:11px}
+.cq-side{display:grid;gap:16px;align-content:start;position:sticky;top:0}
+.cq .qr-preview-card{position:static;border-radius:16px;padding:20px}
+.cq .qr-preview-card .card-title{text-transform:none;letter-spacing:0;font-size:15px;font-weight:700;color:var(--text)}
+.cq-seg{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;border-radius:12px;background:var(--surface2);margin-bottom:14px}
+.cq-seg button{height:34px;border:0;border-radius:9px;background:none;font:inherit;font-size:12.5px;color:var(--text3);cursor:pointer}
+.cq-seg .on{background:rgba(224,74,31,.14);color:#E8562B;font-weight:600}
+.cq .qr-preview-frame{border-radius:18px;padding:18px;background:linear-gradient(180deg,rgba(224,74,31,.18),rgba(224,74,31,.04));border:1px solid var(--border);display:flex;justify-content:center}
+.cq .qr-preview-frame.cq-desktop{border-radius:10px;padding:12px}
+.cq-tips,.cq-help{border:1px solid var(--border);border-radius:16px;background:var(--surface);padding:18px 20px}
+.cq-tips h3,.cq-help h3{font-family:var(--font-b);font-size:14px;font-weight:700;color:var(--text);margin:0 0 12px}
+.cq-tips ul{list-style:none;margin:0;padding:0;display:grid;gap:10px;font-size:12.5px;color:var(--text2)}
+.cq-tips li::before{content:"✓";margin-right:10px;color:var(--text2)}
+.cq-help p{font-size:12.5px;line-height:1.6;color:var(--text3);margin:0 0 14px}
+.cq-help .cq-ghost{width:100%;justify-content:center}
+
+@media (max-width:1100px){.cq .create-layout{grid-template-columns:minmax(0,1fr)}.cq-side{position:static}}
+@media (max-width:760px){
+  .cq{padding:14px}
+  .cq-head{flex-wrap:wrap}
+  .cq-steps{padding-left:0;overflow-x:auto}
+  .cq-steps li:not(:last-child)::after{width:14px;margin:0 8px}
+}
