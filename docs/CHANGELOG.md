@@ -6,6 +6,10 @@ One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-r
 
 - Added `LICENSE`: all rights reserved, no use, copying, modification, distribution or sale without the owner's written permission. `package.json` now says `UNLICENSED`; README links the license.
 
+## One shell for every page (branch `fix/consistent-shell`)
+
+- The Pages gallery and the Restaurant Kit now use the same sidebar and top bar as the Dashboard (MAIN and ACCOUNT groups, page title and subtitle, search, theme, bell, New QR). The compact sidebar variant with the Upgrade card and the title-less top bar are gone.
+
 ## Phase 13c: Restaurant Kit v2, OpenAI and the AI cost ledger (branch `feat/kit-menu-ai`)
 
 - The Kit is a new wizard (see doc 06) with **Create with AI**, **Import your menu** and a manual path, and a new `menu` page block (sections, items, prices, photos) that renders on the guest page and the Worker and is editable in the Pages editor. Redeploy the Worker after merging.
