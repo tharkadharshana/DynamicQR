@@ -818,7 +818,9 @@ async function startServer() {
     if (!aiConfig().key) { res.status(503).json({ error: 'AI is not set up on this server.', code: 'AI_DISABLED' }); return null; }
     const uid = (req as any).user.uid;
     const [{ limits }, prof, spent] = await Promise.all([getLicense(uid), row('profiles', 'id', uid), aiSpentUsd(uid)]);
-    const limit = (limits.ai_usd || 0) + Number(prof?.ai_grant_usd || 0);
+    // Fail closed: without a profile row the ledger insert would fail after the provider was already paid.
+    if (!prof) { res.status(409).json({ error: 'Your account is not ready yet. Reload the app and try again.', code: 'NO_PROFILE' }); return null; }
+    const limit = (limits.ai_usd || 0) + Number(prof.ai_grant_usd || 0);
     if (spent >= limit) {
       res.status(429).json({ error: 'You have used all your AI credits for this month.', code: 'AI_QUOTA', used_credits: credits(spent), limit_credits: credits(limit) });
       return null;

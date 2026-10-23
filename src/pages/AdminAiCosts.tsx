@@ -6,7 +6,7 @@ import { useUI } from '../shared/UIContext';
 
 // Admin: what AI costs us, per user, per kind and per image, against what each plan brings in.
 // The numbers come from the ai_usage ledger (one row per provider call); see server/index.ts and src/lib/aiPricing.ts.
-const usd = (n: number, d = 2) => `$${(n || 0).toFixed(d)}`;
+const usd = (n: number, d = 2) => `${(n || 0) < 0 ? "-" : ""}$${Math.abs(n || 0).toFixed(d)}`;
 const KINDS: Record<string, string> = { menu_generate: 'Menu from a prompt', menu_import: 'Menu from a file', image: 'Image', template_generate: 'Template' };
 
 export default function AdminAiCosts() {
