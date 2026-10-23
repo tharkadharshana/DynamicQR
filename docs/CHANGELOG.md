@@ -6,6 +6,11 @@ One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-r
 
 - Added `LICENSE`: all rights reserved, no use, copying, modification, distribution or sale without the owner's written permission. `package.json` now says `UNLICENSED`; README links the license.
 
+## Notifications bell (branch `feat/notifications-bell`)
+
+- The bell opens a popover with only notifications, a Clear all button and a dismiss (×) on each one. The red dot shows only while something is unread, and an empty list says "You are all caught up". Esc and a click outside close it.
+- Notices are worked out from the plan data in `src/lib/notices.ts`: trial ended or subscription expired, dynamic codes about to pause, plan ending within 7 days, 80% and 100% of monthly scans, and 80% and 100% of AI credits. Cleared notices are remembered in this browser (`localStorage`); a new situation, such as the next month, notifies again. There is no notifications table yet.
+
 ## Create QR closer to the design, and a light and dark audit (branch `fix/create-qr-1to1`)
 
 - **Create QR**: brand colour swatches, Square / Rounded / Circle style tiles, Solid / Gradient / Transparent background tiles (Image is shown as "Soon"), foreground colour field, logo tile with a logo size slider, the remaining style controls under "More style options", Advanced Options as a two-column grid of cards, a phone-style preview, an "Additional information" note (`content_data.note`, only you see it), collapsible cards, and a Review & Details card holding the QR name, folder and tags. New style keys: `bg_gradient_color`, `bg_transparent`, `logo_size`.

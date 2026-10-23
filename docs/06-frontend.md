@@ -100,7 +100,7 @@ Form cards (name and type, style, options, Visitor Guard) plus a live preview.
 ### App shell — [DynamicQRLayout.tsx](../src/components/DynamicQRLayout.tsx) and [shell.css](../src/shell.css)
 
 - Sidebar (MAIN and ACCOUNT groups), top bar (search with ⌘K / Ctrl+K, theme toggle, bell, "New QR"), light palette by default (the stored theme still wins). Every page shares this one shell: the top bar always shows the page title and subtitle, then the search, theme toggle, bell and New QR.
-- The search box sets `?q=` on `/pages` (templates) and `/` (Dashboard list); elsewhere Enter jumps to the Dashboard with the query. The bell shows a dot on the Free plan and opens Billing or Settings; it is not a notification feed yet.
+- The search box sets `?q=` on `/pages` (templates) and `/` (Dashboard list); elsewhere Enter jumps to the Dashboard with the query. The bell ([NotificationBell.tsx](../src/components/NotificationBell.tsx)) opens a popover of account notices with Clear all; see [notices.ts](../src/lib/notices.ts) for what triggers one. Cleared notices are kept per browser.
 - Admins (`is_admin` from `/api/user/plan`) see "Template admin" and "AI costs" in the Account group.
 
 ### Restaurant Kit v2 — [Kit.tsx](../src/pages/Kit.tsx) and [kit.css](../src/kit.css) (Phase 13)

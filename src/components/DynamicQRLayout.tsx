@@ -4,6 +4,7 @@ import { supabase, logout } from '../supabase';
 import { useUI } from '../shared/UIContext';
 import WorkspaceSwitcher from './WorkspaceSwitcher';
 import HelpButton from './HelpButton';
+import NotificationBell from './NotificationBell';
 
 export default function DynamicQRLayout({ planData }: { planData?: any }) {
   const location = useLocation();
@@ -297,11 +298,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
                 </svg>
               )}
             </button>
-            <button className="btn btn-icon btn-sm bell-btn" aria-label="Notifications" title="Notifications"
-              onClick={() => navigate(showTrialBanner ? '/billing' : '/settings')}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/></svg>
-              {currentPlan === 'free' && <span className="bell-dot" />}
-            </button>
+            <NotificationBell planData={planData} />
             <button className="btn btn-primary btn-sm new-qr-btn" onClick={() => navigate('/create')} aria-label="New QR">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
               <span className="hidden sm:inline">New QR</span>
