@@ -21,7 +21,7 @@ export const PAGE_TEMPLATES: PageTemplate[] = [
   { id: 'bio-foodie', name: 'Foodie Link-in-Bio', group: 'Link in Bio', description: 'Perfect for food, cafés and restaurants.', tags: ['link in bio', 'restaurant'], content: { theme: theme('#16A34A', '#F0FDF4', '#14532D', 'pill', 'system', { bg2: '#FEF9C3', header: 'plain', line: '#D9F2C7' }), blocks: [
     header('Good Food, Good Mood', 'Great food, every day', '🍅'), btn('View Menu'), btn('Order Now'), btn('Location'), btn('Contact'), socials('instagram', 'facebook')] } },
   { id: 'bio-portfolio', name: 'Personal Portfolio', group: 'Link in Bio', description: 'Showcase your work and skills beautifully.', tags: ['link in bio', 'dark mode', 'minimal'], content: { theme: dark('#8B5CF6', '#0F1022', '#241447'), blocks: [
-    header("Let's Connect", 'Designer · Developer', '🧑‍💻'), btn('Portfolio'), btn('Resume'), btn('LinkedIn'), btn('Contact'), socials('linkedin', 'github', 'x')] } },
+    header("Let's Connect", 'Designer · Developer', '💻'), btn('Portfolio'), btn('Resume'), btn('LinkedIn'), btn('Contact'), socials('linkedin', 'github', 'x')] } },
   { id: 'shop-products', name: 'Product Showcase', group: 'Business & Services', description: 'Highlight your products with clean and clear design.', tags: ['business', 'minimal'], content: { theme: theme('#111827', '#FFFFFF', '#111827', 'rounded', 'system', { bg2: '#F3F4F6', line: '#E5E7EB' }), blocks: [
     header('Your Shop', 'Handmade in Sri Lanka', '◎'), products('Best sellers', ['Product one', 'LKR 2,500'], ['Product two', 'LKR 3,900'], ['Product three', 'LKR 1,200']),
     btn('See the full catalogue'), btn('Order on WhatsApp'), socials('instagram', 'facebook')] } },

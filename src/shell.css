@@ -86,5 +86,8 @@
 @media (max-width: 768px) {
   .topbar{padding:0 14px;height:60px}
   .top-search{display:none}
+  .new-qr-btn,.shell-gallery .new-qr-btn{min-width:0;width:auto;padding:0 18px}
+  .topbar-left{flex:0 0 auto}
+  .topbar{justify-content:space-between}
   .shell-gallery{--sidebar:265px}
 }
