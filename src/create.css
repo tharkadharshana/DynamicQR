@@ -53,3 +53,106 @@
   .cq-steps{padding-left:0;overflow-x:auto}
   .cq-steps li:not(:last-child)::after{width:14px;margin:0 8px}
 }
+
+/* ── 1:1 pass against the design ── */
+.cq-steps button{font-size:14px;gap:12px}
+.cq-steps button span{width:34px;height:34px;font-size:13px}
+.cq-steps li:not(:last-child)::after{width:70px;margin:0 22px;background:transparent}
+.cq .card{border-radius:18px;padding:24px 26px;background:var(--surface)}
+.cq .card-title.cq-cardhead{margin-bottom:20px;gap:14px}
+.cq-num{width:34px;height:34px;font-size:14px}
+.cq-title{font-size:17px}
+.cq-title small{font-size:12px}
+.cq-chev{margin-left:auto;border:0;background:none;color:var(--text3);font-size:15px;cursor:pointer;padding:6px 8px;transition:transform .15s}
+.cq-shut>*:not(.cq-cardhead){display:none!important}
+.cq-shut .cq-cardhead{margin-bottom:0}
+.cq .cq-inner .qr-type-tabs{flex-wrap:nowrap}
+.cq .qr-type-tab{flex:1;justify-content:center;height:44px;padding:0 10px;font-size:12px;white-space:nowrap}
+.cq-ti{font-size:13px;opacity:.85}
+.cq .form-input,.cq select.form-input{height:46px;border-radius:12px;background:var(--surface2)}
+.cq textarea.form-input{height:auto;min-height:92px}
+.cq-counter{text-align:right;font-size:11px;color:var(--text3);margin-top:-30px;padding-right:12px;position:relative;pointer-events:none}
+.cq-grid2{display:grid;grid-template-columns:1.1fr 1fr;gap:28px}
+.cq-grid3{display:grid;grid-template-columns:1fr 1.2fr 1fr;gap:22px;margin-top:20px;align-items:start}
+.cq-lab{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--text);margin-bottom:12px}
+.cq-lab i{width:7px;height:7px;border-radius:50%;background:#E04A1F}
+.cq-brand{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.cq-brand button{width:30px;height:30px;border-radius:50%;border:0;cursor:pointer;padding:0}
+.cq-brand button.on{box-shadow:0 0 0 3px var(--surface),0 0 0 5px #E04A1F,0 0 16px 3px rgba(224,74,31,.5)}
+.cq-plus{position:relative;width:30px;height:30px;border-radius:50%;border:1px solid var(--border3);display:flex;align-items:center;justify-content:center;color:var(--text2);cursor:pointer;font-size:16px}
+.cq-plus input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;padding:0}
+.cq-tiles3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.cq-tiles3 button,.cq-tiles4 button{border:1px solid var(--border);border-radius:12px;background:var(--surface2);color:var(--text2);font:inherit;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px}
+.cq-tiles3 button{flex-direction:column;height:84px}
+.cq-tiles4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.cq-tiles4 button{height:62px;font-size:13px}
+.cq-tiles4 button:disabled{opacity:.55;cursor:not-allowed}
+.cq-tiles4 em{font-style:normal;font-size:9px;font-weight:700;padding:2px 6px;border-radius:999px;background:var(--surface3);color:var(--text3)}
+.cq-tiles3 .on,.cq-tiles4 .on{border-color:#E04A1F;background:rgba(224,74,31,.12);color:var(--text);box-shadow:0 0 0 1px #E04A1F,0 10px 24px -12px rgba(224,74,31,.7)}
+.cq-mini{width:26px;height:26px;border-radius:8px;display:inline-block;border:1px solid var(--border3)}
+.cq-mini.solid{background:#6E56F6}
+.cq-mini.grad{background:linear-gradient(135deg,#6E56F6,#E04A1F)}
+.cq-mini.img{background:linear-gradient(135deg,#2B3550,#3A4666)}
+.cq-mini.clear{background:repeating-conic-gradient(#8A94A6 0 25%,#fff 0 50%) 0 0/10px 10px}
+.cq-endcolor{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text3)}
+.cq-endcolor input{width:36px;height:30px;padding:0;border:0;background:none;cursor:pointer}
+.cq-fg{position:relative;display:flex;align-items:center;gap:12px;height:48px;padding:0 14px;border:1px solid var(--border2);border-radius:12px;background:var(--surface2);cursor:pointer;font-size:13px;color:var(--text)}
+.cq-fg b{width:26px;height:26px;border-radius:50%;border:1px solid var(--border3);flex-shrink:0}
+.cq-fg span{flex:1}
+.cq-fg em{font-style:normal;color:var(--text3)}
+.cq-fg input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;padding:0}
+.cq-logo{position:relative;height:104px;border:1.5px dashed var(--border3);border-radius:12px;background:var(--surface2);display:grid;place-content:center;justify-items:center;gap:4px;text-align:center;cursor:pointer;color:var(--text2)}
+.cq-logo b{font-size:12.5px;font-weight:500;color:var(--text)}
+.cq-logo small{font-size:10.5px;color:var(--text3)}
+.cq-logo img{max-height:70px;max-width:90%}
+.cq-logo-x{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;border:0;background:var(--surface3);color:var(--text);cursor:pointer;line-height:1}
+.cq-slider{display:flex;align-items:center;gap:14px;height:48px}
+.cq-slider input{flex:1;accent-color:#7C6CFF}
+.cq-slider span{font-size:13px;color:var(--text2);min-width:36px;text-align:right}
+.cq-more{margin-top:20px;border-top:1px solid var(--border);padding-top:16px}
+.cq-more summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--text2);margin-bottom:14px}
+.cq-more[open] summary{margin-bottom:16px}
+
+/* Advanced options as a two-column grid of cards */
+.cq-opts{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.cq-opts>.cq-cardhead,.cq-opts>.form-section,.cq-opts>details{grid-column:1/-1}
+.cq-opts>.form-section{padding:0!important}
+.cq-opts>details{padding:0!important;border:0!important}
+.cq-opts .toggle-wrap{padding:16px!important;border:1px solid var(--border)!important;border-radius:14px;background:var(--surface2);align-items:center;gap:12px;position:relative}
+.cq-opts .toggle-wrap::before{content:"◈";width:34px;height:34px;border-radius:10px;background:var(--surface3);color:var(--text2);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;order:-1}
+.cq-opts .toggle-wrap:has([aria-label="Dynamic QR"])::before{content:"⚡"}
+.cq-opts .toggle-wrap:has([aria-label="GPS tracking"])::before{content:"⌖"}
+.cq-opts .toggle-wrap:has([aria-label="Password protection"])::before{content:"🔒"}
+.cq-opts .toggle-wrap:has([aria-label="Expiry date"])::before{content:"◷"}
+.cq-opts .toggle-wrap:has([aria-label="Scan limit"])::before{content:"⏱"}
+.cq-opts .toggle-wrap>div:first-of-type{font-size:13px}
+
+/* Preview as a phone */
+.cq .qr-preview-frame{position:relative;overflow:hidden;min-height:340px;flex-direction:column;align-items:center;justify-content:center;gap:16px;border-radius:28px;border:1px solid var(--border2);background:radial-gradient(90% 40% at 90% 0%,rgba(224,74,31,.55),transparent 70%),radial-gradient(80% 50% at 10% 100%,rgba(124,76,255,.45),transparent 70%),#0E1426;padding:26px 18px 22px}
+.cq .qr-preview-frame.cq-desktop{min-height:260px;border-radius:12px}
+.cq .qr-preview-frame #preview-canvas{background:#fff;border-radius:12px;padding:8px;line-height:0;box-shadow:0 14px 30px -16px rgba(0,0,0,.6)}
+.cq .qr-preview-frame #preview-canvas canvas,.cq .qr-preview-frame #preview-canvas svg{width:180px!important;height:180px!important}
+.cq-scan{display:grid;gap:6px;text-align:center;color:#fff}
+.cq-scan b{font-size:13px;font-weight:600}
+.cq-scan span{font-size:12.5px;opacity:.85}
+.cq-scan i{font-style:normal;font-size:10.5px;padding:8px 14px;border-radius:999px;background:rgba(255,255,255,.12);max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:6px}
+.cq .qr-preview-slug{display:none}
+
+/* Bottom action card */
+.cq #cq-review{padding:16px 18px;border:1px solid var(--border);border-radius:16px;background:var(--surface)}
+.cq #cq-review .btn-primary{background:#E04A1F;border-radius:11px;box-shadow:0 10px 20px -12px rgba(224,74,31,.8)}
+
+@media (max-width:760px){
+  .cq-grid2,.cq-grid3,.cq-opts{grid-template-columns:1fr}
+  .cq-tiles4{grid-template-columns:1fr 1fr}
+  .cq .cq-inner .qr-type-tabs{flex-wrap:wrap}
+}
+
+/* Order inside Advanced Options: the toggle cards first, then the extra inputs */
+.cq-opts>*{order:2}
+.cq-opts>.cq-cardhead{order:0}
+.cq-opts>.toggle-wrap{order:1}
+.cq-head{margin-bottom:26px;margin-top:6px}
+.cq-steps{margin-bottom:26px}
+.cq .qr-preview-frame{min-height:480px}
+.cq .qr-preview-frame #preview-canvas canvas,.cq .qr-preview-frame #preview-canvas svg{width:210px!important;height:210px!important}

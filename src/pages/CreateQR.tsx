@@ -14,8 +14,8 @@ const PREVIEW_SIZE = 180;
 const DEFAULT_STYLE: any = { dot_color: '#1A1916', bg_color: '#FFFFFF', dot_style: 'square', corner_style: 'square', error_correction: 'M', output_size: 400, logo_url: '' };
 
 // Tabs shown up front, then the "More" menu. Every URL kind is stored as qr_type 'url' with content_data.kind.
-const MAIN_TYPES: [string, string][] = [['url', 'Link'], ['pdf', 'PDF'], ['whatsapp', 'WhatsApp'], ['google_review', 'Google review'], ['gs1', 'GS1'], ['vcard', 'vCard']];
-const MORE_TYPES: [string, string][] = [['instagram', 'Instagram'], ['facebook', 'Facebook'], ['tiktok', 'TikTok'], ['youtube', 'YouTube'], ['linkedin', 'LinkedIn'], ['x', 'X'],
+const MAIN_TYPES: [string, string][] = [['url', 'Link'], ['pdf', 'PDF'], ['whatsapp', 'WhatsApp'], ['google_review', 'Google review'], ['vcard', 'vCard']];
+const MORE_TYPES: [string, string][] = [['gs1', 'GS1'], ['instagram', 'Instagram'], ['facebook', 'Facebook'], ['tiktok', 'TikTok'], ['youtube', 'YouTube'], ['linkedin', 'LinkedIn'], ['x', 'X'],
   ['phone', 'Phone'], ['sms', 'SMS'], ['location', 'Location'], ['event', 'Event'], ['app', 'App store'], ['wifi', 'Wi-Fi'], ['text', 'Text'], ['email', 'Email']];
 const URL_KINDS = ['url', 'pdf', 'whatsapp', 'google_review', 'gs1', 'app', 'phone', 'sms', 'location', ...Object.keys(SOCIALS)];
 // Kinds whose destination is built from their inputs (the rest take a typed URL).
@@ -24,6 +24,7 @@ const DYNAMIC_ONLY = ['gs1', 'event', 'app'];
 const UTM_FIELDS = ['source', 'medium', 'campaign', 'term', 'content'];
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const TYPE_ICON: Record<string, string> = { url: '🔗', pdf: '📄', whatsapp: '💬', google_review: '☆', vcard: '👤' };
 const PRO_CHIP = <span className="chip" style={{ background: 'var(--amber-ll)', color: 'var(--amber)', fontSize: '10px' }}>PRO</span>;
 const toggleIn = (list: any[] = [], v: any) => list.includes(v) ? list.filter(x => x !== v) : [...list, v];
 // Countries and languages are typed as "LK, IN"; empty entries are kept while typing and dropped on save.
@@ -57,6 +58,8 @@ export default function CreateQR() {
   const { showModal, showToast } = useUI();
   const [qrType, setQrType] = useState('url');
   const [cqStep, setCqStep] = useState(0);
+  const [shut, setShut] = useState<Record<string, boolean>>({}); // collapsed cards
+  const chev = (k: string) => <button type="button" className="cq-chev" aria-label={shut[k] ? 'Expand' : 'Collapse'} aria-expanded={!shut[k]} onClick={() => setShut(x => ({ ...x, [k]: !x[k] }))} style={{ transform: shut[k] ? 'rotate(180deg)' : 'none' }}>⌃</button>;
   const [previewDevice, setPreviewDevice] = useState<'mobile' | 'desktop'>('mobile');
   const [isDynamic, setIsDynamic] = useState(true);
   const [urlError, setUrlError] = useState(false);
@@ -367,6 +370,7 @@ export default function CreateQR() {
     }
   };
 
+  const previewUrl = dest || 'https://yourwebsite.com'; // shown under the QR in the phone preview
   const getShortUrl = () => {
     if (isUrlKind) {
       if (!dest) return 'Enter content to generate QR';
@@ -395,7 +399,7 @@ export default function CreateQR() {
         <button className="cq-ghost" onClick={() => navigate('/pages')}>▤ Load from template</button>
       </header>
       <ol className="cq-steps">
-        {[['cq-content', 'Content'], ['cq-style', 'Style'], ['cq-options', 'Options'], ['cq-review', 'Review']].map(([anchor, label], i) => (
+        {[['cq-content', 'Content'], ['cq-style', 'Style'], ['cq-options', 'Options'], ['cq-details', 'Review']].map(([anchor, label], i) => (
           <li key={anchor}><button className={cqStep === i ? 'on' : ''} onClick={() => { setCqStep(i); document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}><span>{i + 1}</span>{label}</button></li>
         ))}
       </ol>
@@ -403,53 +407,16 @@ export default function CreateQR() {
         <div className="create-layout">
           {/* Left: Form */}
           <div>
-              <div className="card mb16" id="cq-content">
-              <div className="card-title cq-cardhead"><span className="cq-num">1</span><span className="cq-title">QR Content<small>Choose what the QR code will open or do.</small></span></div>
-              {/* QR Name field */}
-              <div className="form-section">
-                <label className="form-label" htmlFor="f-qr-name">QR Name *</label>
-                <input id="f-qr-name" 
-                  type="text" 
-                  className="form-input" 
-                  placeholder="e.g. Restaurant Menu QR" 
-                  value={formData.title}
-                  onChange={(e) => setFormData({...formData, title: e.target.value})}
-                  required
-                />
-              </div>
-              <div className="grid-2">
-                <div className="form-section">
-                  <label className="form-label" htmlFor="qr-client">Folder <span style={{ color: 'var(--text3)', fontWeight: 'normal' }}>(optional; type a new name to make one)</span></label>
-                  <input id="qr-client" type="text" list="qr-folders" className="form-input" placeholder="e.g. Café Lagoon" maxLength={60} value={formData.client}
-                    onChange={(e) => setFormData({ ...formData, client: e.target.value })} />
-                  <datalist id="qr-folders">{folders.map(f => <option key={f} value={f} />)}</datalist>
-                </div>
-                <div className="form-section">
-                  <label className="form-label" htmlFor="qr-tags">Tags <span style={{ color: 'var(--text3)', fontWeight: 'normal' }}>(press Enter to add)</span></label>
-                  <div className="tag-input form-input">
-                    {formData.tags.map(t => (
-                      <span key={t} className="chip tag-chip">{t}
-                        <button type="button" aria-label={`Remove tag ${t}`} onClick={() => setFormData(f => ({ ...f, tags: f.tags.filter(x => x !== t) }))}>×</button>
-                      </span>
-                    ))}
-                    <input id="qr-tags" value={tagInput} placeholder={formData.tags.length ? '' : 'e.g. menu'} onChange={(e) => setTagInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if ((e.key === 'Enter' || e.key === ',') && tagInput.trim()) { e.preventDefault(); addTag(tagInput); }
-                        if (e.key === 'Backspace' && !tagInput && formData.tags.length) setFormData(f => ({ ...f, tags: f.tags.slice(0, -1) }));
-                      }}
-                      onBlur={() => tagInput.trim() && addTag(tagInput)} />
-                  </div>
-                </div>
-              </div>
-
+              <div className={`card mb16${shut.content ? ' cq-shut' : ''}`} id="cq-content">
+              <div className="card-title cq-cardhead"><span className="cq-num">1</span><span className="cq-title">QR Content<small>Choose what the QR code will open or do.</small></span>{chev('content')}</div>
               {/* QR type selector */}
               <div className="cq-inner">
                 <div className="cq-label">QR Type</div>
                 <div className="qr-type-tabs">
                   {MAIN_TYPES.map(([t, label]) => (
-                    <button key={t} className={`qr-type-tab ${qrType === t ? 'active' : ''}`} onClick={() => pickType(t)}>{label}</button>
+                    <button key={t} className={`qr-type-tab ${qrType === t ? 'active' : ''}`} onClick={() => pickType(t)}>{TYPE_ICON[t] && <span className="cq-ti">{TYPE_ICON[t]}</span>}{label}</button>
                   ))}
-                  <button className="qr-type-tab" onClick={() => navigate('/pages/new')}>Page →</button>
+                  <button className="qr-type-tab" onClick={() => navigate('/pages/new')}><span className="cq-ti">▭</span>Page</button>
                   <select className={`qr-type-tab ${MORE_TYPES.some(([t]) => t === qrType) ? 'active' : ''}`} aria-label="More code types"
                     value={MORE_TYPES.some(([t]) => t === qrType) ? qrType : ''} onChange={(e) => e.target.value && pickType(e.target.value)}>
                     <option value="">More ▾</option>
@@ -644,16 +611,22 @@ export default function CreateQR() {
                   </div>
                 )}
               </div>
+              <div className="form-section" style={{ marginTop: '16px' }}>
+                <label className="form-label" htmlFor="qr-note">Additional information <span style={{ color: 'var(--text3)', fontWeight: 'normal' }}>(optional)</span></label>
+                <textarea id="qr-note" className="form-input" rows={3} maxLength={200} placeholder="Add a description or notes (only you see this)…" value={cd.note || ''} onChange={(e) => setCd({ note: e.target.value })} />
+                <div className="cq-counter">{(cd.note || '').length}/200</div>
+              </div>
               </div>
 
             {/* Style */}
-            <div className="card mb16" id="cq-style">
+            <div className={`card mb16${shut.style ? ' cq-shut' : ''}`} id="cq-style">
               <div className="card-title cq-cardhead" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <span className="cq-num">2</span>
                   <span className="cq-title">Design &amp; Style<small>Make your QR code match your brand.</small></span>
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
+                  {chev('style')}
                   <button className="btn btn-ghost" style={{ padding: '4px 12px', fontSize: '13px', border: '1px solid var(--border)', borderRadius: '6px' }} onClick={saveBrandStyle}>
                     Save as my default
                   </button>
@@ -667,62 +640,99 @@ export default function CreateQR() {
                 </div>
               </div>
 
-              <div className="form-section">
-                <label className="form-label">Foreground color</label>
-                <div className="color-row">
-                  {['#1A1916', '#E85D3A', '#4D9EFF', '#3DCC7E', '#9B7FFF'].map(color => (
-                    <button 
-                      type="button"
-                      key={color}
-                      aria-label={`Foreground colour ${color}`}
-                      aria-pressed={formData.style.dot_color === color}
-                      className={`color-swatch ${formData.style.dot_color === color ? 'selected' : ''}`} 
-                      style={{ background: color }} 
-                      onClick={() => setFormData({...formData, style: {...formData.style, dot_color: color}})}
-                    ></button>
-                  ))}
-                  <div className="color-input-wrap">
-                    <div className="color-preview" style={{ background: formData.style.dot_color }}></div>
-                    <input 
-                      type="color" 
-                      className="form-input" 
-                      value={formData.style.dot_color} 
-                      aria-label="Foreground colour"
-                      style={{ height: '36px', padding: '4px', cursor: 'pointer' }} 
-                      onChange={(e) => setFormData({...formData, style: {...formData.style, dot_color: e.target.value}})}
-                    />
+              <div className="cq-grid2">
+                <div className="cq-col">
+                  <div className="cq-lab"><i />Brand colour</div>
+                  <div className="cq-brand">
+                    {['#E85D3A', '#7C4DFF', '#3B82F6', '#14B8A6', '#22C55E', '#F59E0B', '#EC4899'].map(color => (
+                      <button type="button" key={color} aria-label={`Brand colour ${color}`} aria-pressed={formData.style.dot_color === color}
+                        className={formData.style.dot_color === color ? 'on' : ''} style={{ background: color }}
+                        onClick={() => setFormData({ ...formData, style: { ...formData.style, dot_color: color } })} />
+                    ))}
+                    <label className="cq-plus" title="Pick any colour">+
+                      <input type="color" aria-label="Custom brand colour" value={formData.style.dot_color}
+                        onChange={(e) => setFormData({ ...formData, style: { ...formData.style, dot_color: e.target.value } })} />
+                    </label>
+                  </div>
+                </div>
+                <div className="cq-col">
+                  <div className="cq-lab"><i />Style</div>
+                  <div className="cq-tiles3">
+                    {([['square', 'Square', <svg key="a" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></svg>],
+                      ['rounded', 'Rounded', <svg key="b" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="4" y="4" width="16" height="16" rx="4" /><rect x="9" y="9" width="6" height="6" rx="1.5" /></svg>],
+                      ['dots', 'Circle', <svg key="c" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /></svg>]] as [string, string, React.ReactNode][]).map(([v, label, icon]) => (
+                      <button type="button" key={v} aria-pressed={normDotStyle(formData.style.dot_style) === v} className={normDotStyle(formData.style.dot_style) === v ? 'on' : ''} onClick={() => setStyle({ dot_style: v })}>{icon}{label}</button>
+                    ))}
                   </div>
                 </div>
               </div>
 
-              <div className="form-section">
-                <label className="form-label">Background color</label>
-                <div className="color-row">
-                  {['#FFFFFF', '#F4F3EF', '#FBE9E4', '#E8F5EC', '#EEF0FF'].map(color => (
-                    <button 
-                      type="button"
-                      key={color}
-                      aria-label={`Background colour ${color}`}
-                      aria-pressed={formData.style.bg_color === color}
-                      className={`color-swatch ${formData.style.bg_color === color ? 'selected' : ''}`} 
-                      style={{ background: color, border: color === '#FFFFFF' ? '1px solid var(--border)' : 'none' }} 
-                      onClick={() => setFormData({...formData, style: {...formData.style, bg_color: color}})}
-                    ></button>
-                  ))}
-                  <div className="color-input-wrap">
-                    <div className="color-preview" style={{ background: formData.style.bg_color, border: '1px solid var(--border2)' }}></div>
-                    <input 
-                      type="color" 
-                      className="form-input" 
-                      value={formData.style.bg_color} 
-                      aria-label="Background colour"
-                      style={{ height: '36px', padding: '4px', cursor: 'pointer' }} 
-                      onChange={(e) => setFormData({...formData, style: {...formData.style, bg_color: e.target.value}})}
-                    />
+              <div className="cq-col" style={{ marginTop: '18px' }}>
+                <div className="cq-lab"><i />Background</div>
+                <div className="cq-tiles4">
+                  <button type="button" className={!formData.style.bg_transparent && !formData.style.bg_gradient_color ? 'on' : ''} aria-pressed={!formData.style.bg_transparent && !formData.style.bg_gradient_color}
+                    onClick={() => setStyle({ bg_transparent: undefined, bg_gradient_color: undefined })}><span className="cq-mini solid" />Solid</button>
+                  <button type="button" className={formData.style.bg_gradient_color && !formData.style.bg_transparent ? 'on' : ''} aria-pressed={!!formData.style.bg_gradient_color && !formData.style.bg_transparent}
+                    onClick={() => setStyle({ bg_transparent: undefined, bg_gradient_color: formData.style.bg_gradient_color || '#E8F0FF' })}><span className="cq-mini grad" />Gradient</button>
+                  <button type="button" disabled title="Image backgrounds are coming soon"><span className="cq-mini img" />Image <em>Soon</em></button>
+                  <button type="button" className={formData.style.bg_transparent ? 'on' : ''} aria-pressed={!!formData.style.bg_transparent}
+                    onClick={() => setStyle({ bg_transparent: true, bg_gradient_color: undefined })}><span className="cq-mini clear" />Transparent</button>
+                </div>
+              </div>
+
+              <div className="cq-grid3">
+                <div className="cq-col">
+                  <div className="cq-lab"><i />Foreground colour</div>
+                  <label className="cq-fg">
+                    <b style={{ background: formData.style.dot_color }} /><span>{String(formData.style.dot_color).toUpperCase()}</span><em>⌄</em>
+                    <input type="color" aria-label="Foreground colour" value={formData.style.dot_color} onChange={(e) => setFormData({ ...formData, style: { ...formData.style, dot_color: e.target.value } })} />
+                  </label>
+                </div>
+                <div className="cq-col">
+                  <div className="cq-lab"><i />Logo (optional)</div>
+                  <div className="cq-logo" onClick={() => document.getElementById('logo-upload')?.click()}>
+                    {formData.style.logo_url ? (<>
+                      <img src={formData.style.logo_url} alt="Logo" />
+                      <button type="button" className="cq-logo-x" aria-label="Remove logo" onClick={(e) => { e.stopPropagation(); setFormData({ ...formData, style: { ...formData.style, logo_url: '' } }); }}>×</button>
+                    </>) : (<>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16V5M7.5 9.5L12 5l4.5 4.5M5 19h14" /></svg>
+                      <b>Upload logo</b><small>PNG, JPG (max 2MB)</small>
+                    </>)}
+                    <input type="file" id="logo-upload" style={{ display: 'none' }} accept="image/png, image/jpeg, image/svg+xml" onChange={handleLogoUpload} />
+                  </div>
+                </div>
+                <div className="cq-col">
+                  <div className="cq-lab"><i />Logo size</div>
+                  <div className="cq-slider">
+                    <input type="range" min={20} max={50} step={1} aria-label="Logo size" value={Math.round((formData.style.logo_size || 0.4) * 100)} disabled={!formData.style.logo_url}
+                      onChange={(e) => setStyle({ logo_size: Number(e.target.value) / 100 })} />
+                    <span>{Math.round((formData.style.logo_size || 0.4) * 100)}%</span>
                   </div>
                 </div>
               </div>
 
+              <details className="cq-more">
+                <summary>More style options</summary>
+                <div className="form-section">
+                  <label className="form-label">Background colour</label>
+                {!formData.style.bg_transparent && (
+                  <div className="color-row" >
+                    {['#FFFFFF', '#F4F3EF', '#FBE9E4', '#E8F5EC', '#EEF0FF'].map(color => (
+                      <button type="button" key={color} aria-label={`Background colour ${color}`} aria-pressed={formData.style.bg_color === color}
+                        className={`color-swatch ${formData.style.bg_color === color ? 'selected' : ''}`} style={{ background: color, border: color === '#FFFFFF' ? '1px solid var(--border)' : 'none' }}
+                        onClick={() => setFormData({ ...formData, style: { ...formData.style, bg_color: color } })} />
+                    ))}
+                    <div className="color-input-wrap">
+                      <div className="color-preview" style={{ background: formData.style.bg_color, border: '1px solid var(--border2)' }} />
+                      <input type="color" className="form-input" value={formData.style.bg_color} aria-label="Background colour" style={{ height: '36px', padding: '4px', cursor: 'pointer' }}
+                        onChange={(e) => setFormData({ ...formData, style: { ...formData.style, bg_color: e.target.value } })} />
+                    </div>
+                    {formData.style.bg_gradient_color && (
+                      <label className="cq-endcolor">to <input type="color" aria-label="Background gradient end colour" value={formData.style.bg_gradient_color} onChange={(e) => setStyle({ bg_gradient_color: e.target.value })} /></label>
+                    )}
+                  </div>
+                )}
+                </div>
               <div style={{ display: 'flex', gap: '16px' }}>
                 <div className="form-section" style={{ flex: 1 }}>
                   <label className="form-label" htmlFor="dot-style">Dot style</label>
@@ -800,38 +810,6 @@ export default function CreateQR() {
                 )}
               </div>
 
-              <div className="form-section">
-                <label className="form-label">Center logo <span style={{ color: 'var(--text3)', fontWeight: 'normal' }}>(optional — auto-sets error correction to H)</span></label>
-                <div 
-                  style={{ border: '1px dashed var(--border2)', borderRadius: '8px', padding: '24px', textAlign: 'center', cursor: 'pointer', position: 'relative' }} 
-                  onClick={() => document.getElementById('logo-upload')?.click()}
-                >
-                  {formData.style.logo_url ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                      <img src={formData.style.logo_url} alt="Logo" style={{ maxHeight: '60px', maxWidth: '100%', marginBottom: '12px' }} />
-                      <div style={{ fontSize: '13px', color: 'var(--text2)' }}>Click to replace logo</div>
-                      <button 
-                        className="btn btn-ghost" 
-                        style={{ position: 'absolute', top: '8px', right: '8px', padding: '4px 8px', fontSize: '12px' }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setFormData({...formData, style: {...formData.style, logo_url: ''}});
-                        }}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <div style={{ fontSize: '24px', marginBottom: '8px' }}>🖼️</div>
-                      <div style={{ fontWeight: 500, marginBottom: '4px' }}>Drop logo here or click to upload</div>
-                      <div style={{ fontSize: '12px', color: 'var(--text3)' }}>PNG, SVG, or JPG · resized to 256 px · centered</div>
-                    </>
-                  )}
-                  <input type="file" id="logo-upload" style={{ display: 'none' }} accept="image/png, image/jpeg, image/svg+xml" onChange={handleLogoUpload} />
-                </div>
-              </div>
-
               <div style={{ display: 'flex', gap: '16px' }}>
                 <div className="form-section" style={{ flex: 1 }}>
                   <label className="form-label" htmlFor="f-error-correction">Error correction</label>
@@ -859,13 +837,14 @@ export default function CreateQR() {
                   </select>
                 </div>
               </div>
+              </details>
             </div>
 
             {/* Options */}
-            <div className="card mb16" id="cq-options">
+            <div className={`card mb16 cq-opts${shut.options ? ' cq-shut' : ''}`} id="cq-options">
               <div className="card-title cq-cardhead" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <span className="cq-num">3</span>
-                <span className="cq-title">Advanced Options<small>Configure additional settings for your QR code.</small></span>
+                <span className="cq-title">Advanced Options<small>Configure additional settings for your QR code.</small></span>{chev('options')}
               </div>
 
               <div className="toggle-wrap" style={{ padding: '16px 0', borderBottom: '1px solid var(--border)' }}>
@@ -927,7 +906,7 @@ export default function CreateQR() {
                       <div style={{ fontWeight: 500 }}>GPS tracking (opt-in)</div>
                       {locked('gps_tracking') && PRO_CHIP}
                     </div>
-                    <div style={{ fontSize: '13px', color: 'var(--text3)' }}>Scanners are asked once for their approximate location and can say no. Their scans show on your map.</div>
+                    <div style={{ fontSize: '13px', color: 'var(--text3)' }}>Scanners are asked once and can say no.</div>
                   </div>
                   <button role="switch" aria-checked={!!cd.gps} aria-label="GPS tracking" className={`toggle ${cd.gps ? 'on' : ''}`}
                     onClick={() => locked('gps_tracking') && !cd.gps ? navigate('/billing') : setCd({ gps: !cd.gps || undefined })}></button>
@@ -1047,7 +1026,6 @@ export default function CreateQR() {
             {/* Visitor Guard */}
             <div className="card mb16">
               <div className="card-title cq-cardhead" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span className="cq-num">4</span>
                 <span className="cq-title">Visitor Guard<small>Limit who can scan and how often.</small></span>
               </div>
               
@@ -1104,6 +1082,47 @@ export default function CreateQR() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            <div className="card mb16" id="cq-details">
+              <div className="card-title cq-cardhead"><span className="cq-num">4</span><span className="cq-title">Review &amp; Details<small>Name your QR code and file it away.</small></span></div>
+              {/* QR Name field */}
+              <div className="form-section">
+                <label className="form-label" htmlFor="f-qr-name">QR Name *</label>
+                <input id="f-qr-name" 
+                  type="text" 
+                  className="form-input" 
+                  placeholder="e.g. Restaurant Menu QR" 
+                  value={formData.title}
+                  onChange={(e) => setFormData({...formData, title: e.target.value})}
+                  required
+                />
+              </div>
+              <div className="grid-2">
+                <div className="form-section">
+                  <label className="form-label" htmlFor="qr-client">Folder <span style={{ color: 'var(--text3)', fontWeight: 'normal' }}>(optional; type a new name to make one)</span></label>
+                  <input id="qr-client" type="text" list="qr-folders" className="form-input" placeholder="e.g. Café Lagoon" maxLength={60} value={formData.client}
+                    onChange={(e) => setFormData({ ...formData, client: e.target.value })} />
+                  <datalist id="qr-folders">{folders.map(f => <option key={f} value={f} />)}</datalist>
+                </div>
+                <div className="form-section">
+                  <label className="form-label" htmlFor="qr-tags">Tags <span style={{ color: 'var(--text3)', fontWeight: 'normal' }}>(press Enter to add)</span></label>
+                  <div className="tag-input form-input">
+                    {formData.tags.map(t => (
+                      <span key={t} className="chip tag-chip">{t}
+                        <button type="button" aria-label={`Remove tag ${t}`} onClick={() => setFormData(f => ({ ...f, tags: f.tags.filter(x => x !== t) }))}>×</button>
+                      </span>
+                    ))}
+                    <input id="qr-tags" value={tagInput} placeholder={formData.tags.length ? '' : 'e.g. menu'} onChange={(e) => setTagInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if ((e.key === 'Enter' || e.key === ',') && tagInput.trim()) { e.preventDefault(); addTag(tagInput); }
+                        if (e.key === 'Backspace' && !tagInput && formData.tags.length) setFormData(f => ({ ...f, tags: f.tags.slice(0, -1) }));
+                      }}
+                      onBlur={() => tagInput.trim() && addTag(tagInput)} />
+                  </div>
+                </div>
+              </div>
+
             </div>
 
             {/* Submit */}
@@ -1171,6 +1190,7 @@ export default function CreateQR() {
             </div>
             <div className={`qr-preview-frame cq-${previewDevice}`}>
               <div ref={canvasRef} id="preview-canvas"></div>
+              <div className="cq-scan"><b>Scan to visit</b><span>{previewUrl.replace(/^https?:\/\//, '').split('/')[0]}</span><i>{previewUrl}</i></div>
             </div>
             {/* The frame is added to downloads only; this band previews its text and colour. */}
             {formData.style.frame && (
