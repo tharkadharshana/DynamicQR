@@ -1,0 +1,81 @@
+/* Dark theme corrections for the pages built with light surfaces (gallery, Kit, form and page builders).
+   Loaded last. `:root:not(.light)` is the dark theme. Elements that stay "paper" (phone mocks, white buttons on gradients)
+   get fixed dark text so they read in both themes. */
+
+/* Plan badges: readable amber in both themes */
+:root.light .plan-badge{color:#9A5B00;background:#FEF0DC}
+:root:not(.light) .plan-badge{background:rgba(240,160,48,.16);color:#F5B04C}
+:root.light .fb-pill,:root.light .nav-badge.amber{color:#9A5B00}
+:root:not(.light) .fb-pill,:root:not(.light) .nav-badge.amber{background:rgba(240,160,48,.16);color:#F5B04C}
+
+/* ── Pages gallery ── */
+:root:not(.light) .tg-hero{background:radial-gradient(120% 140% at 85% 10%,rgba(80,120,220,.35) 0%,transparent 55%),linear-gradient(115deg,#1D1844 0%,#222559 50%,#183052 100%)}
+:root:not(.light) .tg-hero::before{background:radial-gradient(60% 100% at 50% 0%,rgba(255,255,255,.06),transparent)}
+:root:not(.light) .tg-eyebrow{color:#A9A6D6}
+:root:not(.light) .tg-hero h1{color:#F4F2FF}
+:root:not(.light) .tg-hero p{color:#B9BDDD}
+:root:not(.light) .tg-feat{background:rgba(255,255,255,.09);border-color:rgba(255,255,255,.14);color:#DCE0F5}
+:root:not(.light) .tg-custom{background:linear-gradient(135deg,#2B1D33,#1F2347);border-color:#33305A}
+:root:not(.light) .tg-bulb{background:#2B2F52}
+.tg-reqbtn{color:#1B1A3C}
+:root:not(.light) .tg-reqbtn{background:#EDEBFF}
+:root:not(.light) .tg-tags button.on{background:rgba(224,74,31,.2);color:#FF9270}
+:root:not(.light) .tg-stat-ic.red{background:rgba(224,74,31,.18)}
+:root:not(.light) .tg-stat-ic.blue{background:rgba(59,130,246,.18)}
+:root:not(.light) .tg-stat-ic.green{background:rgba(34,197,94,.16)}
+:root:not(.light) .tg-card{box-shadow:none}
+:root:not(.light) .tg-use:hover{background:var(--surface2)}
+
+/* ── Restaurant Kit ── */
+:root:not(.light) .kit{background:var(--bg)}
+:root:not(.light) .kit-opt.ai{background:linear-gradient(135deg,#3B2119,#2B1B24);border-color:#C4532B}
+:root:not(.light) .kit-opt.up{background:linear-gradient(135deg,#14233B,#172340);border-color:#27406A}
+:root:not(.light) .kit-ic.peach{background:rgba(224,74,31,.22)}
+:root:not(.light) .kit-ic.blue{background:rgba(59,130,246,.22)}
+:root:not(.light) .kit-rec{background:var(--surface);border-color:#5A3326}
+.kit-mock-card,.kit-mock-card div,.kit-drop,.kit-phone{color:#3A4458}
+.kit-phone b,.kit-phone small,.kit-phone p em{color:#1E2A3F}
+.kit-phone p{color:#4A5568}
+.kit-types span,.kit-zone{color:#6B7688}
+.kit-btn.ghost{background:var(--surface)}
+:root:not(.light) .kit-steps li.done span{background:rgba(224,74,31,.2);border-color:#7A3A26;color:#FF9270}
+:root:not(.light) .kit-chips button.on{background:rgba(224,74,31,.2);color:#FF9270}
+:root:not(.light) .kit-why{background:linear-gradient(180deg,#2A1D22,#241B26);border-color:#4A2E2A}
+.kit-why li{color:var(--text2)}
+:root:not(.light) .kit-wizard{box-shadow:none}
+:root:not(.light) .kit-sec{background:var(--surface2)}
+
+/* ── Form builder ── */
+:root:not(.light) .fb-title-card{background:linear-gradient(110deg,#3A2018 0%,#2A1D24 60%,var(--surface) 100%);border-color:#4A2E2A}
+:root:not(.light) .fb-tabs{background:rgba(255,255,255,.05);border-color:var(--border2)}
+:root:not(.light) .fb-tabs .on{background:var(--surface3);border-color:#7A3A26;color:#FF9270}
+:root:not(.light) .fb-frame{background:linear-gradient(160deg,#2B1D24,#1A1F33)}
+:root:not(.light) .fb-device .on{background:rgba(224,74,31,.2);border-color:#7A3A26}
+:root:not(.light) .fb-error,:root:not(.light) .pe-error{background:rgba(217,48,37,.15);color:#FF9A92}
+:root:not(.light) .fb-hint{background:var(--surface2)}
+.fb-tile,.fb-picker i{color-scheme:light}
+:root:not(.light) .fb-tile{filter:saturate(.9)}
+
+/* ── Page builder ── */
+:root:not(.light) .pe-tips{background:#2A2418;border-color:#4A3E1E}
+:root:not(.light) .pe-langs .on{background:rgba(224,74,31,.2);border-color:#7A3A26;color:#FF9270}
+:root:not(.light) .pe-ic{background:rgba(224,74,31,.18)}
+.pe-ic[style]{filter:none}
+:root:not(.light) .pe-seg .on{background:var(--surface3)}
+
+/* ── Create QR in the light theme (it was designed dark first) ── */
+:root.light .cq .qr-preview-frame{border-color:var(--border2)}
+:root.light .cq-seg .on{background:#FFF1E8;color:#C93F15}
+:root.light .cq-tiles3 .on,:root.light .cq-tiles4 .on{background:#FFF1E8}
+:root.light .cq .qr-type-tab.active{background:#FFF1E8}
+
+/* ── Narrow screens ── */
+.topbar-left{min-width:0}
+.page-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.tg-viewall{white-space:nowrap}
+@media (max-width:760px){
+  .fb-head,.pe-head,.cq-head{flex-wrap:wrap}
+  .fb-head-text,.pe-head-text,.cq-head-text{flex:1 1 calc(100% - 64px)}
+  .fb-head-actions,.pe-head-actions{width:100%;justify-content:flex-end}
+  .cq-head .cq-ghost{width:100%;justify-content:center}
+}

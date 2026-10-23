@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { apiFetch } from '../lib/api';
 import { resizeLogo } from '../lib/qrContent';
 import { useUI } from '../shared/UIContext';
@@ -25,7 +26,13 @@ export default function TeamSettings({ planData }: { planData: any }) {
   };
   useEffect(refresh, [planData]);
 
-  if (!limits.api_access && limits.seats <= 1) return null;
+  if (!limits.api_access && limits.seats <= 1) return (
+    <div className="card">
+      <div className="card-title">Team members and API keys</div>
+      <p style={{ fontSize: '13px', color: 'var(--text3)', marginBottom: '12px' }}>Inviting team members and creating API keys are part of the Team and Business plans.</p>
+      <Link className="btn btn-primary btn-sm" to="/billing">See plans</Link>
+    </div>
+  );
   if (!owner) {
     return <div className="settings-section mb16"><div className="settings-body" style={{ fontSize: '13px', color: 'var(--text3)' }}>You are a member of a shared workspace. The owner manages keys, members and billing.</div></div>;
   }

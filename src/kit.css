@@ -65,7 +65,7 @@
 .kit-field>label{display:block;font-size:11.7px;font-weight:500;color:var(--text);margin-bottom:9px}
 .kit-field label b{color:#E04A1F;font-weight:500}
 .kit-field label em{font-style:normal;color:var(--text3);font-weight:400}
-.kit-input{position:relative;display:flex;align-items:center;gap:12px;height:38px;padding:0 13px;border-radius:10px;border:1px solid var(--border2);background:#FAFBFD;color:var(--text3)}
+.kit-input{position:relative;display:flex;align-items:center;gap:12px;height:38px;padding:0 13px;border-radius:10px;border:1px solid var(--border2);background:var(--input-bg);color:var(--text3)}
 .kit-input:focus-within{border-color:#E04A1F;box-shadow:0 0 0 3px rgba(224,74,31,.12)}
 .kit-input.bad{border-color:#D93025}
 .kit-input input,.kit-input select{flex:1;min-width:0;border:0;background:none;outline:none;font:inherit;font-size:12.5px;color:var(--text);height:100%}
@@ -89,7 +89,7 @@
 .kit-review h2{margin-top:20px}
 .kit-link{border:0;background:none;color:#E04A1F;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;padding:8px 0}
 .kit-link:disabled{opacity:.5}
-.kit-sec{background:#FAFBFD;border:1px solid var(--border2);border-radius:12px;padding:14px;margin:12px 0}
+.kit-sec{background:var(--input-bg);border:1px solid var(--border2);border-radius:12px;padding:14px;margin:12px 0}
 .kit-sec-head,.kit-item{display:flex;align-items:center;gap:10px}
 .kit-sec-head input{flex:1;font:inherit;font-size:15px;font-weight:600;border:0;background:none;outline:none;color:var(--text)}
 .kit-item{padding:8px 0;border-top:1px solid var(--border)}

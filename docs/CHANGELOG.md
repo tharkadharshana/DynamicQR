@@ -6,6 +6,11 @@ One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-r
 
 - Added `LICENSE`: all rights reserved, no use, copying, modification, distribution or sale without the owner's written permission. `package.json` now says `UNLICENSED`; README links the license.
 
+## Create QR closer to the design, and a light and dark audit (branch `fix/create-qr-1to1`)
+
+- **Create QR**: brand colour swatches, Square / Rounded / Circle style tiles, Solid / Gradient / Transparent background tiles (Image is shown as "Soon"), foreground colour field, logo tile with a logo size slider, the remaining style controls under "More style options", Advanced Options as a two-column grid of cards, a phone-style preview, an "Additional information" note (`content_data.note`, only you see it), collapsible cards, and a Review & Details card holding the QR name, folder and tags. New style keys: `bg_gradient_color`, `bg_transparent`, `logo_size`.
+- **Light and dark audit** of every page, Settings tab, modal and a phone-width pass. Fixed: the gallery, Kit, form and page builders had light-only surfaces that were unreadable in dark mode (now theme-aware, see `src/dark.css`); plan badges had too little contrast; builder headers collapsed on phones; the top bar clipped the New QR button on long page titles; the Members tab was blank on plans without seats (it now shows an upgrade card).
+
 ## Editors redesigned (branch `feat/editors-redesign`)
 
 - **Form builder**: new layout with a title card and Build / Settings / Responses tabs, field rows with type tiles, drag to reorder, a row menu (move, duplicate, delete), a Field Settings panel, a desktop and mobile live preview, and Form Actions. New: **Redirect after submit** (`content_data.redirect_url`, https only, checked by `formDefError`); the thank-you page shows a Continue link and moves on after 3 seconds.

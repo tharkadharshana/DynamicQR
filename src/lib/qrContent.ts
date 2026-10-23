@@ -39,6 +39,11 @@ export function stylingOptions(style: any = {}, data: string, size: number) {
   const gradient = /^#[0-9a-f]{6}$/i.test(style.gradient_color || '')
     ? { type: 'linear', rotation: Math.PI / 4, colorStops: [{ offset: 0, color }, { offset: 1, color: style.gradient_color }] }
     : undefined;
+  // Optional background gradient from bg_color to bg_gradient_color, and the centre logo size (20 to 50 percent of the code).
+  const bgGradient = /^#[0-9a-f]{6}$/i.test(style.bg_gradient_color || '')
+    ? { type: 'linear', rotation: Math.PI / 2, colorStops: [{ offset: 0, color: style.bg_color || '#FFFFFF' }, { offset: 1, color: style.bg_gradient_color }] }
+    : undefined;
+  const logoSize = style.logo_size >= 0.2 && style.logo_size <= 0.5 ? style.logo_size : 0.4;
   return {
     width: size,
     height: size,
@@ -48,8 +53,8 @@ export function stylingOptions(style: any = {}, data: string, size: number) {
     dotsOptions: { color, type: dotType, gradient },
     cornersSquareOptions: { type: cornerType, color },
     cornersDotOptions: { type: cornerDot, color },
-    backgroundOptions: { color: style.bg_color || '#FFFFFF' },
-    imageOptions: { crossOrigin: 'anonymous', margin: 5, imageSize: 0.4 },
+    backgroundOptions: style.bg_transparent ? { color: 'transparent' } : { color: style.bg_color || '#FFFFFF', gradient: bgGradient },
+    imageOptions: { crossOrigin: 'anonymous', margin: 5, imageSize: logoSize },
     qrOptions: { errorCorrectionLevel: style.error_correction || 'M' },
   } as any;
 }
@@ -193,6 +198,9 @@ export function normTags(t: unknown): string[] | null {
 /** Self-check: npx tsx src/lib/qrContent.ts */
 if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('qrContent.ts')) {
   const assert = (c: unknown, m: string) => { if (!c) { console.error('FAIL', m); process.exit(1); } };
+  const so = stylingOptions({ bg_color: '#FFFFFF', bg_gradient_color: '#E8F0FF', logo_size: 0.3 }, 'x', 100);
+  assert(so.backgroundOptions.gradient?.colorStops?.[1]?.color === '#E8F0FF' && so.imageOptions.imageSize === 0.3, 'background gradient and logo size');
+  assert(stylingOptions({ bg_transparent: true, bg_gradient_color: '#E8F0FF', logo_size: 0.9 }, 'x', 100).backgroundOptions.color === 'transparent' && stylingOptions({ logo_size: 0.9 }, 'x', 100).imageOptions.imageSize === 0.4, 'transparent background; out-of-range logo size falls back');
   assert(buildDestination('instagram', { handle: '@scnr.lk' }) === 'https://www.instagram.com/scnr.lk', 'instagram');
   assert(buildDestination('tiktok', { handle: 'https://www.tiktok.com/@cafe?x=1' }) === 'https://www.tiktok.com/@cafe', 'tiktok from url');
   assert(buildDestination('x', { handle: '<script>' }) === 'https://x.com/script', 'handle is sanitised');

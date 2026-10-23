@@ -59,7 +59,7 @@
 .fb-act>div{flex:1;min-width:0;display:grid;gap:8px}
 .fb-act label,.fb-settings label,.fb-fs label{font-size:12px;font-weight:600;color:var(--text)}
 .fb-act label em,.fb-settings label em{font-style:normal;font-weight:400;color:var(--text3)}
-.fb-act textarea,.fb-act input,.fb-settings input,.fb-fs input:not([type=checkbox]),.fb-fs textarea{width:100%;font:inherit;font-size:12.5px;padding:10px 12px;border:1px solid var(--border2);border-radius:10px;background:#FAFBFD;color:var(--text);outline:none;resize:vertical}
+.fb-act textarea,.fb-act input,.fb-settings input,.fb-fs input:not([type=checkbox]),.fb-fs textarea{width:100%;font:inherit;font-size:12.5px;padding:10px 12px;border:1px solid var(--border2);border-radius:10px;background:var(--input-bg);color:var(--text);outline:none;resize:vertical}
 .fb-act textarea:focus,.fb-act input:focus,.fb-settings input:focus,.fb-fs input:focus,.fb-fs textarea:focus{border-color:#E04A1F;box-shadow:0 0 0 3px rgba(224,74,31,.12)}
 .fb-act small{justify-self:end;font-size:11px;color:var(--text3)}
 .fb-settings{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:16px}
