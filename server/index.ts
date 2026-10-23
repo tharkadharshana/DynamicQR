@@ -4,7 +4,7 @@ import express from 'express';
 import path from 'path';
 import cors from 'cors';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { createClient } from '@supabase/supabase-js';
 
 // Initialize Supabase Client
@@ -798,7 +798,7 @@ async function startServer() {
   // BEFORE it runs, and its cost is written to the ledger as soon as the provider answers, so no AI call can skip the ledger.
   const aiLimiter = rateLimit({
     windowMs: 10 * 60 * 1000, max: Number(process.env.AI_RATE_MAX || 20), standardHeaders: true, legacyHeaders: false,
-    keyGenerator: (req: any) => req.user?.uid || req.ip,
+    keyGenerator: (req: any) => req.user?.uid || ipKeyGenerator(req.ip),
     message: { error: 'Too many AI requests. Wait a few minutes.', code: 'AI_RATE' },
   });
   const noApiKey = (req: express.Request, res: express.Response, next: express.NextFunction) =>

@@ -20,6 +20,24 @@ const out = [
   '',
 ].join('\n');
 
+// schema.sql must always describe the end state: every table, added column and function a migration creates has to appear in it.
+const schema = read('schema.sql');
+const missing = [];
+// The text of one table's create statement, and every "alter table T ... add column" clause for it, in schema.sql.
+const tableText = t => {
+  const i = schema.search(new RegExp(String.raw`create table if not exists (?:public\.)?${t}\b`, 'i'));
+  const create = i < 0 ? '' : schema.slice(i, schema.indexOf('\n);', i) + 3);
+  const alters = [...schema.matchAll(new RegExp(String.raw`alter table (?:public\.)?${t}\b([^;]*);`, 'gi'))].map(x => x[1]).join('\n');
+  return `${create}\n${alters}`;
+};
+for (const m of migrations) {
+  const sql = read(`migrations/${m}`);
+  for (const [, t] of sql.matchAll(/create table if not exists (?:public\.)?(\w+)/gi)) if (!new RegExp(String.raw`create table if not exists (?:public\.)?${t}\b`, 'i').test(schema)) missing.push(`${m}: table ${t}`);
+  for (const [, t, c] of sql.matchAll(/alter table (?:public\.)?(\w+)\s+add column if not exists (\w+)/gi)) if (!new RegExp(String.raw`\b${c}\b`).test(tableText(t))) missing.push(`${m}: column ${t}.${c}`);
+  for (const [, f] of sql.matchAll(/create or replace function (?:public\.)?(\w+)/gi)) if (!new RegExp(String.raw`\b${f}\b`).test(schema)) missing.push(`${m}: function ${f}`);
+}
+if (missing.length) { console.error(`db/schema.sql is missing what these migrations add:\n  ${missing.join('\n  ')}`); process.exit(1); }
+
 const target = path.join(dir, 'full-setup.sql');
 if (process.argv.includes('--check')) {
   const have = fs.existsSync(target) ? fs.readFileSync(target, 'utf8').replace(/\r\n/g, '\n') : '';

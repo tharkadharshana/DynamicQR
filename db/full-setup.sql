@@ -223,7 +223,132 @@ create index if not exists form_submissions_slug_created_idx on public.form_subm
 alter table public.form_submissions enable row level security;
 -- No policies: RLS denies anon/authenticated. The API uses the service-role key, which bypasses RLS.
 
--- record_scan: see db/migrations 003 and 010 (the 13-argument version records city, language, referrer domain and the event id).
+-- ──────────────────────────────────────────────────────────────
+-- Added by migrations 002 to 004, 010 (mirrored here so this file stays the full end state)
+-- ──────────────────────────────────────────────────────────────
+
+-- Activation events (funnel: created, printed, first scan, offer changed, paid).
+create table if not exists public.events (
+  id          uuid primary key default gen_random_uuid(),
+  uid         uuid not null references public.profiles(id) on delete cascade,
+  name        text not null,   -- qr_created | print_opened | first_scan | offer_changed | paid
+  slug        text,
+  created_at  timestamptz not null default now()
+);
+create index if not exists events_uid_idx  on public.events(uid);
+create index if not exists events_name_idx on public.events(name, created_at desc);
+alter table public.events enable row level security;
+
+-- Real per-day uniques, hour-of-day counts, digest opt-out (003).
+alter table public.qr_stats
+  add column if not exists days_unique jsonb not null default '{}'::jsonb,  -- { "2026-10-11": 9 }
+  add column if not exists hours       jsonb not null default '{}'::jsonb;  -- { "19": 40 } (UTC hour)
+alter table public.profiles
+  add column if not exists digest_opt_out boolean not null default false;
+
+-- Team seats: the owner invites by email; the invite is claimed on the member's first sign-in (004).
+create table if not exists public.workspace_members (
+  id            uuid primary key default gen_random_uuid(),
+  owner_uid     uuid not null references public.profiles(id) on delete cascade,
+  member_email  text not null,
+  member_uid    uuid references auth.users(id) on delete cascade,
+  role          text not null default 'editor',
+  created_at    timestamptz not null default now(),
+  unique (owner_uid, member_email)
+);
+create index if not exists workspace_members_member_uid_idx on public.workspace_members(member_uid);
+create index if not exists workspace_members_email_idx on public.workspace_members(lower(member_email));
+alter table public.workspace_members enable row level security;
+
+-- API keys: shown once, stored as SHA-256 (004).
+create table if not exists public.api_keys (
+  id            uuid primary key default gen_random_uuid(),
+  uid           uuid not null references public.profiles(id) on delete cascade,
+  name          text not null default 'API key',
+  prefix        text not null,             -- first characters, for display
+  key_hash      text not null unique,
+  created_at    timestamptz not null default now(),
+  last_used_at  timestamptz,
+  revoked_at    timestamptz
+);
+create index if not exists api_keys_uid_idx on public.api_keys(uid);
+alter table public.api_keys enable row level security;
+
+-- Custom short domains (Cloudflare for SaaS custom hostnames) (004; several per account since 011).
+create table if not exists public.custom_domains (
+  id            uuid primary key default gen_random_uuid(),
+  uid           uuid not null references public.profiles(id) on delete cascade,
+  hostname      text not null unique,
+  cf_id         text,
+  status        text not null default 'pending',   -- pending | active | failed
+  created_at    timestamptz not null default now()
+);
+create index if not exists custom_domains_uid_idx on public.custom_domains(uid);
+alter table public.custom_domains enable row level security;
+
+-- Client folders (printers/agencies) and white-label report branding (004).
+alter table public.qr_codes  add column if not exists client text;
+create index if not exists qr_codes_client_idx on public.qr_codes(user_uid, client);
+alter table public.profiles
+  add column if not exists agency_name text,
+  add column if not exists agency_logo text;   -- small data URL (<= 64 KB), shown on printed reports
+-- No policies on the tables above: RLS denies anon/authenticated; the API uses the service-role key.
+
+-- { "k": n } becomes { "k": n + 1 } (003)
+create or replace function public.jsonb_inc(j jsonb, k text)
+returns jsonb language sql immutable as $$
+  select jsonb_set(coalesce(j, '{}'::jsonb), array[k], to_jsonb(coalesce((j ->> k)::int, 0) + 1))
+$$;
+
+-- One call per scan: event row plus every counter, in one transaction (003, extended by 010).
+-- No defaults on the arguments: PostgREST must never find two candidates for one call.
+create or replace function public.record_scan(
+  p_slug text, p_owner uuid, p_country text, p_device text, p_browser text, p_os text,
+  p_referer text, p_is_unique boolean, p_failed boolean,
+  p_id uuid, p_city text, p_lang text, p_ref_host text
+) returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  d text := to_char(now() at time zone 'utc', 'YYYY-MM-DD');
+  m text := to_char(now() at time zone 'utc', 'YYYY-MM');
+  h text := extract(hour from now() at time zone 'utc')::int::text;
+  c text := coalesce(nullif(p_country, ''), 'Unknown');
+  first_scan boolean;
+begin
+  insert into scan_events (id, slug, country, city, device, browser, os, referer, is_unique, lang)
+  values (coalesce(p_id, gen_random_uuid()), p_slug, c, nullif(p_city, ''), p_device, p_browser, p_os, nullif(p_referer, ''), p_is_unique, nullif(p_lang, ''));
+
+  if p_failed then return; end if;  -- wrong-PIN attempts are logged, not counted
+
+  insert into qr_stats (slug) values (p_slug) on conflict (slug) do nothing;
+  update qr_stats set
+    total_scans   = total_scans + 1,
+    unique_scans  = unique_scans + case when p_is_unique then 1 else 0 end,
+    days          = jsonb_inc(days, d),
+    days_unique   = case when p_is_unique then jsonb_inc(days_unique, d) else days_unique end,
+    hours         = jsonb_inc(hours, h),
+    countries     = jsonb_inc(countries, c),
+    browsers      = jsonb_inc(browsers, coalesce(p_browser, 'Other')),
+    os            = jsonb_inc(os, coalesce(p_os, 'Unknown')),
+    devices       = jsonb_inc(devices, coalesce(p_device, 'desktop')),
+    monthly_scans = jsonb_inc(monthly_scans, m),
+    cities        = case when coalesce(p_city, '') <> '' then jsonb_inc(cities, p_city) else cities end,
+    languages     = case when coalesce(p_lang, '') <> '' then jsonb_inc(languages, p_lang) else languages end,
+    referrers     = case when coalesce(p_ref_host, '') <> '' then jsonb_inc(referrers, p_ref_host) else referrers end,
+    updated_at    = now()
+  where slug = p_slug
+  returning total_scans = 1 into first_scan;
+
+  if p_owner is not null then
+    update profiles set monthly_scans = jsonb_inc(monthly_scans, m) where id = p_owner;
+    if first_scan then
+      insert into events (uid, name, slug) values (p_owner, 'first_scan', p_slug);
+    end if;
+  end if;
+end $$;
+
+revoke all on function public.record_scan(text, uuid, text, text, text, text, text, boolean, boolean, uuid, text, text, text) from public, anon, authenticated;
+grant execute on function public.record_scan(text, uuid, text, text, text, text, text, boolean, boolean, uuid, text, text, text) to service_role;
 
 -- ──────────────────────────────────────────────────────────────
 -- BUSINESS (migration 011): webhooks, workspaces. qr_codes.workspace_id / workspace_members.workspace_id
@@ -249,6 +374,15 @@ create table if not exists public.workspaces (
 );
 create index if not exists workspaces_owner_idx on public.workspaces(owner_uid);
 alter table public.workspaces enable row level security;
+
+-- Workspace links (011): qr_codes.workspace_id and workspace_members.workspace_id point at workspaces once it exists.
+alter table public.workspace_members add column if not exists workspace_id uuid references public.workspaces(id) on delete cascade;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'qr_codes_workspace_id_fkey') then
+    alter table public.qr_codes add constraint qr_codes_workspace_id_fkey foreign key (workspace_id) references public.workspaces(id) on delete set null;
+  end if;
+end $$;
+create index if not exists qr_codes_workspace_idx on public.qr_codes(workspace_id) where workspace_id is not null;
 
 -- Page templates (Phase 13): content is a Pages-builder content_data preset. Seeded by the API on first use.
 create table if not exists public.page_templates (

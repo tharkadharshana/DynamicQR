@@ -57,6 +57,9 @@ jobs:
       - name: Server imports resolve on Vercel
         run: node scripts/check-server-imports.mjs
 
+      - name: Check db/schema.sql and db/full-setup.sql are current
+        run: node scripts/build-db-dump.mjs --check
+
       # Page routes (like /api-docs) must reach the SPA, API and /internal routes the function.
       - name: Vercel routes
         run: node scripts/check-vercel-routes.mjs
