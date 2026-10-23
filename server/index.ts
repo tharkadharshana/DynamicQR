@@ -242,8 +242,8 @@ async function startServer() {
     next();
   };
 
-  // Template admins: ADMIN_EMAILS (comma separated). Never through an API key.
-  const isAdminUser = (u: any) => !u?.viaApiKey && !!u?.email && (process.env.ADMIN_EMAILS || '').toLowerCase().split(',').map(x => x.trim()).filter(Boolean).includes(String(u.email).toLowerCase());
+  // Template admins: ADMIN_EMAILS (comma separated), and the email must be verified (so nobody can claim an admin address by signing up with it). Never through an API key.
+  const isAdminUser = (u: any) => !u?.viaApiKey && !!u?.email && !!u?.email_confirmed_at && (process.env.ADMIN_EMAILS || '').toLowerCase().split(',').map(x => x.trim()).filter(Boolean).includes(String(u.email).toLowerCase());
   const requireAdmin = (req: express.Request, res: express.Response, next: express.NextFunction) =>
     isAdminUser((req as any).user) ? next() : res.status(403).json({ error: 'Admins only', code: 'ADMIN_ONLY' });
 
