@@ -61,6 +61,6 @@
   .topbar{padding:0 14px;height:60px}
   .top-search{display:none}
   .new-qr-btn{min-width:0;width:auto;padding:0 18px}
-  .topbar-left{flex:0 0 auto}
+  .topbar-left{flex:1 1 0}
   .topbar{justify-content:space-between}
 }

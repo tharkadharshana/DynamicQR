@@ -68,3 +68,14 @@
 :root.light .cq-seg .on{background:#FFF1E8;color:#C93F15}
 :root.light .cq-tiles3 .on,:root.light .cq-tiles4 .on{background:#FFF1E8}
 :root.light .cq .qr-type-tab.active{background:#FFF1E8}
+
+/* ── Narrow screens ── */
+.topbar-left{min-width:0}
+.page-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.tg-viewall{white-space:nowrap}
+@media (max-width:760px){
+  .fb-head,.pe-head,.cq-head{flex-wrap:wrap}
+  .fb-head-text,.pe-head-text,.cq-head-text{flex:1 1 calc(100% - 64px)}
+  .fb-head-actions,.pe-head-actions{width:100%;justify-content:flex-end}
+  .cq-head .cq-ghost{width:100%;justify-content:center}
+}
