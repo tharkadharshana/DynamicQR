@@ -15,6 +15,15 @@ const BLANK = { theme: DEFAULT_THEME, blocks: [{ kind: 'header', name: 'Your nam
 // The main text fields of each block that get a Sinhala and Tamil version (content_data.i18n[lang].blocks[i]).
 const TR_FIELDS: Record<string, string[]> = { header: ['name', 'tagline'], button: ['label'], text: ['text'], offer: ['title', 'text'] };
 const KIND_LABELS: Record<string, string> = { header: 'Header', socials: 'Social links', button: 'Button', text: 'Text', image: 'Image', video: 'Video', products: 'Products', menu: 'Menu', contact: 'Contact', offer: 'Offer', wifi: 'Wi-Fi', divider: 'Divider' };
+// Tile glyph + colours and a one-line hint for each block kind in the editor.
+const KIND_TILE: Record<string, [string, string, string]> = {
+  header: ['◉', '#FDEBE4', '#E04A1F'], socials: ['⚇', '#FDEBE4', '#E04A1F'], button: ['▭', '#FDEBE4', '#E04A1F'], text: ['¶', '#E6EEFD', '#3B6FE0'], image: ['▨', '#E1F6EA', '#1F9D55'],
+  video: ['▶', '#FDE7F0', '#D6427F'], products: ['▦', '#FFF1DC', '#D98A12'], menu: ['☰', '#FFEFD9', '#E8872A'], contact: ['☎', '#E0F5F3', '#169C8E'], offer: ['★', '#FFF4D6', '#E0A410'], wifi: ['◠', '#E8F1FB', '#3B82C4'], divider: ['―', '#EEF0F4', '#6B7688'],
+};
+const KIND_HINT: Record<string, string> = {
+  header: 'Add your brand name and description.', socials: 'Add your social media links.', button: 'Add one main action or link.', text: 'A paragraph of text.', image: 'Show a picture, optionally with a link.',
+  video: 'Embed a YouTube or Vimeo video.', products: 'A row of products with prices.', menu: 'Sections and items with prices.', contact: 'Phone, email, address and Save as contact.', offer: 'Highlight an offer or code.', wifi: 'Wi-Fi name and password.', divider: 'A thin line between sections.',
+};
 const LANG_LABELS: Record<string, string> = { si: 'Sinhala', ta: 'Tamil' };
 const IMAGE_TYPES: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
 
@@ -88,6 +97,7 @@ function Editor({ slug, template, tpl, tplEdit }: { slug?: string; template: str
   const [legacy, setLegacy] = useState<any>(null); // a Kit page with no blocks yet
   const [loading, setLoading] = useState(!!slug);
   const [lang, setLang] = useState<Lang>('en');
+  const [device, setDevice] = useState<'mobile' | 'desktop'>('mobile');
   const [addKind, setAddKind] = useState('button');
   const [saving, setSaving] = useState(false);
   const [limitError, setLimitError] = useState('');
@@ -292,113 +302,152 @@ function Editor({ slug, template, tpl, tplEdit }: { slug?: string; template: str
     </div>
   );
 
+  const swatches = ['#5B5BF0', '#D946EF', '#F4A59A', '#F59E0B', '#34C759', '#06B6D4', '#2B4A3A'];
+  const field = (label: string, node: React.ReactNode) => <div className="pe-field"><label>{label}</label>{node}</div>;
+  const metaCard = tplEdit && meta && (
+    <section className="pe-card">
+      <div className="pe-card-head"><span className="pe-ic">▣</span><div><h2>Template settings</h2><p>Where it appears in the gallery and how it looks.</p></div></div>
+      {input('Description (shown on the card)', meta.description, v => setMeta({ ...meta, description: v }))}
+      <div className="grid-2">
+        {input('Category (the row it appears in)', meta.category, v => setMeta({ ...meta, category: v }))}
+        {input('Tags (comma separated)', meta.tags, v => setMeta({ ...meta, tags: v }))}
+      </div>
+      <div className="grid-2">
+        <div className="form-section" style={{ marginBottom: '10px' }}>
+          <label className="form-label" htmlFor="f-status">Status</label>
+          <select id="f-status" className="form-input" value={meta.status} onChange={e => setMeta({ ...meta, status: e.target.value })}><option value="draft">Draft (hidden)</option><option value="published">Published</option></select>
+        </div>
+        {input('Sort (lower first)', String(meta.sort), v => setMeta({ ...meta, sort: v as any }))}
+      </div>
+      <div className="grid-2">
+        {(['bg2', 'card', 'line'] as const).map(k => (
+          <div key={k} className="form-section" style={{ marginBottom: '10px' }}>
+            <label className="form-label" htmlFor={`f-${k}`}>{{ bg2: 'Gradient end colour', card: 'Card colour', line: 'Line colour' }[k]}</label>
+            <input id={`f-${k}`} type="color" className="form-input" style={{ height: '44px', padding: '4px' }} value={theme[k] || '#FFFFFF'} onChange={e => setTheme({ ...theme, [k]: e.target.value })} />
+          </div>
+        ))}
+        <div className="form-section" style={{ marginBottom: '10px' }}>
+          <label className="form-label" htmlFor="f-hdr">Header</label>
+          <select id="f-hdr" className="form-input" value={theme.header || ''} onChange={e => setTheme({ ...theme, header: e.target.value })}><option value="">Coloured band</option><option value="plain">Plain on the background</option></select>
+        </div>
+      </div>
+    </section>
+  );
+  const heading = tplEdit ? (tplEdit.id ? 'Edit template' : 'New template') : slug ? 'Edit page' : 'Create New Page';
+  const saveLabel = saving ? 'Saving…' : tplEdit ? 'Save template' : slug ? 'Save changes' : 'Save page';
+  const backTo = tplEdit ? '/admin/templates' : '/pages';
+
   return (
-    <div className="content" style={{ padding: '28px', overflow: 'auto', height: '100%' }}>
-      <div className="page active">
-        <div className="grid-21" style={{ alignItems: 'start' }}>
-          <div>
-            <div className="card mb16">
-              <div className="card-title">{tplEdit ? (tplEdit.id ? 'Edit template' : 'New template') : slug ? 'Edit page' : 'New page'}</div>
-              {input(tplEdit ? 'Template name' : 'Page title (only you see this)', title, setTitle)}
-              {tplEdit && meta && (<>
-                {input('Description (shown on the card)', meta.description, v => setMeta({ ...meta, description: v }))}
-                <div className="grid-2">
-                  {input('Category (the row it appears in)', meta.category, v => setMeta({ ...meta, category: v }))}
-                  {input('Tags (comma separated)', meta.tags, v => setMeta({ ...meta, tags: v }))}
-                </div>
-                <div className="grid-2">
-                  <div className="form-section" style={{ marginBottom: '10px' }}>
-                    <label className="form-label" htmlFor="f-status">Status</label>
-                    <select id="f-status" className="form-input" value={meta.status} onChange={e => setMeta({ ...meta, status: e.target.value })}><option value="draft">Draft (hidden)</option><option value="published">Published</option></select>
-                  </div>
-                  {input('Sort (lower first)', String(meta.sort), v => setMeta({ ...meta, sort: v as any }))}
-                </div>
-                <div className="grid-2">
-                  {(['bg2', 'card', 'line'] as const).map(k => (
-                    <div key={k} className="form-section" style={{ marginBottom: '10px' }}>
-                      <label className="form-label" htmlFor={`f-${k}`}>{{ bg2: 'Gradient end colour', card: 'Card colour', line: 'Line colour' }[k]}</label>
-                      <input id={`f-${k}`} type="color" className="form-input" style={{ height: '40px', padding: '4px' }} value={theme[k] || '#FFFFFF'} onChange={e => setTheme({ ...theme, [k]: e.target.value })} />
-                    </div>
-                  ))}
-                  <div className="form-section" style={{ marginBottom: '10px' }}>
-                    <label className="form-label" htmlFor="f-hdr">Header</label>
-                    <select id="f-hdr" className="form-input" value={theme.header || ''} onChange={e => setTheme({ ...theme, header: e.target.value })}><option value="">Coloured band</option><option value="plain">Plain on the background</option></select>
-                  </div>
-                </div>
-              </>)}
-              <div className="grid-2">
-                {(['accent', 'bg', 'text'] as const).map(k => (
-                  <div key={k} className="form-section" style={{ marginBottom: '10px' }}>
-                    <label className="form-label" htmlFor="f-k">{{ accent: 'Accent colour', bg: 'Background', text: 'Text colour' }[k]}</label>
-                    <input id="f-k" type="color" className="form-input" style={{ height: '40px', padding: '4px' }} value={theme[k]} onChange={e => setTheme({ ...theme, [k]: e.target.value })} />
-                  </div>
-                ))}
-                <div className="form-section" style={{ marginBottom: '10px' }}>
-                  <label className="form-label" htmlFor="f-button-style">Button style</label>
-                  <select id="f-button-style" className="form-input" value={theme.button} onChange={e => setTheme({ ...theme, button: e.target.value })}>
-                    <option value="rounded">Rounded</option><option value="pill">Pill</option><option value="square">Square</option>
-                  </select>
-                </div>
-                <div className="form-section" style={{ marginBottom: '10px' }}>
-                  <label className="form-label" htmlFor="f-font">Font</label>
-                  <select id="f-font" className="form-input" value={theme.font} onChange={e => setTheme({ ...theme, font: e.target.value })}>
-                    <option value="system">Clean</option><option value="serif">Serif</option><option value="mono">Monospace</option>
-                  </select>
+    <div className="pe">
+      <header className="pe-head">
+        <button className="pe-back" onClick={() => navigate(backTo)} aria-label="Back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 6l-6 6 6 6" /></svg></button>
+        <div className="pe-head-text"><h1>{heading}</h1><p>Build a beautiful page with your content. Add elements and customise it your way.</p></div>
+        <div className="pe-head-actions">
+          {isAdmin && slug && !tplEdit && (
+            <button className="pe-btn" disabled={saving || !blocks.length} onClick={async () => {
+              try {
+                await apiFetch('/api/admin/page-templates', { method: 'POST', body: JSON.stringify({ name: title || 'New template', category: 'Link in Bio', content: content_data }) });
+                showToast('success', 'Saved as a draft template. Find it in Template admin.');
+              } catch (e: any) { showToast('error', e?.message || 'Could not save the template'); }
+            }}>Save as template</button>
+          )}
+          <button className="pe-btn" onClick={() => document.getElementById('pe-preview')?.scrollIntoView({ behavior: 'smooth' })}>👁 Preview</button>
+          <button className="pe-btn primary" disabled={saving || !title.trim() || !blocks.length} onClick={save}>▣ {saveLabel}</button>
+        </div>
+      </header>
+
+      <div className="pe-grid">
+        <div className="pe-main">
+          <section className="pe-card">
+            <div className="pe-card-head"><span className="pe-ic">▤</span><div><h2>{tplEdit ? 'Template info' : 'Page info'}</h2><p>Basic details about your page.</p></div></div>
+            <div className="pe-field">
+              <label htmlFor="pe-title">{tplEdit ? 'Template name' : 'Page title'} <b>*</b></label>
+              <div className="pe-count"><input id="pe-title" value={title} onChange={e => setTitle(e.target.value)} /><span>{title.length}/60</span></div>
+              {!tplEdit && <small>Only you see this. Visitors see the header below.</small>}
+            </div>
+            <div className="grid-2">
+              <div className="pe-field">
+                <label>Accent colour</label>
+                <div className="pe-swatches">
+                  {swatches.map(c => <button key={c} type="button" aria-label={`Accent ${c}`} className={theme.accent.toLowerCase() === c.toLowerCase() ? 'on' : ''} style={{ background: c }} onClick={() => setTheme({ ...theme, accent: c })} />)}
+                  <label className="pe-custom" title="Pick any colour">+<input type="color" aria-label="Custom accent colour" value={theme.accent} onChange={e => setTheme({ ...theme, accent: e.target.value })} /></label>
                 </div>
               </div>
+              <div className="pe-field">
+                <label htmlFor="pe-bg">Background</label>
+                <label className="pe-color"><i style={{ background: theme.bg }} /><input id="pe-bg" type="color" value={theme.bg} onChange={e => setTheme({ ...theme, bg: e.target.value })} /><span>{theme.bg.toUpperCase()}</span></label>
+              </div>
+              <div className="pe-field">
+                <label htmlFor="pe-text">Text colour</label>
+                <label className="pe-color"><i style={{ background: theme.text }} /><input id="pe-text" type="color" value={theme.text} onChange={e => setTheme({ ...theme, text: e.target.value })} /><span>{theme.text.toUpperCase()}</span></label>
+              </div>
+              <div className="pe-field">
+                <label htmlFor="f-button-style">Button style</label>
+                <select id="f-button-style" value={theme.button} onChange={e => setTheme({ ...theme, button: e.target.value })}>
+                  <option value="rounded">Rounded</option><option value="pill">Pill</option><option value="square">Square</option>
+                </select>
+              </div>
+              <div className="pe-field">
+                <label htmlFor="f-font">Font</label>
+                <select id="f-font" value={theme.font} onChange={e => setTheme({ ...theme, font: e.target.value })}>
+                  <option value="system">Clean</option><option value="serif">Serif</option><option value="mono">Monospace</option>
+                </select>
+              </div>
             </div>
+          </section>
 
-            {blocks.map((b, i) => (
-              <div key={b.id || i} className="card mb16">
-                <div className="section-row" style={{ marginBottom: '10px' }}>
-                  <span className="card-title" style={{ margin: 0 }}>{KIND_LABELS[b.kind] || b.kind}</span>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <button className="btn btn-ghost btn-sm" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move up">↑</button>
-                    <button className="btn btn-ghost btn-sm" disabled={i === blocks.length - 1} onClick={() => move(i, 1)} aria-label="Move down">↓</button>
-                    <button className="btn btn-ghost btn-sm" style={{ color: 'var(--coral)' }} onClick={() => setBlocks(bs => bs.filter((_, j) => j !== i))}>Delete</button>
-                  </div>
+          {metaCard}
+
+          {blocks.map((b, i) => (
+            <section key={b.id || i} className="pe-card">
+              <div className="pe-card-head">
+                <span className="pe-ic" style={{ background: KIND_TILE[b.kind]?.[1], color: KIND_TILE[b.kind]?.[2] }}>{KIND_TILE[b.kind]?.[0] || '▢'}</span>
+                <div><h2>{KIND_LABELS[b.kind] || b.kind}</h2><p>{KIND_HINT[b.kind] || ''}</p></div>
+                <div className="pe-card-tools">
+                  <button disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move up">↑</button>
+                  <button disabled={i === blocks.length - 1} onClick={() => move(i, 1)} aria-label="Move down">↓</button>
+                  <button className="danger" onClick={() => setBlocks(bs => bs.filter((_, j) => j !== i))} aria-label="Delete block"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg></button>
                 </div>
-                {blockForm(b, i)}
-                {translations(b, i)}
               </div>
-            ))}
+              {blockForm(b, i)}
+              {translations(b, i)}
+            </section>
+          ))}
 
-            <div className="card mb16" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <select className="form-input" value={addKind} onChange={e => setAddKind(e.target.value)} aria-label="Block type">
-                {BLOCK_KINDS.map(k => <option key={k} value={k}>{KIND_LABELS[k]}</option>)}
-              </select>
-              <button className="btn btn-ghost" style={{ whiteSpace: 'nowrap' }} onClick={add}>+ Add block</button>
-            </div>
-
-            {limitError && (
-              <div className="card mb16" style={{ color: 'var(--coral)', fontSize: '13px' }}>
-                {limitError} <Link to="/billing" style={{ fontWeight: 700 }}>See plans →</Link>
-              </div>
-            )}
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
-              <Link className="btn btn-ghost" to={tplEdit ? '/admin/templates' : '/pages'}>Cancel</Link>
-              {isAdmin && slug && !tplEdit && (
-                <button className="btn btn-ghost" disabled={saving || !blocks.length} onClick={async () => {
-                  try {
-                    await apiFetch('/api/admin/page-templates', { method: 'POST', body: JSON.stringify({ name: title || 'New template', category: 'Link in Bio', content: content_data }) });
-                    showToast('success', 'Saved as a draft template. Find it in Template admin.');
-                  } catch (e: any) { showToast('error', e?.message || 'Could not save the template'); }
-                }}>Save as template</button>
-              )}
-              <button className="btn btn-primary" disabled={saving || !title.trim() || !blocks.length} onClick={save}>{saving ? 'Saving…' : tplEdit ? 'Save template' : slug ? 'Save changes' : 'Create page'}</button>
-            </div>
+          <div className="pe-add">
+            <select value={addKind} onChange={e => setAddKind(e.target.value)} aria-label="Block type">
+              {BLOCK_KINDS.map(k => <option key={k} value={k}>{KIND_LABELS[k]}</option>)}
+            </select>
+            <button onClick={add}><span>+</span>Add block</button>
           </div>
 
-          <div className="card" style={{ position: 'sticky', top: 0 }}>
-            <div className="qr-type-tabs" style={{ marginBottom: '12px' }}>
-              {(['en', 'si', 'ta'] as Lang[]).map(l => (
-                <button key={l} className={`qr-type-tab ${lang === l ? 'active' : ''}`} onClick={() => setLang(l)}>{l.toUpperCase()}</button>
-              ))}
-            </div>
-            <iframe title="Page preview" srcDoc={previewHtml(title, content_data, lang)} sandbox=""
-              style={{ width: '100%', height: '640px', border: '1px solid var(--border)', borderRadius: '12px', background: '#fff' }} />
+          {limitError && <div className="pe-error" role="alert">{limitError} <Link to="/billing" style={{ fontWeight: 700 }}>See plans →</Link></div>}
+          <div className="pe-bar">
+            <Link className="pe-btn" to={backTo}>Cancel</Link>
+            <button className="pe-btn primary big" disabled={saving || !title.trim() || !blocks.length} onClick={save}>✦ {tplEdit ? 'Save template' : slug ? 'Save changes' : 'Create page'}</button>
           </div>
         </div>
+
+        <aside className="pe-side">
+          <section className="pe-card" id="pe-preview">
+            <div className="pe-card-head"><h2>Live preview</h2></div>
+            <div className="pe-seg">
+              <button className={device === 'mobile' ? 'on' : ''} onClick={() => setDevice('mobile')}>Mobile</button>
+              <button className={device === 'desktop' ? 'on' : ''} onClick={() => setDevice('desktop')}>Desktop</button>
+            </div>
+            <div className="pe-langs">
+              {(['en', 'si', 'ta'] as Lang[]).map(l => <button key={l} className={lang === l ? 'on' : ''} onClick={() => setLang(l)}>{l.toUpperCase()}</button>)}
+            </div>
+            <div className={`pe-frame ${device}`}>
+              <iframe title="Page preview" srcDoc={previewHtml(title, content_data, lang)} sandbox="" />
+            </div>
+          </section>
+          <section className="pe-card pe-tips"><span>💡</span><div><h3>Tips</h3><p>Use a clear brand logo, keep your message short and add only the most important links.</p></div></section>
+          <section className="pe-card">
+            <h3 className="pe-feat-h">✦ Page features</h3>
+            <ul className="pe-feats">{['Custom brand colours', 'Multiple buttons', 'Social media links', 'Mobile responsive', 'Fast & secure'].map(t => <li key={t}>{t}</li>)}</ul>
+          </section>
+        </aside>
       </div>
     </div>
   );
