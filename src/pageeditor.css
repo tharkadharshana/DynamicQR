@@ -33,7 +33,7 @@
 .pe-count{position:relative}
 .pe-count span{position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:11px;color:var(--text3)}
 .pe-count input{padding-right:56px!important}
-.pe-card input:not([type=checkbox]):not([type=color]):not([type=file]):not([type=radio]),.pe-card select,.pe-card textarea{width:100%;font:inherit;font-size:13px;padding:0 14px;height:44px;border:1px solid var(--border2);border-radius:10px;background:#FAFBFD;color:var(--text);outline:none}
+.pe-card input:not([type=checkbox]):not([type=color]):not([type=file]):not([type=radio]),.pe-card select,.pe-card textarea{width:100%;font:inherit;font-size:13px;padding:0 14px;height:44px;border:1px solid var(--border2);border-radius:10px;background:var(--input-bg);color:var(--text);outline:none}
 .pe-card textarea{height:auto;padding:12px 14px;resize:vertical}
 .pe-card input:focus,.pe-card select:focus,.pe-card textarea:focus{border-color:#E04A1F;box-shadow:0 0 0 3px rgba(224,74,31,.12)}
 .pe-card .form-section{margin-bottom:14px}
@@ -46,11 +46,11 @@
 .pe-swatches button.on{box-shadow:0 0 0 2px #E04A1F}
 .pe-custom{position:relative;width:26px;height:26px;border-radius:50%;border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:15px;color:var(--text2);cursor:pointer}
 .pe-custom input{position:absolute!important;inset:0;opacity:0;width:100%!important;height:100%!important;padding:0!important;cursor:pointer}
-.pe-color{position:relative;display:flex;align-items:center;gap:12px;height:44px;padding:0 14px;border:1px solid var(--border2);border-radius:10px;background:#FAFBFD;cursor:pointer;font-size:13px}
+.pe-color{position:relative;display:flex;align-items:center;gap:12px;height:44px;padding:0 14px;border:1px solid var(--border2);border-radius:10px;background:var(--input-bg);cursor:pointer;font-size:13px}
 .pe-color i{width:22px;height:22px;border-radius:50%;border:1px solid var(--border2);flex-shrink:0}
 .pe-color input{position:absolute!important;inset:0;opacity:0;width:100%!important;height:100%!important;padding:0!important;cursor:pointer}
 .pe-add{display:flex;gap:10px;align-items:center;padding:14px;border:1.5px dashed var(--border3);border-radius:14px}
-.pe-add select{flex:1;height:44px;border:1px solid var(--border2);border-radius:10px;background:#FAFBFD;padding:0 14px;font:inherit;font-size:13px}
+.pe-add select{flex:1;height:44px;border:1px solid var(--border2);border-radius:10px;background:var(--input-bg);padding:0 14px;font:inherit;font-size:13px}
 .pe-add button{display:inline-flex;align-items:center;gap:10px;height:44px;padding:0 22px;border-radius:10px;border:1px solid var(--border2);background:var(--surface);font:inherit;font-size:13.5px;font-weight:600;color:var(--text);cursor:pointer;white-space:nowrap}
 .pe-add button span{font-size:18px;line-height:1}
 .pe-add button:hover{border-color:#E9622E;color:#E04A1F}

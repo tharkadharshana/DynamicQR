@@ -1,6 +1,8 @@
 /* Shell v2: sidebar, top bar and light palette. Loaded after dynamicqr.css, so these rules win.
    Sizes follow the design at a 1536px-wide window. */
+:root{--input-bg:#0F1524}
 :root.light {
+  --input-bg: #FAFBFD;
   --bg:       #FAFBFC;
   --surface:  #FFFFFF;
   --surface2: #F5F7FA;
