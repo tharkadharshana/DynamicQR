@@ -103,6 +103,14 @@ Form cards (name and type, style, options, Visitor Guard) plus a live preview.
 - The search box sets `?q=` on `/pages` (templates) and `/` (Dashboard list); elsewhere Enter jumps to the Dashboard with the query. The bell shows a dot on the Free plan and opens Billing or Settings; it is not a notification feed yet.
 - Admins (`is_admin` from `/api/user/plan`) see "Template admin" and "AI costs" in the Account group.
 
+### Restaurant Kit v2 — [Kit.tsx](../src/pages/Kit.tsx) and [kit.css](../src/kit.css) (Phase 13)
+
+`/kit` is a three-step wizard (Business Details, Menu Preferences, Review & Create) under two option cards: **Create with AI** (menu from the business details and preferences) and **Import your menu** (PDF, PNG, JPG or WebP up to 10 MB, by click or drag and drop). Either way the menu lands in step 3 as an editable tree (sections, items, prices, an AI photo per item) with a live phone preview and the guest-page extras (Google review, WhatsApp, phone, Wi-Fi, offer, one extra button). Create saves a normal block page whose `menu` block is editable later in the Pages editor, then opens the print page. Without AI (no key, or credits used up) the same wizard works by hand: step 2's sections start an empty menu. `/kit?edit=<slug>` still opens the older form ([KitLegacy.tsx](../src/pages/KitLegacy.tsx)) for pages made before v2. The hero photo is `public/kit/hero-food.webp`, made once with the image model.
+
+### AI costs — [AdminAiCosts.tsx](../src/pages/AdminAiCosts.tsx)
+
+`/admin/ai-costs` (admins only): month picker, totals, revenue against AI and fixed costs, a per-user table (calls, images, tokens, cost, plan price, margin) that opens into that user's calls and an extra-allowance field, image cost by model, quality and size, cost per day, hand-entered monthly costs, and a CSV download.
+
 ### Template admin — [AdminTemplates.tsx](../src/pages/AdminTemplates.tsx)
 
 `/admin/templates` (needs `is_admin`; others are sent to the Dashboard) lists every `page_templates` row. Edit and New open `TemplateEditor` (in [PageEditor.tsx](../src/pages/PageEditor.tsx)), which is the page editor with extra template fields and a save to `/api/admin/page-templates`.

@@ -156,6 +156,16 @@ Body `{type: 'pdf'|'png'|'jpg'|'webp', size: <bytes>}`. Checks `size` against th
 - Admin only (email in `ADMIN_EMAILS`, never an API key; others get 403 `ADMIN_ONLY`): `GET /api/admin/page-templates` (all, with drafts), `POST` (create, starts as `draft`), `PUT /:id` (partial update), `POST /:id/duplicate`, `DELETE /:id`. `content` must be a Pages-builder preset (1 to 40 blocks of known kinds, under 20 KB). `source` is `manual` or `ai`.
 - `GET /api/user/plan` also returns `is_admin`.
 
+### AI (Phase 13)
+
+All AI routes need a signed-in user (not an API key), are rate limited per user, and check the plan's monthly AI allowance (`ai_usd` in `plans.ts` plus any admin grant) before calling the provider. Errors: 503 `AI_DISABLED` (no key), 429 `AI_QUOTA` (with `used_credits` and `limit_credits`), 429 `AI_RATE`, 502 `AI_PROVIDER`, `AI_TIMEOUT` or `AI_EMPTY`. Provider error text is logged, never returned. Every provider call writes a row to `ai_usage` (cost from the reported token usage; errors too, with cost 0), including calls whose answer is then rejected. 1 credit = $0.01 of provider cost.
+
+- `POST /api/ai/menu/generate`: `{name, description?, cuisine?, categories?, currency?, prices?, dietary?, language?, notes?}` returns `{menu, used_credits, limit_credits}`. The menu is `{sections:[{name, items:[{name, description?, price?}]}]}`, cleaned by `normalizeMenu` (tags stripped, sizes capped).
+- `POST /api/ai/menu/import`: `{path, type}` where the file was uploaded with `POST /api/files` first (pdf, png, jpg or webp, up to 10 MB, only under the caller's own folder). The model reads the file, the file is deleted, the menu is returned. 422 `AI_EMPTY` when no menu is found.
+- `POST /api/ai/image`: `{prompt, purpose: 'menu_item'|'cover'|'template'}` makes a 1024x1024 webp, stores it under the user's files and returns `{url, ...credits}`.
+- `GET /api/ai/usage`: `{month, enabled, used_credits, limit_credits, calls, images}`.
+- Admin (ADMIN_EMAILS): `POST /api/admin/page-templates/generate {prompt}` makes a draft template (`source: 'ai'`); `GET /api/admin/ai-usage?month=YYYY-MM` (totals, per user with revenue and margin, by kind, model and day, image cost by model/quality/size, cost items); `GET /api/admin/ai-usage/user/:uid?month=`; `GET /api/admin/ai-usage.csv?month=`; `POST /api/admin/cost-items {month, label, amount_usd}` and `DELETE /api/admin/cost-items/:id`; `PUT /api/admin/users/:uid/ai-grant {usd}`.
+
 ### `POST /api/events` (user)
 
 Body `{ name: 'print_opened' | 'kit_started', slug? }`. Records a client-side funnel event. An unknown name returns 400. Server-side events (`qr_created`, `first_scan`, `offer_changed`, `paid`) are written automatically.
