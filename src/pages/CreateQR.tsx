@@ -389,7 +389,11 @@ export default function CreateQR() {
   };
 
   return (
-    <div className="content cq">
+    <div className="content cq" onScroll={(e) => { // highlight the section under the sticky step bar
+      const top = e.currentTarget.getBoundingClientRect().top + 90;
+      const i = ['cq-content', 'cq-style', 'cq-options', 'cq-details'].reduce((n, id, k) => (document.getElementById(id)?.getBoundingClientRect().top ?? 1e9) <= top ? k : n, 0);
+      if (i !== cqStep) setCqStep(i);
+    }}>
       <header className="cq-head">
         <button className="cq-back" onClick={() => navigate(-1)} aria-label="Back"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 6l-6 6 6 6" /></svg></button>
         <div className="cq-head-text">

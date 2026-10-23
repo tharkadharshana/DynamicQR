@@ -48,7 +48,9 @@
 
 .kit-body{display:grid;grid-template-columns:minmax(0,1fr) 284px;gap:31px;margin-top:22px;align-items:start}
 .kit-wizard{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:24px 34px 24px;box-shadow:0 14px 34px -26px rgba(30,40,80,.3)}
-.kit-steps{list-style:none;display:flex;align-items:center;margin:0;padding:0}
+.kit-steps{list-style:none;display:flex;align-items:center;margin:0 -34px 8px;padding:12px 34px;position:sticky;top:-22px;z-index:20;background:var(--surface);border-bottom:1px solid var(--border)}
+.kit-steps button{display:flex;align-items:center;gap:10px;border:0;background:none;padding:0;font:inherit;cursor:pointer}
+.kit-steps button:disabled{cursor:default}
 .kit-steps li{display:flex;align-items:center;gap:10px;flex:0 0 auto}
 .kit-steps li:not(:last-child){flex:1}
 .kit-steps span{width:28px;height:28px;border-radius:50%;border:1px solid var(--border2);background:var(--surface);color:var(--text3);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600}
@@ -138,5 +140,6 @@
   .kit-art{display:none}
   .kit-mock,.kit-drop{display:none}
   .kit-wizard{padding:20px 16px}
+  .kit-steps{margin:0 -16px 8px;padding:12px 16px}
   .kit-steps em{display:none}
 }

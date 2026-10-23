@@ -2,6 +2,10 @@
 
 One entry per phase of the growth plan. Finding ids (C1, H3, …) refer to [11-review-findings.md](11-review-findings.md).
 
+## Sticky step bars (branch `feat/sticky-steps`)
+
+- The Create QR step bar (Content, Style, Options, Review) and the Restaurant Kit wizard steps stay pinned under the top bar while scrolling. Create QR highlights the section in view. Kit steps are clickable: back to any earlier step, forward one step through the same validation as Continue.
+
 ## Proprietary license (branch `docs/proprietary-license`)
 
 - Added `LICENSE`: all rights reserved, no use, copying, modification, distribution or sale without the owner's written permission. `package.json` now says `UNLICENSED`; README links the license.
