@@ -25,6 +25,7 @@ export interface PlanLimits {
   smart_routing: boolean;
   remove_branding: boolean;
   file_mb: number;        // max upload size
+  ai_usd: number;         // monthly AI allowance in USD of provider cost (menu, import, images); 1 credit = AI_CREDIT_USD
 }
 
 export type Currency = 'USD' | 'LKR';
@@ -46,6 +47,9 @@ export function formatPrice(plan: PaidPlan, currency: Currency, interval: Billin
   const n = PRICES[plan][currency][interval];
   return currency === 'USD' ? `$${n}` : `LKR ${n.toLocaleString('en-US')}`;
 }
+
+/** Users see AI usage in credits; the ledger stores USD. */
+export const AI_CREDIT_USD = 0.01;
 
 /** Webhook endpoints per account (Business only; the plan flag `webhooks` turns the feature on). */
 export const MAX_WEBHOOKS = 10;
@@ -75,6 +79,7 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     smart_routing: false,
     remove_branding: false,
     file_mb: 5,
+    ai_usd: 0.3,
   },
   pro: {
     qr_codes: 100,
@@ -100,6 +105,7 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     smart_routing: true,
     remove_branding: true,
     file_mb: 20,
+    ai_usd: 3,
   },
   team: {
     qr_codes: 600,
@@ -125,6 +131,7 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     smart_routing: true,
     remove_branding: true,
     file_mb: 50,
+    ai_usd: 8,
   },
   business: {
     qr_codes: 2000,
@@ -150,6 +157,7 @@ export const PLANS: Record<PlanId, PlanLimits> = {
     smart_routing: true,
     remove_branding: true,
     file_mb: 100,
+    ai_usd: 25,
   },
 };
 

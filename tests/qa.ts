@@ -1879,6 +1879,142 @@ async function run() {
     check('Admin deletes both → 200, then 404', r1.status === 200 && r2.status === 200 && (await api(`/api/admin/page-templates/${tid}`, { method: 'DELETE', token: aToken })).status === 404);
   }
 
+  // ── 35c. AI — OpenAI behind a mock, cost ledger, quota, admin cost dashboard ───
+  section('35c. AI — menu, import, image, ledger, quota and the admin cost dashboard');
+  {
+    // The server talks to this in-process mock (OPENAI_BASE_URL), so the run costs nothing and needs no real key.
+    const MOCK_PORT = Number(process.env.QA_AI_MOCK_PORT || 3101);
+    const WEBP = 'UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==';
+    const mockMenu = { sections: [{ name: 'Starters', items: [{ name: 'Fish bun', description: 'Crisp and hot', price: 'LKR 200' }, { name: 'Bruschetta', description: 'Tomato and basil', price: 'LKR 650' }] }, { name: 'Drinks', items: [{ name: 'Iced coffee', description: 'Cold brew', price: 'LKR 750' }] }] };
+    const seen: any[] = [];
+    const mock = http.createServer((req, res) => {
+      let raw = '';
+      req.on('data', c => (raw += c));
+      req.on('end', () => {
+        const body = raw ? JSON.parse(raw) : {};
+        seen.push({ url: req.url, auth: req.headers.authorization, body });
+        const send = (code: number, o: any) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
+        if (req.url === '/v1/images/generations') {
+          return body.prompt.includes('FAILIMG') ? send(500, { error: { message: 'boom' } }) : send(200, { data: [{ b64_json: WEBP }], usage: { input_tokens: 50, output_tokens: 439 } });
+        }
+        const sys = String(body.messages?.[0]?.content || ''), user = JSON.stringify(body.messages?.[1]?.content || '');
+        const reply = (o: any) => send(200, { model: body.model, choices: [{ message: { content: JSON.stringify(o) } }], usage: { prompt_tokens: 1000, completion_tokens: 500, prompt_tokens_details: { cached_tokens: 0 } } });
+        if (user.includes('FAIL')) return send(500, { error: { message: 'boom' } });
+        if (sys.includes('mobile landing pages')) {
+          return reply(user.includes('INVALID')
+            ? { name: 'Bad', description: 'x', category: 'Link in Bio', tags: [], content: { blocks: [{ kind: 'script' }] } }
+            : { name: 'AI yoga page', description: 'A calm page for a yoga studio.', category: 'Business & Services', tags: ['business', 'minimal'], content: { theme: { accent: '#0F766E', bg: '#F0FDFA', text: '#134E4A' }, blocks: [{ kind: 'header', name: 'Calm Yoga', tagline: 'Breathe', emoji: '🧘' }, { kind: 'button', label: 'Book a class', url: 'https://example.com' }] } });
+        }
+        if (user.includes('EMPTY')) return reply({ sections: [] });
+        if (user.includes('XSS')) return reply({ sections: [{ name: '<script>alert(1)</script>Mains', items: [{ name: '<img src=x onerror=1>Rice', description: 'ok', price: 'LKR 1' }] }] });
+        return reply(mockMenu);
+      });
+    });
+    await new Promise<void>(r => mock.listen(MOCK_PORT, r));
+    try {
+      const { data: old } = await admin.auth.admin.listUsers({ perPage: 1000 });
+      const ADMIN_MAIL = 'qa-templates-admin@test.dynamicqr.local';
+      const adminRow = (old?.users || []).find(u => u.email === ADMIN_MAIL);
+      const ac = createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false } });
+      const aToken = (await ac.auth.signInWithPassword({ email: ADMIN_MAIL, password: TEST_PASS })).data.session?.access_token || '';
+      const ledgerRows = async (u: string) => (await admin.from('ai_usage').select('*').eq('uid', u).order('created_at')).data || [];
+
+      const u0 = await api('/api/ai/usage', { token });
+      check('GET /api/ai/usage → enabled, credits shown', u0.status === 200 && u0.body?.enabled === true && u0.body?.limit_credits > 0 && u0.body?.used_credits === 0, JSON.stringify(u0.body));
+      check('AI routes need sign-in → 401', (await api('/api/ai/menu/generate', { method: 'POST', body: '{}' })).status === 401);
+
+      const noName = await api('/api/ai/menu/generate', { method: 'POST', token, body: JSON.stringify({}) });
+      check('Menu generate without a business name → 400, no provider call, no ledger row', noName.status === 400 && seen.length === 0 && (await ledgerRows(uid)).length === 0, `status=${noName.status} seen=${seen.length}`);
+      const gen = await api('/api/ai/menu/generate', { method: 'POST', token, body: JSON.stringify({ name: 'Café Lagoon', cuisine: 'Sri Lankan', categories: ['Starters', 'Drinks'], currency: 'LKR' }) });
+      check('Menu generate → 200 with a clean menu', gen.status === 200 && gen.body?.menu?.sections?.length === 2 && gen.body.menu.sections[0].items[0].name === 'Fish bun', `got ${gen.status} ${JSON.stringify(gen.body).slice(0, 200)}`);
+      check('The provider got the server key, the text model and strict JSON schema', seen[0]?.auth === `Bearer ${process.env.OPENAI_API_KEY || 'qa-openai-key'}` && !!seen[0]?.body?.model && seen[0]?.body?.response_format?.type === 'json_schema' && seen[0]?.body?.response_format?.json_schema?.strict === true, JSON.stringify(seen[0]?.body?.response_format).slice(0, 120));
+      let rows = await ledgerRows(uid);
+      check('Ledger: one row, kind menu_generate, cost from the usage (1000 in + 500 out)', rows.length === 1 && rows[0].kind === 'menu_generate' && rows[0].input_tokens === 1000 && rows[0].output_tokens === 500 && Number(rows[0].cost_usd) > 0 && rows[0].status === 'ok' && !!rows[0].unit_prices?.as_of, JSON.stringify(rows[0]));
+      check('Usage endpoint now shows credits used', (await api('/api/ai/usage', { token })).body?.used_credits > 0);
+
+      const xss = await api('/api/ai/menu/generate', { method: 'POST', token, body: JSON.stringify({ name: 'XSS cafe' }) });
+      check('AI output is cleaned: tags stripped from names', xss.status === 200 && !JSON.stringify(xss.body.menu).includes('<') && xss.body.menu.sections[0].name === 'alert(1)Mains', JSON.stringify(xss.body?.menu));
+      const empty = await api('/api/ai/menu/generate', { method: 'POST', token, body: JSON.stringify({ name: 'EMPTY cafe' }) });
+      check('Empty answer → 502 AI_EMPTY, but the call is still billed in the ledger', empty.status === 502 && empty.body?.code === 'AI_EMPTY' && (await ledgerRows(uid)).length === 3);
+      const fail = await api('/api/ai/menu/generate', { method: 'POST', token, body: JSON.stringify({ name: 'FAIL cafe' }) });
+      rows = await ledgerRows(uid);
+      check('Provider error → 502 AI_PROVIDER with no provider detail, error row with cost 0', fail.status === 502 && fail.body?.code === 'AI_PROVIDER' && !JSON.stringify(fail.body).includes('boom') && rows[rows.length - 1].status === 'error' && Number(rows[rows.length - 1].cost_usd) === 0, JSON.stringify(fail.body));
+
+      // Import: the file is uploaded to Storage first, then read, extracted and deleted.
+      const pngPath = `${uid}/qa-menu-${Date.now()}.png`;
+      await admin.storage.from('files').upload(pngPath, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64'), { contentType: 'image/png' });
+      const imp = await api('/api/ai/menu/import', { method: 'POST', token, body: JSON.stringify({ path: pngPath, type: 'png' }) });
+      const importReq = seen.filter(x => x.url === '/v1/chat/completions').pop();
+      check('Import a photo → 200 menu, sent to the model as an image', imp.status === 200 && imp.body?.menu?.sections?.length === 2 && JSON.stringify(importReq?.body?.messages?.[1]?.content).includes('image_url'), `got ${imp.status} ${JSON.stringify(imp.body).slice(0, 160)}`);
+      await sleep(500);
+      check('Import deletes the uploaded file', ((await admin.storage.from('files').list(uid)).data || []).every(f => !pngPath.endsWith(f.name)));
+      const other = await api('/api/ai/menu/import', { method: 'POST', token, body: JSON.stringify({ path: `${adminRow?.id || '00000000-0000-0000-0000-000000000000'}/x.png`, type: 'png' }) });
+      const trav = await api('/api/ai/menu/import', { method: 'POST', token, body: JSON.stringify({ path: `${uid}/../x.png`, type: 'png' }) });
+      const badType = await api('/api/ai/menu/import', { method: 'POST', token, body: JSON.stringify({ path: `${uid}/x.exe`, type: 'exe' }) });
+      check('Import refuses another user\'s file, path tricks and unknown types → 400', other.status === 400 && trav.status === 400 && badType.status === 400, `${other.status}/${trav.status}/${badType.status}`);
+
+      const img = await api('/api/ai/image', { method: 'POST', token, body: JSON.stringify({ prompt: 'a bowl of kottu', purpose: 'menu_item' }) });
+      const imgReq = seen.filter(x => x.url === '/v1/images/generations').pop();
+      check('Image → 201 with a public URL under the user\'s folder', img.status === 201 && String(img.body?.url).includes(uid) && String(img.body?.url).endsWith('.webp'), JSON.stringify(img.body));
+      check('Image request: configured model, medium quality, 1024 square, webp, purpose wording', !!imgReq?.body?.model && imgReq.body.quality === 'medium' && imgReq.body.size === '1024x1024' && imgReq.body.output_format === 'webp' && /Appetizing/.test(imgReq.body.prompt), JSON.stringify(imgReq?.body).slice(0, 200));
+      rows = await ledgerRows(uid);
+      const irow = rows.find(r => r.kind === 'image');
+      check('Ledger: image row has images=1 and cost from usage tokens ($8/M in, $30/M out)', irow?.images === 1 && Math.abs(Number(irow.cost_usd) - (50 * 8 + 439 * 30) / 1e6) < 1e-6 && irow.quality === 'medium', JSON.stringify(irow));
+      const imgFail = await api('/api/ai/image', { method: 'POST', token, body: JSON.stringify({ prompt: 'FAILIMG' }) });
+      check('Image provider error → 502, error row, no file stored', imgFail.status === 502 && (await ledgerRows(uid)).some(r => r.kind === 'image' && r.status === 'error'));
+      check('Image without a prompt → 400', (await api('/api/ai/image', { method: 'POST', token, body: JSON.stringify({}) })).status === 400);
+      for (const f of (await admin.storage.from('files').list(uid)).data || []) if (f.name.endsWith('.webp')) await admin.storage.from('files').remove([`${uid}/${f.name}`]);
+
+      // Admin cost dashboard
+      const dash = await api('/api/admin/ai-usage', { token: aToken });
+      const me = dash.body?.by_user?.find((x: any) => x.uid === uid);
+      const sum = (await ledgerRows(uid)).reduce((a, r) => a + Number(r.cost_usd), 0);
+      check('Admin AI usage: totals, per-user row with calls, images, cost = ledger sum', dash.status === 200 && me?.images === 1 && me?.calls === (await ledgerRows(uid)).length && Math.abs(me.cost_usd - sum) < 1e-5 && dash.body.totals.cost_usd >= sum && !!dash.body.prices_as_of, `got ${dash.status} ${JSON.stringify(me)}`);
+      check('Admin AI usage: per-kind, per-model, per-day and image-by-quality breakdowns', dash.body?.by_kind?.length >= 3 && dash.body?.by_model?.length >= 1 && dash.body?.by_day?.length >= 1 && dash.body?.images?.some((i: any) => i.quality === 'medium' && i.images >= 1 && i.avg_cost_usd > 0), JSON.stringify(dash.body?.images));
+      check('Admin AI usage: margin = plan price - cost', typeof me?.revenue_usd === 'number' && Math.abs(me.margin_usd - (me.revenue_usd - me.cost_usd)) < 0.01);
+      const one = await api(`/api/admin/ai-usage/user/${uid}`, { token: aToken });
+      check('Admin per-user call list', one.status === 200 && one.body?.calls?.length === (await ledgerRows(uid)).length && !!one.body.calls[0].kind);
+      const csv = await rawGet('/api/admin/ai-usage.csv', { headers: { Authorization: `Bearer ${aToken}` } });
+      check('Admin CSV export has the header and this user\'s rows', csv.status === 200 && csv.body.startsWith('"time","user_id"') && csv.body.includes(uid) && /text\/csv/.test(csv.headers.get('content-type') || ''), `status=${csv.status}`);
+      check('Non-admin is refused on every AI admin route → 403', (await Promise.all([api('/api/admin/ai-usage', { token }), api(`/api/admin/ai-usage/user/${uid}`, { token }), api('/api/admin/cost-items', { method: 'POST', token, body: '{}' }), api(`/api/admin/users/${uid}/ai-grant`, { method: 'PUT', token, body: '{"usd":1}' })])).every(r => r.status === 403));
+
+      const month = new Date().toISOString().slice(0, 7);
+      const ci = await api('/api/admin/cost-items', { method: 'POST', token: aToken, body: JSON.stringify({ month, label: 'QA hosting', amount_usd: 20 }) });
+      const ciBad = await api('/api/admin/cost-items', { method: 'POST', token: aToken, body: JSON.stringify({ month: '2026-13x', label: '', amount_usd: -1 }) });
+      const dash2 = await api(`/api/admin/ai-usage?month=${month}`, { token: aToken });
+      check('Cost items: add, shown with the month total, bad input → 400', ci.status === 201 && ciBad.status === 400 && dash2.body?.cost_items?.some((c: any) => c.id === ci.body?.id) && dash2.body.cost_items_usd >= 20);
+      check('Cost items: delete → 200, then 404', (await api(`/api/admin/cost-items/${ci.body?.id}`, { method: 'DELETE', token: aToken })).status === 200 && (await api(`/api/admin/cost-items/${ci.body?.id}`, { method: 'DELETE', token: aToken })).status === 404);
+
+      // Quota: a big ledger row uses the whole allowance; an admin grant lifts it.
+      await admin.from('ai_usage').insert({ uid, kind: 'image', model: 'qa', cost_usd: 100000, images: 0 });
+      const over = await api('/api/ai/menu/generate', { method: 'POST', token, body: JSON.stringify({ name: 'Quota cafe' }) });
+      const callsBefore = seen.length;
+      check('Over the monthly allowance → 429 AI_QUOTA with credits, before any provider call', over.status === 429 && over.body?.code === 'AI_QUOTA' && over.body?.used_credits > over.body?.limit_credits && seen.length === callsBefore, JSON.stringify(over.body));
+      check('Quota blocks images and imports too', (await api('/api/ai/image', { method: 'POST', token, body: JSON.stringify({ prompt: 'x' }) })).status === 429);
+      const badGrant = await api(`/api/admin/users/${uid}/ai-grant`, { method: 'PUT', token: aToken, body: JSON.stringify({ usd: -5 }) });
+      const grant = await api(`/api/admin/users/${uid}/ai-grant`, { method: 'PUT', token: aToken, body: JSON.stringify({ usd: 10000 }) });
+      check('Admin grant: validated, saved', badGrant.status === 400 && grant.status === 200);
+      await admin.from('ai_usage').delete().eq('uid', uid).eq('model', 'qa');
+      await admin.from('ai_usage').insert({ uid, kind: 'image', model: 'qa', cost_usd: 9000, images: 0 });
+      const lifted = await api('/api/ai/menu/generate', { method: 'POST', token, body: JSON.stringify({ name: 'Granted cafe' }) });
+      check('With a grant above the spend, AI works again', lifted.status === 200, `got ${lifted.status} ${JSON.stringify(lifted.body).slice(0, 120)}`);
+      await admin.from('profiles').update({ ai_grant_usd: 0 }).eq('id', uid);
+      await admin.from('ai_usage').delete().eq('uid', uid).eq('model', 'qa');
+
+      // AI-made templates (admin): validated, saved as a draft with source ai
+      const tg = await api('/api/admin/page-templates/generate', { method: 'POST', token: aToken, body: JSON.stringify({ prompt: 'calm landing page for a yoga studio' }) });
+      check('Admin generates a template → 201 draft, source ai, valid content', tg.status === 201 && tg.body?.status === 'draft' && tg.body?.source === 'ai' && tg.body?.content?.blocks?.[0]?.kind === 'header', `got ${tg.status} ${JSON.stringify(tg.body).slice(0, 160)}`);
+      const tbad = await api('/api/admin/page-templates/generate', { method: 'POST', token: aToken, body: JSON.stringify({ prompt: 'INVALID page please' }) });
+      const adminRows = adminRow ? await ledgerRows(adminRow.id) : [];
+      check('An unusable AI template → 502 AI_INVALID, nothing saved, but the call is in the ledger', tbad.status === 502 && tbad.body?.code === 'AI_INVALID' && adminRows.filter(r => r.kind === 'template_generate').length === 2, `${tbad.status} ${adminRows.length}`);
+      check('Short prompt → 400; a normal user cannot generate → 403', (await api('/api/admin/page-templates/generate', { method: 'POST', token: aToken, body: JSON.stringify({ prompt: 'x' }) })).status === 400 && (await api('/api/admin/page-templates/generate', { method: 'POST', token, body: JSON.stringify({ prompt: 'a yoga studio page' }) })).status === 403);
+      if (tg.body?.id) await api(`/api/admin/page-templates/${tg.body.id}`, { method: 'DELETE', token: aToken });
+      if (adminRow) await admin.from('ai_usage').delete().eq('uid', adminRow.id);
+    } finally {
+      mock.close();
+    }
+  }
+
   // ── 36. Cleanup ──────────────────────────────────────────────────────────────
   section('36. Cleanup');
   {

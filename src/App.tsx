@@ -14,6 +14,7 @@ const Kit = lazy(() => import('./pages/Kit'));
 const Pages = lazy(() => import('./pages/Pages'));
 const Templates = lazy(() => import('./pages/Templates'));
 const AdminTemplates = lazy(() => import('./pages/AdminTemplates'));
+const AdminAiCosts = lazy(() => import('./pages/AdminAiCosts'));
 const TemplateEditor = lazy(() => import('./pages/PageEditor').then(m => ({ default: m.TemplateEditor })));
 const PageEditor = lazy(() => import('./pages/PageEditor'));
 const Forms = lazy(() => import('./pages/Forms'));
@@ -118,6 +119,7 @@ export default function App() {
                 <Route path="pages" element={<Templates />} />
                 <Route path="pages/mine" element={<Pages />} />
                 <Route path="admin/templates" element={<AdminTemplates />} />
+                <Route path="admin/ai-costs" element={<AdminAiCosts />} />
                 <Route path="admin/templates/new" element={<TemplateEditor />} />
                 <Route path="admin/templates/:id/edit" element={<TemplateEditor />} />
                 <Route path="pages/new" element={<PageEditor />} />

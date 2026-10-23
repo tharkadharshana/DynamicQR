@@ -20,11 +20,14 @@ import logger from "./logger.js";
 import { renderGuestPage, pickLang, appTarget, FILE_TYPES, blockTarget, esc as escHtml } from '../src/lib/guestPage.js';
 import { gtinValid, isReservedSlug, CUSTOM_SLUG_RE, normTags, withUtm } from '../src/lib/qrContent.js';
 import { PAGE_TEMPLATES, REMOVED_TEMPLATE_IDS, templateContentError } from '../src/lib/pageTemplates.js';
+import { aiConfig, AiError, generateMenu, importMenu, generateImage, generateTemplate, type Billed } from './ai.js';
+import { normalizeMenu } from '../src/lib/menu.js';
+import { textCost, imageCost, AI_PRICES_AS_OF } from '../src/lib/aiPricing.js';
 import { buildDigest } from '../src/lib/digest.js';
 import { formDefError, validateSubmission } from '../src/lib/forms.js';
 import { pickRoute, routeCtx, rulesError, primaryLang } from '../src/lib/routing.js';
 import { signStandardWebhook, verifyStandardWebhook, newWebhookSecret, WEBHOOK_EVENTS } from '../src/lib/webhooks.js';
-import { MAX_WEBHOOKS, PLANS, TRIAL_LIMITS, GRACE_DAYS, DEFAULT_ADDONS, PRICES, PAID_PLANS, PlanId, PaidPlan, PlanLimits, UserAddons, Currency, BillingInterval } from '../src/lib/plans.js';
+import { AI_CREDIT_USD, MAX_WEBHOOKS, PLANS, TRIAL_LIMITS, GRACE_DAYS, DEFAULT_ADDONS, PRICES, PAID_PLANS, PlanId, PaidPlan, PlanLimits, UserAddons, Currency, BillingInterval } from '../src/lib/plans.js';
 
 // Direct table helpers (replaced the Firestore-compat shim in Phase 3).
 async function row(table: string, col: string, val: string): Promise<any | null> {
@@ -788,6 +791,246 @@ async function startServer() {
       logger.error('Template delete error:', { message: error?.message });
       res.status(500).json({ error: 'Could not delete the template' });
     }
+  });
+
+  // ── AI (Phase 13): menus, images and templates through OpenAI, every call in the ai_usage ledger ──────────
+  // Pricing lives in src/lib/aiPricing.ts. A call is checked against the plan's monthly allowance (plans.ts ai_usd plus any admin grant)
+  // BEFORE it runs, and its cost is written to the ledger as soon as the provider answers, so no AI call can skip the ledger.
+  const aiLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000, max: Number(process.env.AI_RATE_MAX || 20), standardHeaders: true, legacyHeaders: false,
+    keyGenerator: (req: any) => req.user?.uid || req.ip,
+    message: { error: 'Too many AI requests. Wait a few minutes.', code: 'AI_RATE' },
+  });
+  const noApiKey = (req: express.Request, res: express.Response, next: express.NextFunction) =>
+    (req as any).user?.viaApiKey ? res.status(403).json({ error: 'Not available with an API key', code: 'SESSION_ONLY' }) : next();
+  const monthStartIso = (month?: string) => {
+    const m = /^\d{4}-\d{2}$/.test(month || '') ? month! : new Date().toISOString().slice(0, 7);
+    return { month: m, from: `${m}-01T00:00:00.000Z`, to: new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 1)).toISOString() };
+  };
+  const aiSpentUsd = async (uid: string) => {
+    const { from, to } = monthStartIso();
+    const rows = await allRows((a, b) => supabase.from('ai_usage').select('cost_usd').eq('uid', uid).gte('created_at', from).lt('created_at', to).range(a, b), 20_000);
+    return rows.reduce((a, r) => a + Number(r.cost_usd || 0), 0);
+  };
+  const credits = (usd: number) => Math.round((usd / AI_CREDIT_USD) * 10) / 10;
+  /** Checks that AI is on and the user has allowance left. Sends the error and returns null when not. */
+  const aiGate = async (req: express.Request, res: express.Response) => {
+    if (!aiConfig().key) { res.status(503).json({ error: 'AI is not set up on this server.', code: 'AI_DISABLED' }); return null; }
+    const uid = (req as any).user.uid;
+    const [{ limits }, prof, spent] = await Promise.all([getLicense(uid), row('profiles', 'id', uid), aiSpentUsd(uid)]);
+    const limit = (limits.ai_usd || 0) + Number(prof?.ai_grant_usd || 0);
+    if (spent >= limit) {
+      res.status(429).json({ error: 'You have used all your AI credits for this month.', code: 'AI_QUOTA', used_credits: credits(spent), limit_credits: credits(limit) });
+      return null;
+    }
+    return { uid, spent, limit };
+  };
+  const aiLog = async (uid: string, kind: string, b: Billed<any> | { model: string; usage?: any }, cost: { usd: number; unit: any } | null, extra: Record<string, unknown> = {}) => {
+    const u: any = (b as any).usage || {};
+    const { error } = await supabase.from('ai_usage').insert({
+      uid, kind, model: b.model, quality: (b as any).quality || null, size: (b as any).size || null, images: kind === 'image' && cost ? 1 : 0,
+      input_tokens: u.input_tokens || 0, output_tokens: u.output_tokens || 0, cached_tokens: u.cached_tokens || 0,
+      cost_usd: cost?.usd || 0, unit_prices: cost ? { ...cost.unit, as_of: AI_PRICES_AS_OF } : {}, status: cost ? 'ok' : 'error', ...extra,
+    });
+    if (error) logger.error('AI ledger write failed', { message: error.message, uid, kind });
+  };
+  const aiFail = (res: express.Response, e: any, what: string) => {
+    if (e instanceof AiError) {
+      logger.warn(`AI ${what} failed`, { code: e.code, detail: e.detail });
+      return res.status(e.status).json({ error: e.message, code: e.code });
+    }
+    logger.error(`AI ${what} error`, { message: e?.message });
+    return res.status(500).json({ error: 'Something went wrong with the AI request.' });
+  };
+  const usageBody = async (uid: string, limit: number) => ({ used_credits: credits(await aiSpentUsd(uid)), limit_credits: credits(limit) });
+  const short = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+  const list = (v: unknown, n: number, max: number) => (Array.isArray(v) ? v.slice(0, n).map(x => short(x, max)).filter(Boolean) : []);
+
+  app.post('/api/ai/menu/generate', writeLimiter, authenticate, noApiKey, aiLimiter, async (req, res) => {
+    try {
+      const b = req.body || {};
+      const name = short(b.name, 80);
+      if (!name) return res.status(400).json({ error: 'Enter the business name first.' });
+      const gate = await aiGate(req, res); if (!gate) return;
+      let r;
+      try { r = await generateMenu({ name, description: short(b.description, 200), cuisine: short(b.cuisine, 60), categories: list(b.categories, 12, 40), currency: short(b.currency, 8) || 'LKR', prices: b.prices !== false, dietary: list(b.dietary, 8, 30), language: short(b.language, 20), notes: short(b.notes, 300) }); }
+      catch (e) { await aiLog(gate.uid, 'menu_generate', { model: aiConfig().textModel }, null); throw e; }
+      await aiLog(gate.uid, 'menu_generate', r, textCost(r.model, r.usage));
+      const menu = normalizeMenu(r.data);
+      if (!menu.sections.length) return res.status(502).json({ error: 'The AI returned no menu. Try again with more detail.', code: 'AI_EMPTY' });
+      res.json({ menu, ...(await usageBody(gate.uid, gate.limit)) });
+    } catch (e) { aiFail(res, e, 'menu generate'); }
+  });
+
+  // The file is uploaded first (POST /api/files, then straight to Storage); this reads it, extracts the menu and deletes it.
+  app.post('/api/ai/menu/import', writeLimiter, authenticate, noApiKey, aiLimiter, async (req, res) => {
+    try {
+      const { path: filePath, type } = req.body || {};
+      const uid = (req as any).user.uid;
+      if (!UPLOAD_TYPES[type] || typeof filePath !== 'string' || !filePath.startsWith(`${uid}/`) || filePath.includes('..')) return res.status(400).json({ error: 'Upload the menu file first.' });
+      const gate = await aiGate(req, res); if (!gate) return;
+      const { data: blob, error: dlErr } = await supabase.storage.from(FILES_BUCKET).download(filePath);
+      if (dlErr || !blob) return res.status(400).json({ error: 'We could not find that upload. Try again.' });
+      if (blob.size > 10 * 1024 * 1024) { await supabase.storage.from(FILES_BUCKET).remove([filePath]); return res.status(413).json({ error: 'Menu files for import can be up to 10 MB.' }); }
+      const b64 = Buffer.from(await blob.arrayBuffer()).toString('base64');
+      let r;
+      try { r = await importMenu({ mime: UPLOAD_TYPES[type], b64, filename: `menu.${type}` }); }
+      catch (e) { await aiLog(gate.uid, 'menu_import', { model: aiConfig().textModel }, null); throw e; }
+      finally { supabase.storage.from(FILES_BUCKET).remove([filePath]).then(() => {}, () => {}); }
+      await aiLog(gate.uid, 'menu_import', r, textCost(r.model, r.usage));
+      const menu = normalizeMenu(r.data);
+      if (!menu.sections.length) return res.status(422).json({ error: 'We could not find a menu in that file. Try a clearer photo or a PDF.', code: 'AI_EMPTY' });
+      res.json({ menu, ...(await usageBody(gate.uid, gate.limit)) });
+    } catch (e) { aiFail(res, e, 'menu import'); }
+  });
+
+  app.post('/api/ai/image', writeLimiter, authenticate, noApiKey, aiLimiter, async (req, res) => {
+    try {
+      const prompt = short(req.body?.prompt, 400);
+      const purpose = ['menu_item', 'cover', 'template'].includes(req.body?.purpose) ? req.body.purpose : 'cover';
+      if (!prompt) return res.status(400).json({ error: 'Describe the image first.' });
+      const gate = await aiGate(req, res); if (!gate) return;
+      const wrapped = purpose === 'menu_item'
+        ? `Appetizing, well-lit overhead photo of ${prompt}, served on a clean plate, restaurant menu style. No text, no watermark, no people.`
+        : `Clean, modern, attractive image for a mobile landing page: ${prompt}. No text, no watermark, no logos.`;
+      let r;
+      try { r = await generateImage(wrapped); } catch (e) { await aiLog(gate.uid, 'image', { model: aiConfig().imageModel }, null, { ref: purpose }); throw e; }
+      await aiLog(gate.uid, 'image', r, imageCost(r.model, r.quality || 'medium', r.usage), { ref: purpose });
+      const path = `${gate.uid}/${crypto.randomUUID()}.webp`;
+      const { error: upErr } = await supabase.storage.from(FILES_BUCKET).upload(path, r.data, { contentType: 'image/webp' });
+      if (upErr) throw upErr;
+      res.status(201).json({ url: supabase.storage.from(FILES_BUCKET).getPublicUrl(path).data.publicUrl, ...(await usageBody(gate.uid, gate.limit)) });
+    } catch (e) { aiFail(res, e, 'image'); }
+  });
+
+  app.get('/api/ai/usage', authenticate, async (req, res) => {
+    try {
+      const uid = (req as any).user.uid;
+      const { from, to, month } = monthStartIso();
+      const [{ limits }, prof, rows] = await Promise.all([getLicense(uid), row('profiles', 'id', uid), allRows((a, b) => supabase.from('ai_usage').select('kind, images, cost_usd').eq('uid', uid).gte('created_at', from).lt('created_at', to).range(a, b), 20_000)]);
+      const limit = (limits.ai_usd || 0) + Number(prof?.ai_grant_usd || 0);
+      const spent = rows.reduce((a, r) => a + Number(r.cost_usd || 0), 0);
+      res.json({ month, enabled: !!aiConfig().key, used_credits: credits(spent), limit_credits: credits(limit), calls: rows.length, images: rows.reduce((a, r) => a + (r.images || 0), 0) });
+    } catch (error: any) {
+      logger.error('AI usage error:', { message: error?.message });
+      res.status(500).json({ error: 'Could not load AI usage' });
+    }
+  });
+
+  // Admin: make a draft template from a description. The answer is validated like any admin-made template.
+  app.post('/api/admin/page-templates/generate', writeLimiter, authenticate, requireAdmin, aiLimiter, async (req, res) => {
+    try {
+      const prompt = short(req.body?.prompt, 600);
+      if (prompt.length < 8) return res.status(400).json({ error: 'Describe the page in a sentence or two.' });
+      const gate = await aiGate(req, res); if (!gate) return;
+      let r;
+      try { r = await generateTemplate(prompt); } catch (e) { await aiLog(gate.uid, 'template_generate', { model: aiConfig().textModel }, null); throw e; }
+      await aiLog(gate.uid, 'template_generate', r, textCost(r.model, r.usage));
+      const { o, err } = templateInput({ ...r.data, status: 'draft', source: 'ai', pro_only: false, sort: 100 });
+      if (err || !o) return res.status(502).json({ error: 'The AI made a page we could not use. Try again.', code: 'AI_INVALID', detail: err });
+      const id = `${slugId(o.name)}-${crypto.randomBytes(2).toString('hex')}`;
+      const { data, error } = await supabase.from('page_templates').insert({ ...o, id, created_by: (req as any).user.realUid }).select(TEMPLATE_COLS).single();
+      if (error) throw error;
+      res.status(201).json(data);
+    } catch (e) { aiFail(res, e, 'template'); }
+  });
+
+  // Admin cost dashboard. Revenue is the plan's monthly USD price (ponytail: annual and LKR payers count at the monthly USD list price).
+  const toCsv = (rows: any[][]) => rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+  const ledger = async (month?: string, uid?: string) => {
+    const { from, to, month: m } = monthStartIso(month);
+    // ponytail: reads up to 50k ledger rows and groups them here; upgrade path: a SQL function that groups.
+    const rows = await allRows((a, b) => {
+      const q = supabase.from('ai_usage').select('id, uid, kind, model, quality, size, images, input_tokens, output_tokens, cached_tokens, cost_usd, status, ref, created_at').gte('created_at', from).lt('created_at', to).order('created_at', { ascending: false });
+      return (uid ? q.eq('uid', uid) : q).range(a, b);
+    }, 50_000);
+    const ids = [...new Set(rows.map(r => r.uid))];
+    const profs = ids.length ? await allRows((a, b) => supabase.from('profiles').select('id, email, plan').in('id', ids).range(a, b), 50_000) : [];
+    return { month: m, rows, who: new Map(profs.map(p => [p.id, p])) };
+  };
+
+  app.get('/api/admin/ai-usage', authenticate, requireAdmin, async (req, res) => {
+    try {
+      const { month, rows, who } = await ledger(req.query.month as string);
+      const add = (m: Map<string, any>, k: string, init: any, r: any) => {
+        const o = m.get(k) || { ...init };
+        o.calls++; o.cost_usd += Number(r.cost_usd); o.images += r.images || 0; o.input_tokens += r.input_tokens; o.output_tokens += r.output_tokens; o.errors += r.status === 'error' ? 1 : 0;
+        m.set(k, o); return o;
+      };
+      const blank = { calls: 0, cost_usd: 0, images: 0, input_tokens: 0, output_tokens: 0, errors: 0 };
+      const byUser = new Map<string, any>(), byKind = new Map<string, any>(), byModel = new Map<string, any>(), byDay = new Map<string, any>(), imgs = new Map<string, any>();
+      for (const r of rows) {
+        const p = who.get(r.uid);
+        const u = add(byUser, r.uid, { uid: r.uid, email: p?.email || '', plan: p?.plan || 'free', by_kind: {}, ...blank }, r);
+        u.by_kind[r.kind] = (u.by_kind[r.kind] || 0) + 1;
+        add(byKind, r.kind, { kind: r.kind, ...blank }, r);
+        add(byModel, r.model, { model: r.model, ...blank }, r);
+        add(byDay, r.created_at.slice(0, 10), { day: r.created_at.slice(0, 10), ...blank }, r);
+        if (r.kind === 'image') add(imgs, `${r.model}|${r.quality}|${r.size}`, { model: r.model, quality: r.quality, size: r.size, ...blank }, r);
+      }
+      const round = (o: any) => ({ ...o, cost_usd: Math.round(o.cost_usd * 1e6) / 1e6 });
+      const users = [...byUser.values()].map(u => ({ ...round(u), revenue_usd: PRICES[u.plan as PaidPlan]?.USD.monthly || 0 })).map(u => ({ ...u, margin_usd: Math.round((u.revenue_usd - u.cost_usd) * 100) / 100 })).sort((a, b) => b.cost_usd - a.cost_usd);
+      const total = round([...byKind.values()].reduce((a, k) => ({ calls: a.calls + k.calls, cost_usd: a.cost_usd + k.cost_usd, images: a.images + k.images, input_tokens: a.input_tokens + k.input_tokens, output_tokens: a.output_tokens + k.output_tokens, errors: a.errors + k.errors }), { ...blank }));
+      const items = await allRows((a, b) => supabase.from('cost_items').select('id, month, label, amount_usd').eq('month', month).order('created_at').range(a, b), 5_000);
+      const dayNow = new Date(); const daysIn = new Date(Date.UTC(+month.slice(0, 4), +month.slice(5, 7), 0)).getUTCDate();
+      const elapsed = month === dayNow.toISOString().slice(0, 7) ? dayNow.getUTCDate() : daysIn;
+      res.json({
+        month, prices_as_of: AI_PRICES_AS_OF,
+        totals: { ...total, active_users: users.length, avg_image_cost_usd: total.images ? Math.round((imgs.size ? [...imgs.values()].reduce((a, i) => a + i.cost_usd, 0) : 0) / total.images * 1e6) / 1e6 : 0, projected_month_usd: Math.round((total.cost_usd / Math.max(elapsed, 1)) * daysIn * 100) / 100 },
+        by_user: users, by_kind: [...byKind.values()].map(round), by_model: [...byModel.values()].map(round),
+        by_day: [...byDay.values()].map(round).sort((a, b) => a.day.localeCompare(b.day)),
+        images: [...imgs.values()].map(i => ({ ...round(i), avg_cost_usd: i.images ? Math.round(i.cost_usd / i.images * 1e6) / 1e6 : 0 })),
+        cost_items: items, cost_items_usd: items.reduce((a, i) => a + Number(i.amount_usd), 0),
+        revenue_usd: users.reduce((a, u) => a + u.revenue_usd, 0),
+      });
+    } catch (error: any) {
+      logger.error('Admin AI usage error:', { message: error?.message });
+      res.status(500).json({ error: 'Could not load AI usage' });
+    }
+  });
+
+  app.get('/api/admin/ai-usage/user/:uid', authenticate, requireAdmin, async (req, res) => {
+    try {
+      const { month, rows } = await ledger(req.query.month as string, req.params.uid);
+      res.json({ month, calls: rows.slice(0, 500) });
+    } catch (error: any) {
+      logger.error('Admin AI user usage error:', { message: error?.message });
+      res.status(500).json({ error: 'Could not load AI usage' });
+    }
+  });
+
+  app.get('/api/admin/ai-usage.csv', authenticate, requireAdmin, async (req, res) => {
+    try {
+      const { month, rows, who } = await ledger(req.query.month as string);
+      res.set('Content-Type', 'text/csv; charset=utf-8').set('Content-Disposition', `attachment; filename="ai-usage-${month}.csv"`);
+      res.send(toCsv([['time', 'user_id', 'email', 'kind', 'model', 'quality', 'size', 'images', 'input_tokens', 'output_tokens', 'cached_tokens', 'cost_usd', 'status', 'ref'],
+        ...rows.map(r => [r.created_at, r.uid, who.get(r.uid)?.email || '', r.kind, r.model, r.quality, r.size, r.images, r.input_tokens, r.output_tokens, r.cached_tokens, r.cost_usd, r.status, r.ref])]));
+    } catch (error: any) {
+      logger.error('Admin AI csv error:', { message: error?.message });
+      res.status(500).json({ error: 'Could not export' });
+    }
+  });
+
+  // Fixed monthly costs that are not metered per call (Supabase, Vercel, Cloudflare, Resend, gateway fees ...), entered by hand.
+  app.post('/api/admin/cost-items', writeLimiter, authenticate, requireAdmin, async (req, res) => {
+    const { month, label, amount_usd } = req.body || {};
+    if (!/^\d{4}-\d{2}$/.test(month || '') || !short(label, 80) || typeof amount_usd !== 'number' || !(amount_usd >= 0) || amount_usd > 1_000_000) return res.status(400).json({ error: 'month (YYYY-MM), label and amount_usd are required' });
+    const { data, error } = await supabase.from('cost_items').insert({ month, label: short(label, 80), amount_usd }).select('id, month, label, amount_usd').single();
+    if (error) { logger.error('Cost item error:', { message: error.message }); return res.status(500).json({ error: 'Could not save' }); }
+    res.status(201).json(data);
+  });
+  app.delete('/api/admin/cost-items/:id', writeLimiter, authenticate, requireAdmin, async (req, res) => {
+    const { data, error } = await supabase.from('cost_items').delete().eq('id', req.params.id).select('id');
+    if (error) return res.status(500).json({ error: 'Could not delete' });
+    return data?.length ? res.json({ ok: true }) : res.status(404).json({ error: 'Not found' });
+  });
+  // Extra monthly AI allowance for one user, in USD of provider cost.
+  app.put('/api/admin/users/:uid/ai-grant', writeLimiter, authenticate, requireAdmin, async (req, res) => {
+    const usd = req.body?.usd;
+    if (typeof usd !== 'number' || !(usd >= 0) || usd > 10_000) return res.status(400).json({ error: 'usd must be a number from 0 to 10000' });
+    const { data, error } = await supabase.from('profiles').update({ ai_grant_usd: usd }).eq('id', req.params.uid).select('id');
+    if (error) return res.status(500).json({ error: 'Could not save' });
+    return data?.length ? res.json({ ok: true, usd }) : res.status(404).json({ error: 'User not found' });
   });
 
   // Delete Account API

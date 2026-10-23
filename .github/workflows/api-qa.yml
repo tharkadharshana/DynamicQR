@@ -29,6 +29,10 @@ jobs:
       RATE_LIMIT_WRITE_MAX: '1000'
       # The QA signs in as this user to test the template admin routes.
       ADMIN_EMAILS: qa-templates-admin@test.dynamicqr.local
+      # AI calls go to a mock the QA starts on port 3101, so CI needs no real OpenAI key and spends nothing.
+      OPENAI_API_KEY: qa-openai-key
+      OPENAI_BASE_URL: http://localhost:3101/v1
+      AI_RATE_MAX: '500'
       NODE_ENV: test
       APP_URL: http://localhost:3000
       PORT: 3000

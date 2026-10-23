@@ -110,6 +110,7 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
       case '/create': return { title: 'Create QR', sub: 'Generate a new QR code' };
       case '/pages': return { title: 'Pages', sub: 'Mobile landing pages behind one QR' };
       case '/admin/templates': return { title: 'Template admin', sub: 'Manage the page templates' };
+      case '/admin/ai-costs': return { title: 'AI costs', sub: 'Usage and cost per user' };
       case '/pages/mine': return { title: 'Your pages', sub: 'Pages you have created' };
       case '/pages/new': return { title: 'New page', sub: 'Start from a template or a blank page' };
       case '/forms': return { title: 'Forms', sub: 'Collect answers from a QR scan' };

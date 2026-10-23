@@ -30,7 +30,7 @@ CI (`.github/workflows/api-qa.yml`) runs it against the real Supabase project. T
 ```
 export PAYHERE_MERCHANT_ID=qa-merchant PAYHERE_SECRET=qa-secret \
   POLAR_WEBHOOK_SECRET=qa-polar-secret POLAR_PRODUCT_PRO_MONTHLY=prod_qa_pro_monthly \
-  CRON_SECRET=qa-cron-secret ADMIN_EMAILS=qa-templates-admin@test.dynamicqr.local RATE_LIMIT_MAX=5000 RATE_LIMIT_WRITE_MAX=1000 \
+  CRON_SECRET=qa-cron-secret ADMIN_EMAILS=qa-templates-admin@test.dynamicqr.local OPENAI_API_KEY=qa-openai-key OPENAI_BASE_URL=http://localhost:3101/v1 AI_RATE_MAX=500 RATE_LIMIT_MAX=5000 RATE_LIMIT_WRITE_MAX=1000 \
   NODE_ENV=test APP_URL=http://localhost:3100 PORT=3100
 npx tsx server/index.ts &
 QA_API_URL=http://localhost:3100 npx tsx tests/qa.ts
