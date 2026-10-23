@@ -15,6 +15,8 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
   const [params, setParams] = useSearchParams();
   const searchRef = React.useRef<HTMLInputElement>(null);
   const gallery = location.pathname === '/pages'; // only changes the search placeholder: every page shares one shell
+  // Editors draw their own header (back arrow, title, actions), so the top bar keeps only search and actions there.
+  const ownHeader = /^\/(forms\/new|forms\/[^/]+\/edit|pages\/new|pages\/[^/]+\/edit|create|edit\/[^/]+|admin\/templates\/.+)$/.test(location.pathname);
 
   const currentPlan = planData?.plan || 'free';
   const planLabel = currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1);
@@ -263,8 +265,8 @@ export default function DynamicQRLayout({ planData }: { planData?: any }) {
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
             </button>
-            <h1 className="page-title" id="page-title">{title}</h1>
-            <span className="page-sub hidden sm:inline" id="page-sub" style={{ marginLeft: '12px' }}>{sub}</span>
+            {!ownHeader && <h1 className="page-title" id="page-title">{title}</h1>}
+            {!ownHeader && <span className="page-sub hidden sm:inline" id="page-sub" style={{ marginLeft: '12px' }}>{sub}</span>}
             <label className="top-search">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
               <input ref={searchRef} type="search" value={searchUsed ? searchQ : ''} onChange={e => onSearch(e.target.value)}
