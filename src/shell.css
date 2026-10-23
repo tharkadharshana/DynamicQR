@@ -64,3 +64,29 @@
   .topbar-left{flex:1 1 0}
   .topbar{justify-content:space-between}
 }
+
+/* Notifications popover */
+.notif{position:relative}
+.notif-panel{position:absolute;right:0;top:calc(100% + 12px);z-index:200;width:380px;max-width:calc(100vw - 24px);border-radius:16px;background:var(--surface);border:1px solid var(--border2);box-shadow:0 24px 60px -20px rgba(10,20,50,.45);overflow:hidden}
+.notif-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--border)}
+.notif-head b{font-size:15px;color:var(--text)}
+.notif-clear{border:0;background:none;font:inherit;font-size:12.5px;font-weight:600;color:#E04A1F;cursor:pointer;padding:4px 6px;border-radius:6px}
+.notif-clear:hover:not(:disabled){background:var(--surface2)}
+.notif-clear:disabled{color:var(--text3);cursor:default}
+.notif-list{list-style:none;margin:0;padding:6px;max-height:420px;overflow-y:auto}
+.notif-item{display:grid;grid-template-columns:34px 1fr 24px;gap:12px;padding:12px;border-radius:12px;align-items:start}
+.notif-item:hover{background:var(--surface2)}
+.notif-ic{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;background:var(--surface2)}
+.notif-item.warn .notif-ic{background:rgba(245,158,11,.16);color:#D98A12}
+.notif-item.bad .notif-ic{background:rgba(217,48,37,.14);color:#D93025}
+.notif-item.info .notif-ic{background:rgba(59,130,246,.14);color:#3B82F6}
+.notif-item b{display:block;font-size:13px;color:var(--text);margin-bottom:3px}
+.notif-item p{margin:0 0 6px;font-size:12px;line-height:1.5;color:var(--text3)}
+.notif-item a{font-size:12px;font-weight:600;color:#E04A1F;text-decoration:none}
+.notif-x{border:0;background:none;color:var(--text3);font-size:18px;line-height:1;cursor:pointer;border-radius:6px;height:24px}
+.notif-x:hover{background:var(--surface3);color:var(--text)}
+.notif-empty{display:grid;justify-items:center;gap:6px;padding:36px 24px;text-align:center}
+.notif-empty span{font-size:28px;opacity:.6}
+.notif-empty b{font-size:14px;color:var(--text)}
+.notif-empty small{font-size:12px;color:var(--text3);line-height:1.5}
+@media (max-width:760px){.notif{position:static}.notif-panel{position:fixed;left:12px;right:12px;top:64px;width:auto}}
