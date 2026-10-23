@@ -99,7 +99,7 @@ Form cards (name and type, style, options, Visitor Guard) plus a live preview.
 
 ### App shell — [DynamicQRLayout.tsx](../src/components/DynamicQRLayout.tsx) and [shell.css](../src/shell.css)
 
-- Sidebar (MAIN and ACCOUNT groups), top bar (search with ⌘K / Ctrl+K, theme toggle, bell, "New QR"), light palette by default (the stored theme still wins). On `/pages` the sidebar uses the compact variant of its design: no group labels, a collapsible Account group and an Upgrade card (Free plan).
+- Sidebar (MAIN and ACCOUNT groups), top bar (search with ⌘K / Ctrl+K, theme toggle, bell, "New QR"), light palette by default (the stored theme still wins). Every page shares this one shell: the top bar always shows the page title and subtitle, then the search, theme toggle, bell and New QR.
 - The search box sets `?q=` on `/pages` (templates) and `/` (Dashboard list); elsewhere Enter jumps to the Dashboard with the query. The bell shows a dot on the Free plan and opens Billing or Settings; it is not a notification feed yet.
 - Admins (`is_admin` from `/api/user/plan`) see "Template admin" and "AI costs" in the Account group.
 
