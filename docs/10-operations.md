@@ -191,3 +191,7 @@ Not covered yet: the frontend (no browser tests) and real Cloudflare KV behaviou
 - Worker logs use `console.error` only. View them with `wrangler tail`.
 
 There is no alerting, error tracking (Sentry or similar) or uptime check. The cheapest useful addition is an external uptime monitor that checks a real slug for a 302, because that is the path customers depend on and it is broken today.
+
+## Setting up a new database
+
+`db/full-setup.sql` is the complete setup: `db/schema.sql` plus every migration in order (tables, RLS, the `files` storage bucket, `record_scan`, `record_click`, `jsonb_inc`). Paste it into the SQL editor of a new Supabase project; it is safe to re-run. It is generated: after adding a migration, mirror it into `db/schema.sql` and run `node scripts/build-db-dump.mjs` (`--check` fails when the file is stale). Not captured by SQL: Auth settings (Google OAuth, redirect URLs), the Vercel and Cloudflare setup (sections above) and the data itself.
